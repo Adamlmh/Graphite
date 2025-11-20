@@ -1,0 +1,126 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## 前置
+
+- 你是一个资深前端开发者
+- 专注于画布类产品开发
+- 精通React，拥有资深的React开发经验
+- 精通Pixi
+- 熟悉Excalidraw等主流画布类产品等实现原理
+- 现在我们要一起开发Graphite - 一个类似Excalidraw的画布系统
+
+## 代码规范
+
+1. 框架: React 19 + TypeScript
+2. 渲染: PixiJS (主) + Canvas (备)
+3. 状态: Zustand 
+4. 样式: Less + CSS Modules 
+5. 工具: 
+    - Vite
+    - pnpm
+    - ESLint + Prettier
+6. 持久化: 
+    - IndexedDB (localForage)
+    - 可选: Yjs (协同编辑)
+
+## 功能规范
+
+### 系统架构
+```mermaid
+graph TB
+    subgraph "渲染层 (Rendering)"
+        A[PixiJS 图形渲染] --> B[Canvas 降级备选]
+        C[DOM UI 组件] --> A
+    end
+    
+    subgraph "状态管理层 (State)"
+        D[Zustand Store] --> E[元素状态管理]
+        D --> F[视图状态管理]
+        D --> G[选择状态管理]
+    end
+    
+    subgraph "业务逻辑层 (Business)"
+        H[元素操作服务] --> I[渲染服务]
+        J[历史记录服务] --> H
+        K[持久化服务] --> D
+    end
+    
+    subgraph "数据层 (Data)"
+        L[IndexedDB] --> M[本地数据]
+        N[Yjs CRDT] --> O[协同数据]
+    end
+    
+    subgraph "UI组件层 (Components)"
+        P[画布组件] --> Q[工具栏组件]
+        R[属性面板] --> S[图层管理]
+    end
+    
+    C --> D
+    A --> D
+    H --> A
+    K --> L
+```
+
+### 数据流转图
+```mermaid
+graph LR
+    subgraph "用户交互"
+        A[鼠标事件] --> B[键盘事件]
+    end
+    
+    subgraph "事件处理"
+        E[事件分发器] --> F[画布交互]
+        E --> G[元素交互]
+        E --> H[视图交互]
+    end
+    
+    subgraph "状态更新"
+        I[Zustand Store] --> J[元素状态]
+        I --> K[视图状态]
+        I --> L[选择状态]
+    end
+    
+    subgraph "副作用"
+        M[自动保存] --> N[IndexedDB]
+        O[历史记录] --> P[操作栈]
+        Q[协同同步] --> R[Yjs 网络]
+    end
+    
+    subgraph "渲染更新"
+        S[PixiJS 渲染] --> T[DOM 更新]
+        U[状态派生] --> S
+    end
+    
+    A --> E
+    B --> E
+    E --> I
+    I --> M
+    I --> O
+    I --> Q
+    I --> U
+    U --> S
+```
+
+## 开发规范
+
+### 目录结构
+```
+src/
+├── assets/           # 静态资源
+│   ├── images/
+│   └── fonts/
+├── components/       # 通用组件
+│   ├── ui/          # 基础UI组件 (Button, Input等)
+│   └── canvas/      # 画布专用组件
+├── hooks/           # 自定义 React Hooks
+├── stores/          # Zustand 状态管理
+├── services/        # 业务逻辑层
+├── types/           # TypeScript 类型定义
+├── utils/           # 工具函数
+├── styles/          # 全局样式和 Less 变量
+└── lib/             # 第三方库封装 (PixiJS等)
+```
+
