@@ -80,6 +80,7 @@ function App() {
     };
   }, []);
 
+<<<<<<< HEAD
   /**
    * 监听 DOM 事件（键盘事件）
    */
@@ -124,6 +125,8 @@ function App() {
     };
   }, []);
 
+=======
+>>>>>>> 1034cb7 (feat: 新增了DOMEventBridge，同时修复EventBridge的生命周期漏洞)
   return (
     <div className="app-container">
       <CanvasRenderer />
