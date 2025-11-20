@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import CanvasRenderer from './components/canvas/CanvasRenderer';
 import { eventBus } from './lib/eventBus';
 import type { CanvasEvent } from './lib/EventBridge';
+import type { KeyboardEventPayload } from './lib/DOMEventBridge';
+import './lib/DOMEventBridge';
 import * as PIXI from 'pixi.js';
 import './App.css';
 
@@ -75,6 +77,50 @@ function App() {
       eventBus.off('pointermove', handlePointerMove);
       eventBus.off('wheel', handleWheel);
       console.log('事件监听器已清理');
+    };
+  }, []);
+
+  /**
+   * 监听 DOM 事件（键盘事件）
+   */
+  useEffect(() => {
+    console.log('🔍 开始监听 DOM 事件（键盘）...');
+
+    // 监听 keyboard:down 事件
+    const handleKeyDown = (...args: unknown[]) => {
+      const event = args[0] as KeyboardEventPayload;
+      console.log('✅ keyboard:down 事件接收成功:', {
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        ctrl: event.ctrl,
+        shift: event.shift,
+        alt: event.alt,
+        meta: event.meta,
+      });
+    };
+
+    // 监听 keyboard:up 事件
+    const handleKeyUp = (...args: unknown[]) => {
+      const event = args[0] as KeyboardEventPayload;
+      console.log('✅ keyboard:up 事件接收成功:', {
+        type: event.type,
+        key: event.key,
+        code: event.code,
+      });
+    };
+
+    // 订阅 DOM 事件
+    eventBus.on('keyboard:down', handleKeyDown);
+    eventBus.on('keyboard:up', handleKeyUp);
+
+    console.log('✅ DOM 事件监听器已注册');
+
+    // 清理函数：组件卸载时取消订阅
+    return () => {
+      eventBus.off('keyboard:down', handleKeyDown);
+      eventBus.off('keyboard:up', handleKeyUp);
+      console.log('🧹 DOM 事件监听器已清理');
     };
   }, []);
 
