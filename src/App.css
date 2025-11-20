@@ -1,107 +1,42 @@
-body {
-  margin: 0;
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
 }
 
-.intro {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 1rem;
-  border-radius: 10px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
-.title {
-  font-size: 2.5rem;
-  background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 0.5rem;
-  animation: fadeIn 2s ease-in-out;
-}
-
-.description {
-  font-size: 1rem;
-  color: #f0f0f0;
-  margin-bottom: 1rem;
-  max-width: 800px;
-  line-height: 1.4;
-  animation: fadeIn 2s ease-in-out 0.5s both;
-}
-
-.features-title {
-  font-size: 1.5rem;
-  color: #fff;
-  margin-bottom: 0.5rem;
-  animation: fadeIn 2s ease-in-out 1s both;
-}
-
-.features {
-  list-style: none;
-  padding: 0;
-  margin-bottom: 1rem;
-}
-
-.features li {
-  font-size: 1rem;
-  margin-bottom: 0.3rem;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 0.3rem 0.5rem;
-  border-radius: 5px;
-  animation: slideIn 1s ease-out both;
-}
-
-.features li:nth-child(1) {
-  animation-delay: 1.2s;
-}
-.features li:nth-child(2) {
-  animation-delay: 1.4s;
-}
-.features li:nth-child(3) {
-  animation-delay: 1.6s;
-}
-.features li:nth-child(4) {
-  animation-delay: 1.8s;
-}
-
-.slogan {
-  font-size: 1.2rem;
-  color: #ddd;
-  font-style: italic;
-  margin-bottom: 0.5rem;
-  animation: fadeIn 2s ease-in-out 2s both;
-}
-
-.powered-by {
-  font-size: 0.8rem;
-  color: #bbb;
-  animation: fadeIn 2s ease-in-out 2.5s both;
-}
-
-@keyframes fadeIn {
+@keyframes logo-spin {
   from {
-    opacity: 0;
-    transform: translateY(20px);
+    transform: rotate(0deg);
   }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: rotate(360deg);
   }
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
   }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
 }

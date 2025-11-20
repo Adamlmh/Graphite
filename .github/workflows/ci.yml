@@ -41,6 +41,38 @@ jobs:
       - name: Run type check
         run: pnpm run build -- --noEmit --skipLibCheck
 
+      - name: Get commit message
+        run: echo "COMMIT_MESSAGE=$(git log --format=%B -n 1 ${GITHUB_SHA} | tr '\n' '\\n')" >> $GITHUB_ENV
+
+      - name: Get Beijing time
+        run: echo "BEIJING_TIME=$(date -d '+8 hours' +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+
+      - name: Send notification to Feishu
+        run: |
+          JSON_DATA='{
+            "msg_type": "interactive",
+            "card": {
+              "header": {
+                "title": {
+                  "tag": "plain_text",
+                  "content": "CI Pipeline 通知"
+                }
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "🚀🚀🚀\n📂 **分支:** ${{ github.ref_name }}\n👤 **提交人:** ${{ github.actor }}\n⏰ **时间:** ${{ env.BEIJING_TIME }}\n📝 **提交信息:** ${{ env.COMMIT_MESSAGE }}\n🔗 **查看 Commit:** [点击查看](https://github.com/Adamlmh/Graphite/commit/${{ github.sha }})"
+                  }
+                }
+              ]
+            }
+          }'
+          curl -X POST https://open.feishu.cn/open-apis/bot/v2/hook/869938a0-61fd-4712-8ef9-b1032a425963 \
+          -H 'Content-Type: application/json' \
+          -d "$JSON_DATA"
+
   deploy:
     needs: ci
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release'
