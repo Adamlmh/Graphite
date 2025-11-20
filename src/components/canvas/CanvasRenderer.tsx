@@ -2,7 +2,7 @@ import { useRef, useEffect } from 'react';
 import * as PIXI from 'pixi.js';
 import { setPixiApp } from '../../lib/pixiApp';
 // 导入 EventBridge 以触发自动初始化（副作用）
-import '../../lib/EventBridge';
+import { eventBridge } from '../../lib/EventBridge';
 import './CanvasRenderer.less';
 
 /**
@@ -90,6 +90,9 @@ const CanvasRenderer: React.FC = () => {
           // 移除 canvas 元素
           container.removeChild(app.canvas);
         }
+
+        // 先销毁事件桥接，清理事件监听器
+        eventBridge.destroy();
 
         // 销毁 Pixi 应用
         try {
