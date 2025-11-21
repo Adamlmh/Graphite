@@ -21,7 +21,7 @@ interface Bounds {
 }
 
 /** 元素类型枚举，支持6种基础元素 */
-type ElementType = 'rect' | 'circle' | 'triangle' | 'text' | 'image' | 'group';
+export type ElementType = 'rect' | 'circle' | 'triangle' | 'text' | 'image' | 'group';
 
 /** 工具类型，支持7种交互工具 */
 export type Tool = 'select' | 'hand' | 'rect' | 'circle' | 'triangle' | 'text' | 'image';
@@ -29,7 +29,7 @@ export type Tool = 'select' | 'hand' | 'rect' | 'circle' | 'triangle' | 'text' |
 // === 样式系统 ===
 
 /** 基础元素样式，所有元素共享 */
-interface BaseElementStyle {
+export interface BaseElementStyle {
   // 填充样式 - 对应【P0】背景色需求
   fill: string; // 填充颜色（十六进制/RGB）
   fillOpacity: number; // 填充透明度（0-1）
@@ -41,12 +41,12 @@ interface BaseElementStyle {
 }
 
 /** 矩形元素样式 - 扩展圆角属性 */
-interface RectElementStyle extends BaseElementStyle {
+export interface RectElementStyle extends BaseElementStyle {
   borderRadius?: number; // 圆角半径（像素）- 矩形特有
 }
 
 /** 文本样式 - 对应【P0】富文本属性需求 */
-interface TextStyle {
+export interface TextStyle {
   // 字体属性
   fontFamily: string; // 字体家族
   fontSize: number; // 字号大小
@@ -71,10 +71,12 @@ interface RichTextSpan {
 // === 条件类型定义 ===
 
 /** 根据元素类型映射对应的样式类型 */
-type ElementStyle<T extends ElementType> = T extends 'rect' ? RectElementStyle : BaseElementStyle;
+export type ElementStyle<T extends ElementType> = T extends 'rect'
+  ? RectElementStyle
+  : BaseElementStyle;
 
 /** 根据元素类型映射对应的扩展属性 */
-type ElementExtensions<T extends ElementType> = T extends 'text'
+export type ElementExtensions<T extends ElementType> = T extends 'text'
   ? TextExtensions
   : T extends 'image'
     ? ImageExtensions
@@ -85,7 +87,7 @@ type ElementExtensions<T extends ElementType> = T extends 'text'
 // === 元素扩展接口 ===
 
 /** 文本元素扩展属性 */
-interface TextExtensions {
+export interface TextExtensions {
   content: string; // 文本内容
   textStyle: TextStyle; // 文本样式
   richText?: RichTextSpan[]; // 富文本片段
@@ -98,7 +100,7 @@ interface TextExtensions {
 }
 
 /** 图片元素扩展属性 */
-interface ImageExtensions {
+export interface ImageExtensions {
   src: string; // 图片地址（URL或DataURL）
   naturalWidth: number; // 原始宽度（保持宽高比）
   naturalHeight: number; // 原始高度（保持宽高比）
@@ -111,14 +113,14 @@ interface ImageExtensions {
 }
 
 /** 组合元素扩展属性 */
-interface GroupExtensions {
+export interface GroupExtensions {
   children: string[]; // 子元素ID数组（支持嵌套组合）
 }
 
 // === 元素数据模型 ===
 
 /** 元素基础接口 - 使用条件类型的泛型设计 */
-type BaseElement<T extends ElementType = ElementType> = {
+export type BaseElement<T extends ElementType = ElementType> = {
   // 标识属性
   id: string; // 唯一标识符
   type: T; // 元素类型
@@ -158,22 +160,22 @@ type BaseElement<T extends ElementType = ElementType> = {
 // === 具体元素类型别名 ===
 
 /** 矩形元素 - 自动包含 RectElementStyle */
-type RectElement = BaseElement<'rect'>;
+export type RectElement = BaseElement<'rect'>;
 
 /** 圆形元素 - 使用 BaseElementStyle */
-type CircleElement = BaseElement<'circle'>;
+export type CircleElement = BaseElement<'circle'>;
 
 /** 三角形元素 - 使用 BaseElementStyle */
-type TriangleElement = BaseElement<'triangle'>;
+export type TriangleElement = BaseElement<'triangle'>;
 
 /** 文本元素 - 包含 TextExtensions */
-type TextElement = BaseElement<'text'>;
+export type TextElement = BaseElement<'text'>;
 
 /** 图片元素 - 包含 ImageExtensions */
-type ImageElement = BaseElement<'image'>;
+export type ImageElement = BaseElement<'image'>;
 
 /** 组合元素 - 包含 GroupExtensions */
-type GroupElement = BaseElement<'group'>;
+export type GroupElement = BaseElement<'group'>;
 
 /** 元素联合类型 */
 export type Element =
