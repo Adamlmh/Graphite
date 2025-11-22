@@ -73,6 +73,33 @@ jobs:
           -H 'Content-Type: application/json' \
           -d "$JSON_DATA"
 
+      - name: Send PR merge notification to Feishu
+        if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+        run: |
+          JSON_DATA='{
+            "msg_type": "interactive",
+            "card": {
+              "header": {
+                "title": {
+                  "tag": "plain_text",
+                  "content": "PR 合并通知"
+                }
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "✅✅✅\n📂 **分支:** ${{ github.event.pull_request.head.ref }}\n👤 **合并者:** ${{ github.actor }}\n⏰ **时间:** ${{ env.BEIJING_TIME }}\n📝 **PR 标题:** ${{ github.event.pull_request.title }}\n🔗 **查看 PR:** [点击查看](${{ github.event.pull_request.html_url }})"
+                  }
+                }
+              ]
+            }
+          }'
+          curl -X POST https://open.feishu.cn/open-apis/bot/v2/hook/869938a0-61fd-4712-8ef9-b1032a425963 \
+          -H 'Content-Type: application/json' \
+          -d "$JSON_DATA"
+
   deploy:
     needs: ci
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release'
