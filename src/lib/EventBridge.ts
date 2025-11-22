@@ -43,6 +43,9 @@ class EventBridge {
     pointerupoutside?: (event: PIXI.FederatedPointerEvent) => void;
     wheel?: (event: PIXI.FederatedWheelEvent) => void;
   } = {};
+  // pointermove 节流相关状态
+  private pendingPointerMoveEvent: PIXI.FederatedPointerEvent | null = null;
+  private pointerMoveRafId: number | null = null;
 
   /**
    * 初始化事件桥接
@@ -82,7 +85,7 @@ class EventBridge {
       this.handlePointerEvent('pointerdown', event);
     };
     this.eventHandlers.pointermove = (event: PIXI.FederatedPointerEvent) => {
-      this.handlePointerEvent('pointermove', event);
+      this.throttledPointerMove(event);
     };
     this.eventHandlers.pointerup = (event: PIXI.FederatedPointerEvent) => {
       this.handlePointerEvent('pointerup', event);
@@ -100,6 +103,35 @@ class EventBridge {
     stage.on('pointerup', this.eventHandlers.pointerup);
     stage.on('pointerupoutside', this.eventHandlers.pointerupoutside);
     stage.on('wheel', this.eventHandlers.wheel);
+  }
+
+  /**
+   * 节流处理 pointermove 事件
+   * 使用 requestAnimationFrame 确保每帧只发出一次事件
+   */
+  private throttledPointerMove(event: PIXI.FederatedPointerEvent): void {
+    // 缓存最新的 pointermove 事件
+    this.pendingPointerMoveEvent = event;
+
+    // 如果已经有待执行的 rAF，直接返回（保证一帧只注册一次）
+    if (this.pointerMoveRafId !== null) {
+      return;
+    }
+
+    // 注册下一帧的回调
+    this.pointerMoveRafId = requestAnimationFrame(() => {
+      // 提取缓存的事件
+      const pendingEvent = this.pendingPointerMoveEvent;
+
+      // 清空状态
+      this.pendingPointerMoveEvent = null;
+      this.pointerMoveRafId = null;
+
+      // 如果有待处理的事件，调用原有的处理逻辑
+      if (pendingEvent) {
+        this.handlePointerEvent('pointermove', pendingEvent);
+      }
+    });
   }
 
   /**
@@ -121,7 +153,7 @@ class EventBridge {
       buttons: event.buttons,
       modifiers: {
         shift: event.shiftKey,
-        ctrl: event.ctrlKey || event.metaKey, // macOS 兼容
+        ctrl: event.ctrlKey || event.metaKey,
         alt: event.altKey,
         meta: event.metaKey,
       },
@@ -178,6 +210,15 @@ class EventBridge {
    * 销毁事件桥接
    */
   destroy(): void {
+    // 取消待执行的 rAF
+    if (this.pointerMoveRafId !== null) {
+      cancelAnimationFrame(this.pointerMoveRafId);
+      this.pointerMoveRafId = null;
+    }
+
+    // 清空待处理的指针移动事件
+    this.pendingPointerMoveEvent = null;
+
     if (this.app) {
       const stage = this.app.stage;
       // 使用保存的处理函数引用精确移除监听器
