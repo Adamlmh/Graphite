@@ -36,6 +36,13 @@ class EventBridge {
   private app: PIXI.Application | null = null;
   private isInitialized = false;
   // 保存事件处理函数引用，用于正确清理
+  /**
+   * @param pointerdown 鼠标按下事件
+   * @param pointermove 鼠标移动事件
+   * @param pointerup 鼠标抬起事件
+   * @param pointerupoutside 鼠标抬起事件（超出边界）
+   * @param wheel 滚轮事件
+   */
   private eventHandlers: {
     pointerdown?: (event: PIXI.FederatedPointerEvent) => void;
     pointermove?: (event: PIXI.FederatedPointerEvent) => void;
@@ -50,6 +57,8 @@ class EventBridge {
   /**
    * 初始化事件桥接
    * 自动获取 pixiApp 并订阅事件
+   *
+   * @param app Pixi 应用实例
    */
   init(app?: PIXI.Application): void {
     // 如果已经初始化且 app 相同，跳过
@@ -108,6 +117,8 @@ class EventBridge {
   /**
    * 节流处理 pointermove 事件
    * 使用 requestAnimationFrame 确保每帧只发出一次事件
+   *
+   * @param event 鼠标移动事件
    */
   private throttledPointerMove(event: PIXI.FederatedPointerEvent): void {
     // 缓存最新的 pointermove 事件
@@ -136,6 +147,8 @@ class EventBridge {
 
   /**
    * 处理指针事件
+   * @param type 事件类型
+   * @param event 指针事件
    */
   private handlePointerEvent(type: string, event: PIXI.FederatedPointerEvent): void {
     if (!this.app) return;
@@ -172,6 +185,7 @@ class EventBridge {
 
   /**
    * 处理滚轮事件
+   * @param event 滚轮事件
    */
   private handleWheelEvent(event: PIXI.FederatedWheelEvent): void {
     if (!this.app) return;
