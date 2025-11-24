@@ -10,8 +10,6 @@
  *
  */
 
-// ==================== 依赖清单（Dependencies）====================
-
 /**
  * 视口提供者接口
  * 负责提供 viewport.zoom 和 viewport.offset
