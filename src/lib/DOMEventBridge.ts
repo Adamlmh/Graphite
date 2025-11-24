@@ -81,6 +81,9 @@ class DOMEventBridge {
 
   /**
    * 处理键盘事件
+   *
+   * @param type 事件类型
+   * @param event 键盘事件
    */
   private handleKeyboardEvent(type: 'keyboard:down' | 'keyboard:up', event: KeyboardEvent): void {
     const keyboardEvent: KeyboardEventPayload = {
