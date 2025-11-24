@@ -11,7 +11,7 @@
  */
 
 import type { CoordinateTransformer, IElementProvider } from './CoordinateTransformer';
-import type { Point } from '../types';
+import type { Point } from '../../types';
 import type { Bounds } from './ViewportManager';
 
 export class GeometryService {
