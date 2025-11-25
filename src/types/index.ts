@@ -105,10 +105,13 @@ export interface ImageExtensions {
   naturalWidth: number; // 原始宽度（保持宽高比）
   naturalHeight: number; // 原始高度（保持宽高比）
 
-  // 图片滤镜 - 对应【P0】三种简单滤镜需求
-  filter?: {
-    type: 'grayscale' | 'sepia' | 'blur'; // 滤镜类型
-    value: number; // 滤镜强度
+  // 🎯 替换为5种简单实用的调整类型
+  adjustments?: {
+    brightness: number; // 亮度调整
+    contrast: number; // 对比度调整
+    saturation: number; // 饱和度调整
+    hue: number; // 色相调整
+    blur: number; // 模糊效果
   };
 }
 
@@ -124,6 +127,8 @@ export type BaseElement<T extends ElementType = ElementType> = {
   // 标识属性
   id: string; // 唯一标识符
   type: T; // 元素类型
+
+  zIndex: number; // 渲染层级（数值越大显示在越上面）
 
   // 几何属性 - 对应【P0】元素变换需求
   x: number; // X坐标（左上角）
