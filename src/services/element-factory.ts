@@ -15,6 +15,7 @@ import type {
   TextStyle,
   TriangleElement,
 } from '../types/index';
+export type { Element } from '../types/index';
 export class ElementFactory {
   /**
    * 生成唯一元素ID
@@ -40,7 +41,7 @@ export class ElementFactory {
    * 创建基础元素模板
    * 所有元素共享的基础属性和默认值
    */
-  private static createBaseElement<T extends ElementType>(
+  public static createBaseElement<T extends ElementType>(
     type: T,
     x: number,
     y: number,

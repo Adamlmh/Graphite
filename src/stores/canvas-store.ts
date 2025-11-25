@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { Element, Tool, ViewportState, ToolState, Point } from '../types/index';
-interface CanvasState {
+export interface CanvasState {
   // === 核心数据状态 ===
 
   /**
@@ -138,6 +138,15 @@ interface CanvasState {
    * 重置为初始状态
    */
   clearCanvas: () => void;
+
+  // === Zustand Store 方法 ===
+  /** 获取当前状态 */
+  getState: () => CanvasState;
+
+  /** 更新状态（支持部分更新或函数式更新） */
+  setState: (
+    partial: Partial<CanvasState> | ((state: CanvasState) => Partial<CanvasState>),
+  ) => void;
 }
 
 /**
