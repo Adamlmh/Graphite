@@ -10,7 +10,7 @@
  *
  */
 
-import type { CoordinateTransformer, IElementProvider } from './CoordinateTransformer';
+import type { CoordinateTransformer, IElementProvider, LocalPoint } from './CoordinateTransformer';
 import type { Point } from '../../types';
 import type { Bounds } from './ViewportManager';
 
@@ -87,15 +87,100 @@ export class GeometryService {
     const localPoint = this.coordinateTransformer.worldToLocal(worldPoint.x, worldPoint.y, element);
 
     const size = element.getSize();
+    const type = element.getType();
 
-    // 在局部坐标中，元素永远是轴对齐矩形
-    // 判断点是否在矩形内（包含边界）
+    switch (type) {
+      case 'circle':
+        return this.isPointInCircle(localPoint, size);
+      case 'triangle':
+        return this.isPointInTriangle(localPoint, size, element);
+      default:
+        return this.isPointInRect(localPoint, size);
+    }
+  }
+
+  private isPointInRect(localPoint: LocalPoint, size: { width: number; height: number }): boolean {
+    if (size.width === 0 || size.height === 0) return false;
+
     return (
       localPoint.x >= 0 &&
       localPoint.x <= size.width &&
       localPoint.y >= 0 &&
       localPoint.y <= size.height
     );
+  }
+
+  /**
+   * 判断点是否在圆形内部
+   *
+   * @param localPoint 局部坐标点
+   * @param size 圆形尺寸
+   */
+  private isPointInCircle(
+    localPoint: LocalPoint,
+    size: { width: number; height: number },
+  ): boolean {
+    const radiusX = size.width / 2;
+    const radiusY = size.height / 2;
+    if (radiusX <= 0 || radiusY <= 0) return false;
+
+    // 计算离心率 小于1则点在圆形内部
+    const normalized =
+      Math.pow((localPoint.x - radiusX) / radiusX, 2) +
+      Math.pow((localPoint.y - radiusY) / radiusY, 2);
+
+    return normalized <= 1;
+  }
+
+  /**
+   * 判断点是否在三角形内部
+   *
+   * @param localPoint 局部坐标点
+   * @param size 三角形尺寸
+   */
+  private isPointInTriangle(
+    localPoint: LocalPoint,
+    size: { width: number; height: number },
+    element: IElementProvider,
+  ): boolean {
+    const points = element.getLocalPoints?.();
+    if (Array.isArray(points) && points.length === 3) {
+      const [a, b, c] = points;
+      return this.hitTriangleUsingBarycentric(localPoint, a, b, c);
+    }
+
+    if (size.width === 0 || size.height === 0) return false;
+
+    const top: LocalPoint = { x: size.width / 2, y: 0 };
+    const bottomRight: LocalPoint = { x: size.width, y: size.height };
+    const bottomLeft: LocalPoint = { x: 0, y: size.height };
+
+    return this.hitTriangleUsingBarycentric(localPoint, top, bottomRight, bottomLeft);
+  }
+
+  /**
+   * 判断点是否在三角形内部 使用重心坐标法
+   *
+   * @param localPoint 局部坐标点
+   * @param a 三角形顶点A
+   * @param b 三角形顶点B
+   * @param c 三角形顶点C
+   */
+  private hitTriangleUsingBarycentric(
+    localPoint: LocalPoint,
+    a: LocalPoint,
+    b: LocalPoint,
+    c: LocalPoint,
+  ): boolean {
+    const denom = (b.y - a.y) * (c.x - a.x) - (b.x - a.x) * (c.y - a.y);
+    if (denom === 0) {
+      return false;
+    }
+
+    const u = ((localPoint.y - a.y) * (c.x - a.x) - (localPoint.x - a.x) * (c.y - a.y)) / denom;
+    const v = ((localPoint.y - a.y) * (b.x - a.x) - (localPoint.x - a.x) * (b.y - a.y)) / denom;
+
+    return u >= 0 && v >= 0 && u + v <= 1;
   }
 
   /**
