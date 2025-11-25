@@ -14,6 +14,9 @@ importers:
       antd:
         specifier: ^5.29.1
         version: 5.29.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      immer:
+        specifier: ^11.0.0
+        version: 11.0.0
       pixi.js:
         specifier: ^8.14.2
         version: 8.14.2
@@ -28,7 +31,7 @@ importers:
         version: 13.0.0
       zustand:
         specifier: ^5.0.8
-        version: 5.0.8(@types/react@19.2.6)(react@19.2.0)
+        version: 5.0.8(@types/react@19.2.6)(immer@11.0.0)(react@19.2.0)
     devDependencies:
       '@commitlint/cli':
         specifier: ^20.1.0
@@ -1230,6 +1233,9 @@ packages:
     resolution: {integrity: sha512-6TDAlDPZxUFCv+fuOkIoXT/V/f3Qbq8e37p+YOiYrUv3v9cc3/6x78VdfPgFVaB9dZYeLUfKgHRebpkm/oP2VQ==}
     engines: {node: '>=0.10.0'}
     hasBin: true
+
+  immer@11.0.0:
+    resolution: {integrity: sha512-XtRG4SINt4dpqlnJvs70O2j6hH7H0X8fUzFsjMn1rwnETaxwp83HLNimXBjZ78MrKl3/d3/pkzDH0o0Lkxm37Q==}
 
   import-fresh@3.3.1:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
@@ -3343,6 +3349,8 @@ snapshots:
   image-size@0.5.5:
     optional: true
 
+  immer@11.0.0: {}
+
   import-fresh@3.3.1:
     dependencies:
       parent-module: 1.0.1
@@ -4214,7 +4222,8 @@ snapshots:
 
   zod@4.1.12: {}
 
-  zustand@5.0.8(@types/react@19.2.6)(react@19.2.0):
+  zustand@5.0.8(@types/react@19.2.6)(immer@11.0.0)(react@19.2.0):
     optionalDependencies:
       '@types/react': 19.2.6
+      immer: 11.0.0
       react: 19.2.0
