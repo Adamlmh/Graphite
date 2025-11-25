@@ -8,17 +8,9 @@ import {
   SunOutlined,
   MoonOutlined,
 } from '@ant-design/icons';
+import type { Tool } from '../../../../types/index';
+import { useCanvasStore } from '../../../../stores/canvas-store';
 import styles from './ToolBar.module.less';
-
-type ToolId =
-  | 'move'
-  | 'cursor'
-  | 'circle'
-  | 'rectangle'
-  | 'triangle'
-  | 'roundedRectangle'
-  | 'text'
-  | 'image';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;
 const RectangleIcon = () => <span className={styles.rectangleIcon} />;
@@ -26,16 +18,18 @@ const TriangleIcon = () => <span className={styles.triangleIcon} />;
 const RoundedRectangleIcon = () => <span className={styles.roundedRectangleIcon} />;
 
 const ToolBar: React.FC = () => {
-  const [activeTool, setActiveTool] = useState<ToolId>('cursor');
+  const activeTool = useCanvasStore((state) => state.tool.activeTool);
+  const setActiveTool = useCanvasStore((state) => state.setTool);
+
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  const tools: { id: ToolId; label: string; icon: React.ReactNode }[] = [
-    { id: 'move', label: '移动', icon: <DragOutlined /> },
-    { id: 'cursor', label: '光标', icon: <SelectOutlined /> },
+  const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
+    { id: 'hand', label: '移动', icon: <DragOutlined /> },
+    { id: 'select', label: '光标', icon: <SelectOutlined /> },
     { id: 'circle', label: '圆形', icon: <CircleIcon /> },
-    { id: 'rectangle', label: '矩形', icon: <RectangleIcon /> },
+    { id: 'rect', label: '矩形', icon: <RectangleIcon /> },
     { id: 'triangle', label: '三角形', icon: <TriangleIcon /> },
-    { id: 'roundedRectangle', label: '圆角矩形', icon: <RoundedRectangleIcon /> },
+    { id: 'rounded-rect', label: '圆角矩形', icon: <RoundedRectangleIcon /> },
     { id: 'text', label: '文字插入', icon: <FontSizeOutlined /> },
     { id: 'image', label: '图片插入', icon: <PictureOutlined /> },
   ];
