@@ -1,3 +1,5 @@
+import type { ElementType } from '../../types';
+
 /**
  * 坐标转换模块（CoordinateTransformer）
  *
@@ -66,6 +68,17 @@ export interface IElementProvider {
    * 获取元素的变换中心点（相对坐标，0-1）
    */
   getPivot(): { pivotX: number; pivotY: number };
+
+  /**
+   * 获取元素类型（rect/circle/triangle/text/...）
+   */
+  getType(): ElementType;
+
+  /**
+   * 可选：获取元素的局部顶点坐标
+   * 用于自定义命中检测（例如三角形、任意多边形等）
+   */
+  getLocalPoints?(): LocalPoint[];
 }
 
 // ==================== 坐标点类型定义 ====================
@@ -207,7 +220,7 @@ export class CoordinateTransformer {
     localX -= pivotX;
     localY -= pivotY;
 
-    // 4. 应用逆旋转（注意：rotation 是度，需要转换为弧度）
+    // 4. 应用逆旋转
     const rotationRad = (-rotation * Math.PI) / 180;
     const cos = Math.cos(rotationRad);
     const sin = Math.sin(rotationRad);
