@@ -201,38 +201,22 @@ export class GeometryService {
   public getDistanceBetweenElements(elA: IElementProvider, elB: IElementProvider): number {
     const typeA = elA.getType();
     const typeB = elB.getType();
+    const categoryA = this.mapTypeToCategory(typeA);
+    const categoryB = this.mapTypeToCategory(typeB);
 
-    // 根据元素类型分发到不同的计算方法
-    // 圆形到其他元素
-    if (typeA === 'circle') {
-      if (typeB === 'circle') {
-        return this.getDistanceCircleToCircle(elA, elB);
-      } else if (typeB === 'triangle') {
-        return this.getDistanceCircleToTriangle(elA, elB);
-      } else {
-        return this.getDistanceCircleToRect(elA, elB);
-      }
+    if (categoryA === 'circle' && categoryB === 'circle') {
+      return this.getDistanceCircleToCircle(elA, elB);
     }
 
-    // 三角形到其他元素
-    if (typeA === 'triangle') {
-      if (typeB === 'circle') {
-        return this.getDistanceTriangleToCircle(elA, elB);
-      } else if (typeB === 'triangle') {
-        return this.getDistanceTriangleToTriangle(elA, elB);
-      } else {
-        return this.getDistanceTriangleToRect(elA, elB);
-      }
+    if (categoryA === 'circle' && categoryB === 'polygon') {
+      return this.getDistanceCircleToPolygon(elA, elB);
     }
 
-    // 矩形/文本/图片/group 到其他元素
-    if (typeB === 'circle') {
-      return this.getDistanceRectToCircle(elA, elB);
-    } else if (typeB === 'triangle') {
-      return this.getDistanceRectToTriangle(elA, elB);
-    } else {
-      return this.getDistanceRectToRect(elA, elB);
+    if (categoryA === 'polygon' && categoryB === 'circle') {
+      return this.getDistanceCircleToPolygon(elB, elA);
     }
+
+    return this.getDistancePolygonToPolygon(elA, elB);
   }
 
   /**
@@ -243,16 +227,23 @@ export class GeometryService {
    * @returns 元素到直线的最短距离
    */
   public getDistanceElementToLine(element: IElementProvider, line: Line): number {
-    const type = element.getType();
+    const category = this.mapTypeToCategory(element.getType());
 
-    switch (type) {
-      case 'circle':
-        return this.getDistanceCircleToLine(element, line);
-      case 'triangle':
-        return this.getDistanceTriangleToLine(element, line);
-      default:
-        return this.getDistanceRectToLine(element, line);
+    if (category === 'circle') {
+      return this.getDistanceCircleToLine(element, line);
     }
+
+    return this.getDistancePolygonToLine(element, line);
+  }
+
+  /**
+   * 元素类型 -> 距离计算类别映射
+   */
+  private mapTypeToCategory(type: string): 'circle' | 'polygon' {
+    if (type === 'circle') {
+      return 'circle';
+    }
+    return 'polygon';
   }
 
   // ==================== 圆形距离计算方法 ====================
@@ -304,136 +295,297 @@ export class GeometryService {
   }
 
   /**
-   * 计算圆形到三角形的距离
+   * 计算圆形到多边形的距离
    * TODO: 实现具体算法
+   *
+   * @param circle 圆形
+   * @param polygon 多边形
    */
-  private getDistanceCircleToTriangle(
-    circle: IElementProvider,
-    triangle: IElementProvider,
-  ): number {
-    void circle;
-    void triangle;
-    // TODO: 实现圆形到三角形的距离计算
-    return 0;
-  }
+  private getDistanceCircleToPolygon(circle: IElementProvider, polygon: IElementProvider): number {
+    const { center, radius } = this.getCircleGeometry(circle);
 
-  /**
-   * 计算圆形到矩形（包括文本、图片、group）的距离
-   * TODO: 实现具体算法
-   */
-  private getDistanceCircleToRect(circle: IElementProvider, rect: IElementProvider): number {
-    void circle;
-    void rect;
-    // TODO: 实现圆形到矩形的距离计算
-    return 0;
+    // 如果圆心已经在多边形内部，说明相交，距离为 0
+    if (this.isPointInElement(center, polygon)) {
+      return 0;
+    }
+
+    const polygonPoints = this.getPolygonWorldPoints(polygon);
+    if (polygonPoints.length === 0) {
+      // 没有多边形顶点信息，退化为圆心到元素位置的距离
+      const fallbackPoint = polygon.getPosition();
+      const distance = this.getDistancePointToPoint(center, fallbackPoint);
+      return Math.max(distance - radius, 0);
+    }
+
+    let minDistance = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < polygonPoints.length; i++) {
+      const current = polygonPoints[i];
+      const next = polygonPoints[(i + 1) % polygonPoints.length];
+      const distance = this.getDistancePointToSegment(center, current, next);
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
+
+    return Math.max(minDistance - radius, 0);
   }
 
   /**
    * 计算圆形到直线的距离
-   * TODO: 实现具体算法
+   *
+   * @param circle 圆形
+   * @param line 直线
    */
   private getDistanceCircleToLine(circle: IElementProvider, line: Line): number {
-    void circle;
-    void line;
-    // TODO: 实现圆形到直线的距离计算
-    return 0;
+    const { center, radius } = this.getCircleGeometry(circle);
+    const distance = this.getDistancePointToSegment(center, line.start, line.end);
+    return Math.max(distance - radius, 0);
   }
 
-  // ==================== 三角形距离计算方法 ====================
+  // ==================== 多边形距离计算方法 ====================
 
   /**
-   * 计算三角形到圆形的距离
-   * TODO: 实现具体算法
+   * 计算多边形到多边形的距离
    */
-  private getDistanceTriangleToCircle(
-    triangle: IElementProvider,
-    circle: IElementProvider,
+  private getDistancePolygonToPolygon(
+    polygonA: IElementProvider,
+    polygonB: IElementProvider,
   ): number {
-    void triangle;
-    void circle;
-    // TODO: 实现三角形到圆形的距离计算
-    return 0;
+    const pointsA = this.getPolygonWorldPoints(polygonA);
+    const pointsB = this.getPolygonWorldPoints(polygonB);
+
+    if (pointsA.length < 2 || pointsB.length < 2) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+
+    const minDistanceAtoB = this.getMinDistancePointSetToPolygon(pointsA, pointsB);
+    const minDistanceBtoA = this.getMinDistancePointSetToPolygon(pointsB, pointsA);
+
+    return Math.min(minDistanceAtoB, minDistanceBtoA);
   }
 
   /**
-   * 计算三角形到三角形的距离
-   * TODO: 实现具体算法
+   * 计算多边形到直线的距离
    */
-  private getDistanceTriangleToTriangle(
-    triangleA: IElementProvider,
-    triangleB: IElementProvider,
+  private getDistancePolygonToLine(polygon: IElementProvider, line: Line): number {
+    const polygonPoints = this.getPolygonWorldPoints(polygon);
+    if (polygonPoints.length < 2) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < polygonPoints.length; i++) {
+      const current = polygonPoints[i];
+      const next = polygonPoints[(i + 1) % polygonPoints.length];
+      const distance = this.getDistanceSegmentToSegment(current, next, line.start, line.end);
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+      if (minDistance === 0) {
+        return 0;
+      }
+    }
+
+    return minDistance;
+  }
+
+  /**
+   * 计算圆的几何信息（圆心、半径）
+   *
+   * @param element 元素提供者
+   */
+  private getCircleGeometry(element: IElementProvider): { center: Point; radius: number } {
+    const position = element.getPosition();
+    const size = element.getSize();
+    const scale = element.getScale();
+    const pivot = element.getPivot();
+
+    const width = size.width * scale.scaleX;
+    const height = size.height * scale.scaleY;
+
+    const center: Point = {
+      x: position.x + width * pivot.pivotX,
+      y: position.y + height * pivot.pivotY,
+    };
+
+    const radius = width / 2;
+
+    return { center, radius };
+  }
+
+  /**
+   * 获取多边形的世界坐标顶点列表
+   *
+   * @param element 元素提供者
+   */
+  private getPolygonWorldPoints(element: IElementProvider): Point[] {
+    const localPoints = element.getLocalPoints?.();
+    if (!Array.isArray(localPoints) || localPoints.length < 2) {
+      return [];
+    }
+
+    return localPoints.map((point) =>
+      this.coordinateTransformer.localToWorld(point.x, point.y, element),
+    );
+  }
+
+  /**
+   * 计算点到另一点的距离
+   *
+   * @param a 点A
+   * @param b 点B
+   */
+  private getDistancePointToPoint(a: Point, b: Point): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /**
+   * 计算点到线段的最短距离
+   *
+   * @param point 点
+   * @param start 线段起点
+   * @param end 线段终点
+   */
+  private getDistancePointToSegment(point: Point, start: Point, end: Point): number {
+    const segmentX = end.x - start.x;
+    const segmentY = end.y - start.y;
+    const lengthSquared = segmentX * segmentX + segmentY * segmentY;
+
+    if (lengthSquared === 0) {
+      return this.getDistancePointToPoint(point, start);
+    }
+
+    // 根据 AP 和 AB 向量的点乘确定投影点在AB上的位置
+    // 如果投影点在AB上，则t的值在0到1之间，如果t小于0，则投影点在AB的起点之前，如果t大于1，则投影点在AB的终点之后
+    const t = ((point.x - start.x) * segmentX + (point.y - start.y) * segmentY) / lengthSquared;
+
+    const clampedT = Math.max(0, Math.min(1, t));
+    const closestPoint = {
+      x: start.x + clampedT * segmentX,
+      y: start.y + clampedT * segmentY,
+    };
+
+    return this.getDistancePointToPoint(point, closestPoint);
+  }
+
+  /**
+   * 计算两条线段之间的最短距离
+   *
+   * @param aStart 线段A起点
+   * @param aEnd 线段A终点
+   * @param bStart 线段B起点
+   * @param bEnd 线段B终点
+   */
+  private getDistanceSegmentToSegment(
+    aStart: Point,
+    aEnd: Point,
+    bStart: Point,
+    bEnd: Point,
   ): number {
-    void triangleA;
-    void triangleB;
-    // TODO: 实现三角形到三角形的距离计算
-    return 0;
+    if (this.doSegmentsIntersect(aStart, aEnd, bStart, bEnd)) {
+      return 0;
+    }
+
+    return Math.min(
+      this.getDistancePointToSegment(aStart, bStart, bEnd),
+      this.getDistancePointToSegment(aEnd, bStart, bEnd),
+      this.getDistancePointToSegment(bStart, aStart, aEnd),
+      this.getDistancePointToSegment(bEnd, aStart, aEnd),
+    );
   }
 
   /**
-   * 计算三角形到矩形（包括文本、图片、group）的距离
-   * TODO: 实现具体算法
+   * 判断两条线段是否相交
+   *
+   * @param aStart 线段A起点
+   * @param aEnd 线段A终点
+   * @param bStart 线段B起点
+   * @param bEnd 线段B终点
    */
-  private getDistanceTriangleToRect(triangle: IElementProvider, rect: IElementProvider): number {
-    void triangle;
-    void rect;
-    // TODO: 实现三角形到矩形的距离计算
-    return 0;
+  private doSegmentsIntersect(aStart: Point, aEnd: Point, bStart: Point, bEnd: Point): boolean {
+    const o1 = this.orientation(aStart, aEnd, bStart);
+    const o2 = this.orientation(aStart, aEnd, bEnd);
+    const o3 = this.orientation(bStart, bEnd, aStart);
+    const o4 = this.orientation(bStart, bEnd, aEnd);
+
+    if (o1 !== o2 && o3 !== o4) {
+      return true;
+    }
+
+    if (o1 === 0 && this.onSegment(aStart, bStart, aEnd)) return true;
+    if (o2 === 0 && this.onSegment(aStart, bEnd, aEnd)) return true;
+    if (o3 === 0 && this.onSegment(bStart, aStart, bEnd)) return true;
+    if (o4 === 0 && this.onSegment(bStart, aEnd, bEnd)) return true;
+
+    return false;
   }
 
   /**
-   * 计算三角形到直线的距离
-   * TODO: 实现具体算法
+   * 计算线段的朝向
+   *
+   * @param a 点A
+   * @param b 点B
+   * @param c 点C
    */
-  private getDistanceTriangleToLine(triangle: IElementProvider, line: Line): number {
-    void triangle;
-    void line;
-    // TODO: 实现三角形到直线的距离计算
-    return 0;
-  }
-
-  // ==================== 矩形距离计算方法 ====================
-
-  /**
-   * 计算矩形（包括文本、图片、group）到圆形的距离
-   * TODO: 实现具体算法
-   */
-  private getDistanceRectToCircle(rect: IElementProvider, circle: IElementProvider): number {
-    void rect;
-    void circle;
-    // TODO: 实现矩形到圆形的距离计算
-    return 0;
+  private orientation(a: Point, b: Point, c: Point): number {
+    const value = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (value === 0) return 0;
+    return value > 0 ? 1 : 2;
   }
 
   /**
-   * 计算矩形（包括文本、图片、group）到三角形的距离
-   * TODO: 实现具体算法
+   * 判断点是否在线段上
+   *
+   * @param start 线段起点
+   * @param point 点
+   * @param end 线段终点
    */
-  private getDistanceRectToTriangle(rect: IElementProvider, triangle: IElementProvider): number {
-    void rect;
-    void triangle;
-    // TODO: 实现矩形到三角形的距离计算
-    return 0;
+  private onSegment(start: Point, point: Point, end: Point): boolean {
+    return (
+      Math.min(start.x, end.x) <= point.x &&
+      point.x <= Math.max(start.x, end.x) &&
+      Math.min(start.y, end.y) <= point.y &&
+      point.y <= Math.max(start.y, end.y)
+    );
   }
 
   /**
-   * 计算矩形（包括文本、图片、group）到矩形的距离
-   * TODO: 实现具体算法
+   * 计算一组点到多边形的最短距离
    */
-  private getDistanceRectToRect(rectA: IElementProvider, rectB: IElementProvider): number {
-    void rectA;
-    void rectB;
-    // TODO: 实现矩形到矩形的距离计算
-    return 0;
+  private getMinDistancePointSetToPolygon(points: Point[], polygonPoints: Point[]): number {
+    let minDistance = Number.POSITIVE_INFINITY;
+
+    for (const point of points) {
+      const distance = this.getDistancePointToPolygon(point, polygonPoints);
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+
+      if (minDistance === 0) {
+        return 0;
+      }
+    }
+
+    return minDistance;
   }
 
   /**
-   * 计算矩形（包括文本、图片、group）到直线的距离
-   * TODO: 实现具体算法
+   * 计算点到多边形的距离
    */
-  private getDistanceRectToLine(rect: IElementProvider, line: Line): number {
-    void rect;
-    void line;
-    // TODO: 实现矩形到直线的距离计算
-    return 0;
+  private getDistancePointToPolygon(point: Point, polygonPoints: Point[]): number {
+    let minDistance = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i < polygonPoints.length; i++) {
+      const current = polygonPoints[i];
+      const next = polygonPoints[(i + 1) % polygonPoints.length];
+      const distance = this.getDistancePointToSegment(point, current, next);
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
+
+    return minDistance;
   }
 }
