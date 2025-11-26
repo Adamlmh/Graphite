@@ -49,6 +49,7 @@ class EventBridge {
     pointerup?: (event: PIXI.FederatedPointerEvent) => void;
     pointerupoutside?: (event: PIXI.FederatedPointerEvent) => void;
     wheel?: (event: PIXI.FederatedWheelEvent) => void;
+    domWheel?: (event: WheelEvent) => void;
   } = {};
   // pointermove 节流相关状态
   private pendingPointerMoveEvent: PIXI.FederatedPointerEvent | null = null;
@@ -88,6 +89,7 @@ class EventBridge {
     if (!this.app) return;
 
     const stage = this.app.stage;
+    const view = this.app.view as HTMLCanvasElement | undefined;
 
     // 创建并保存事件处理函数引用
     this.eventHandlers.pointerdown = (event: PIXI.FederatedPointerEvent) => {
@@ -112,6 +114,16 @@ class EventBridge {
     stage.on('pointerup', this.eventHandlers.pointerup);
     stage.on('pointerupoutside', this.eventHandlers.pointerupoutside);
     stage.on('wheel', this.eventHandlers.wheel);
+
+    // DOM 层阻止 Ctrl + 滚轮触发浏览器缩放
+    if (view) {
+      this.eventHandlers.domWheel = (event: WheelEvent) => {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+        }
+      };
+      view.addEventListener('wheel', this.eventHandlers.domWheel, { passive: false });
+    }
   }
 
   /**
@@ -250,6 +262,12 @@ class EventBridge {
       }
       if (this.eventHandlers.wheel) {
         stage.off('wheel', this.eventHandlers.wheel);
+      }
+      if (this.eventHandlers.domWheel) {
+        const view = this.app.view as HTMLCanvasElement | undefined;
+        if (view) {
+          view.removeEventListener('wheel', this.eventHandlers.domWheel);
+        }
       }
     }
     // 清空事件处理函数引用
