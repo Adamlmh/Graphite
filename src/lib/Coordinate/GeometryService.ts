@@ -14,6 +14,14 @@ import type { CoordinateTransformer, IElementProvider, LocalPoint } from './Coor
 import type { Point } from '../../types';
 import type { Bounds } from './ViewportManager';
 
+/**
+ * 直线定义（两点确定一条直线）
+ */
+export interface Line {
+  start: Point;
+  end: Point;
+}
+
 export class GeometryService {
   private coordinateTransformer: CoordinateTransformer;
 
@@ -188,27 +196,244 @@ export class GeometryService {
    *
    * @param elA 元素 A 提供者
    * @param elB 元素 B 提供者
-   * @returns 两个元素中心点之间的欧氏距离
+   * @returns 两个元素之间的最短距离
    */
   public getDistanceBetweenElements(elA: IElementProvider, elB: IElementProvider): number {
-    // 获取两个元素的边界框
-    const boundsA = this.getElementBoundsWorld(elA);
-    const boundsB = this.getElementBoundsWorld(elB);
+    const typeA = elA.getType();
+    const typeB = elB.getType();
 
-    // 计算各自边界框的中心点
+    // 根据元素类型分发到不同的计算方法
+    // 圆形到其他元素
+    if (typeA === 'circle') {
+      if (typeB === 'circle') {
+        return this.getDistanceCircleToCircle(elA, elB);
+      } else if (typeB === 'triangle') {
+        return this.getDistanceCircleToTriangle(elA, elB);
+      } else {
+        return this.getDistanceCircleToRect(elA, elB);
+      }
+    }
+
+    // 三角形到其他元素
+    if (typeA === 'triangle') {
+      if (typeB === 'circle') {
+        return this.getDistanceTriangleToCircle(elA, elB);
+      } else if (typeB === 'triangle') {
+        return this.getDistanceTriangleToTriangle(elA, elB);
+      } else {
+        return this.getDistanceTriangleToRect(elA, elB);
+      }
+    }
+
+    // 矩形/文本/图片/group 到其他元素
+    if (typeB === 'circle') {
+      return this.getDistanceRectToCircle(elA, elB);
+    } else if (typeB === 'triangle') {
+      return this.getDistanceRectToTriangle(elA, elB);
+    } else {
+      return this.getDistanceRectToRect(elA, elB);
+    }
+  }
+
+  /**
+   * 计算元素到直线的距离
+   *
+   * @param element 元素提供者
+   * @param line 直线
+   * @returns 元素到直线的最短距离
+   */
+  public getDistanceElementToLine(element: IElementProvider, line: Line): number {
+    const type = element.getType();
+
+    switch (type) {
+      case 'circle':
+        return this.getDistanceCircleToLine(element, line);
+      case 'triangle':
+        return this.getDistanceTriangleToLine(element, line);
+      default:
+        return this.getDistanceRectToLine(element, line);
+    }
+  }
+
+  // ==================== 圆形距离计算方法 ====================
+
+  /**
+   * 计算圆形到圆形的距离
+   *
+   * 算法：
+   * 1. 计算两个圆心的距离
+   * 2. 如果圆心距离 <= 两个半径之和，说明相交或包含，距离为 0
+   * 3. 否则，距离 = 圆心距离 - (半径A + 半径B)
+   */
+  private getDistanceCircleToCircle(circleA: IElementProvider, circleB: IElementProvider): number {
+    // 获取两个圆的位置和尺寸
+    const posA = circleA.getPosition();
+    const sizeA = circleA.getSize();
+    const posB = circleB.getPosition();
+    const sizeB = circleB.getSize();
+
+    // 计算圆心位置（考虑 pivot）
+    const pivotA = circleA.getPivot();
+    const pivotB = circleB.getPivot();
     const centerA = {
-      x: boundsA.x + boundsA.width / 2,
-      y: boundsA.y + boundsA.height / 2,
+      x: posA.x + sizeA.width * pivotA.pivotX,
+      y: posA.y + sizeA.height * pivotA.pivotY,
     };
-
     const centerB = {
-      x: boundsB.x + boundsB.width / 2,
-      y: boundsB.y + boundsB.height / 2,
+      x: posB.x + sizeB.width * pivotB.pivotX,
+      y: posB.y + sizeB.height * pivotB.pivotY,
     };
 
+    // 计算圆心距离
     const dx = centerB.x - centerA.x;
     const dy = centerB.y - centerA.y;
+    const centerDistance = Math.sqrt(dx * dx + dy * dy);
 
-    return Math.sqrt(dx * dx + dy * dy);
+    // 计算半径
+    const radiusA = sizeA.width / 2;
+    const radiusB = sizeB.width / 2;
+
+    // 如果圆心距离小于等于两个半径之和，说明相交或包含
+    const sumRadius = radiusA + radiusB;
+    if (centerDistance <= sumRadius) {
+      return 0;
+    }
+
+    // 否则，距离 = 圆心距离 - 两个半径之和
+    return centerDistance - sumRadius;
+  }
+
+  /**
+   * 计算圆形到三角形的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceCircleToTriangle(
+    circle: IElementProvider,
+    triangle: IElementProvider,
+  ): number {
+    void circle;
+    void triangle;
+    // TODO: 实现圆形到三角形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算圆形到矩形（包括文本、图片、group）的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceCircleToRect(circle: IElementProvider, rect: IElementProvider): number {
+    void circle;
+    void rect;
+    // TODO: 实现圆形到矩形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算圆形到直线的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceCircleToLine(circle: IElementProvider, line: Line): number {
+    void circle;
+    void line;
+    // TODO: 实现圆形到直线的距离计算
+    return 0;
+  }
+
+  // ==================== 三角形距离计算方法 ====================
+
+  /**
+   * 计算三角形到圆形的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceTriangleToCircle(
+    triangle: IElementProvider,
+    circle: IElementProvider,
+  ): number {
+    void triangle;
+    void circle;
+    // TODO: 实现三角形到圆形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算三角形到三角形的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceTriangleToTriangle(
+    triangleA: IElementProvider,
+    triangleB: IElementProvider,
+  ): number {
+    void triangleA;
+    void triangleB;
+    // TODO: 实现三角形到三角形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算三角形到矩形（包括文本、图片、group）的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceTriangleToRect(triangle: IElementProvider, rect: IElementProvider): number {
+    void triangle;
+    void rect;
+    // TODO: 实现三角形到矩形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算三角形到直线的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceTriangleToLine(triangle: IElementProvider, line: Line): number {
+    void triangle;
+    void line;
+    // TODO: 实现三角形到直线的距离计算
+    return 0;
+  }
+
+  // ==================== 矩形距离计算方法 ====================
+
+  /**
+   * 计算矩形（包括文本、图片、group）到圆形的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceRectToCircle(rect: IElementProvider, circle: IElementProvider): number {
+    void rect;
+    void circle;
+    // TODO: 实现矩形到圆形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算矩形（包括文本、图片、group）到三角形的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceRectToTriangle(rect: IElementProvider, triangle: IElementProvider): number {
+    void rect;
+    void triangle;
+    // TODO: 实现矩形到三角形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算矩形（包括文本、图片、group）到矩形的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceRectToRect(rectA: IElementProvider, rectB: IElementProvider): number {
+    void rectA;
+    void rectB;
+    // TODO: 实现矩形到矩形的距离计算
+    return 0;
+  }
+
+  /**
+   * 计算矩形（包括文本、图片、group）到直线的距离
+   * TODO: 实现具体算法
+   */
+  private getDistanceRectToLine(rect: IElementProvider, line: Line): number {
+    void rect;
+    void line;
+    // TODO: 实现矩形到直线的距离计算
+    return 0;
   }
 }
