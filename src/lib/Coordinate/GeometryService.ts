@@ -107,6 +107,12 @@ export class GeometryService {
     }
   }
 
+  /**
+   * 判断点是否在矩形内部
+   *
+   * @param localPoint 局部坐标点
+   * @param size 矩形尺寸
+   */
   private isPointInRect(localPoint: LocalPoint, size: { width: number; height: number }): boolean {
     if (size.width === 0 || size.height === 0) return false;
 
@@ -238,6 +244,9 @@ export class GeometryService {
 
   /**
    * 元素类型 -> 距离计算类别映射
+   *
+   * @param type 元素类型
+   * @returns 距离计算类别
    */
   private mapTypeToCategory(type: string): 'circle' | 'polygon' {
     if (type === 'circle') {
@@ -255,48 +264,29 @@ export class GeometryService {
    * 1. 计算两个圆心的距离
    * 2. 如果圆心距离 <= 两个半径之和，说明相交或包含，距离为 0
    * 3. 否则，距离 = 圆心距离 - (半径A + 半径B)
+   *
+   * @param circleA 圆形A
+   * @param circleB 圆形B
+   * @returns 圆形到圆形的距离
    */
   private getDistanceCircleToCircle(circleA: IElementProvider, circleB: IElementProvider): number {
-    // 获取两个圆的位置和尺寸
-    const posA = circleA.getPosition();
-    const sizeA = circleA.getSize();
-    const posB = circleB.getPosition();
-    const sizeB = circleB.getSize();
+    const geometryA = this.getCircleGeometry(circleA);
+    const geometryB = this.getCircleGeometry(circleB);
 
-    // 计算圆心位置（考虑 pivot）
-    const pivotA = circleA.getPivot();
-    const pivotB = circleB.getPivot();
-    const centerA = {
-      x: posA.x + sizeA.width * pivotA.pivotX,
-      y: posA.y + sizeA.height * pivotA.pivotY,
-    };
-    const centerB = {
-      x: posB.x + sizeB.width * pivotB.pivotX,
-      y: posB.y + sizeB.height * pivotB.pivotY,
-    };
-
-    // 计算圆心距离
-    const dx = centerB.x - centerA.x;
-    const dy = centerB.y - centerA.y;
+    const dx = geometryB.center.x - geometryA.center.x;
+    const dy = geometryB.center.y - geometryA.center.y;
     const centerDistance = Math.sqrt(dx * dx + dy * dy);
 
-    // 计算半径
-    const radiusA = sizeA.width / 2;
-    const radiusB = sizeB.width / 2;
-
-    // 如果圆心距离小于等于两个半径之和，说明相交或包含
-    const sumRadius = radiusA + radiusB;
+    const sumRadius = geometryA.radius + geometryB.radius;
     if (centerDistance <= sumRadius) {
       return 0;
     }
 
-    // 否则，距离 = 圆心距离 - 两个半径之和
     return centerDistance - sumRadius;
   }
 
   /**
    * 计算圆形到多边形的距离
-   * TODO: 实现具体算法
    *
    * @param circle 圆形
    * @param polygon 多边形
@@ -346,6 +336,10 @@ export class GeometryService {
 
   /**
    * 计算多边形到多边形的距离
+   *
+   * @param polygonA 多边形A
+   * @param polygonB 多边形B
+   * @returns 多边形到多边形的距离
    */
   private getDistancePolygonToPolygon(
     polygonA: IElementProvider,
@@ -366,6 +360,10 @@ export class GeometryService {
 
   /**
    * 计算多边形到直线的距离
+   *
+   * @param polygon 多边形
+   * @param line 直线
+   * @returns 多边形到直线的距离
    */
   private getDistancePolygonToLine(polygon: IElementProvider, line: Line): number {
     const polygonPoints = this.getPolygonWorldPoints(polygon);
@@ -395,7 +393,6 @@ export class GeometryService {
    * @param element 元素提供者
    */
   private getCircleGeometry(element: IElementProvider): { center: Point; radius: number } {
-    const position = element.getPosition();
     const size = element.getSize();
     const scale = element.getScale();
     const pivot = element.getPivot();
@@ -403,12 +400,11 @@ export class GeometryService {
     const width = size.width * scale.scaleX;
     const height = size.height * scale.scaleY;
 
-    const center: Point = {
-      x: position.x + width * pivot.pivotX,
-      y: position.y + height * pivot.pivotY,
-    };
+    const localCenterX = size.width * pivot.pivotX;
+    const localCenterY = size.height * pivot.pivotY;
+    const center = this.coordinateTransformer.localToWorld(localCenterX, localCenterY, element);
 
-    const radius = width / 2;
+    const radius = Math.max(width, height) / 2;
 
     return { center, radius };
   }
@@ -553,6 +549,10 @@ export class GeometryService {
 
   /**
    * 计算一组点到多边形的最短距离
+   *
+   * @param points 点集
+   * @param polygonPoints 多边形顶点集
+   * @returns 点集到多边形的最短距离
    */
   private getMinDistancePointSetToPolygon(points: Point[], polygonPoints: Point[]): number {
     let minDistance = Number.POSITIVE_INFINITY;
@@ -573,6 +573,10 @@ export class GeometryService {
 
   /**
    * 计算点到多边形的距离
+   *
+   * @param point 点
+   * @param polygonPoints 多边形顶点集
+   * @returns 点到多边形的最短距离
    */
   private getDistancePointToPolygon(point: Point, polygonPoints: Point[]): number {
     let minDistance = Number.POSITIVE_INFINITY;
