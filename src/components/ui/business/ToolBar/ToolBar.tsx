@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Tooltip } from 'antd';
+import { Button, Tooltip, InputNumber } from 'antd';
 import {
   DragOutlined,
   SelectOutlined,
@@ -40,7 +40,7 @@ const ToolBar: React.FC = () => {
         {tools.map((tool) => (
           <Tooltip key={tool.id} title={tool.label} placement="bottom">
             <Button
-              type={activeTool === tool.id ? 'primary' : 'default'}
+              type="text"
               className={[styles.toolButton, activeTool === tool.id ? styles.active : '']
                 .filter(Boolean)
                 .join(' ')}
@@ -52,10 +52,22 @@ const ToolBar: React.FC = () => {
         <div className={styles.divider} />
         <Tooltip title={isDarkMode ? '切换为明亮主题' : '切换为暗夜主题'} placement="bottom">
           <Button
-            type="default"
+            type="text"
             className={styles.toolButton}
             icon={isDarkMode ? <MoonOutlined /> : <SunOutlined />}
             onClick={() => setIsDarkMode((prev) => !prev)}
+          />
+        </Tooltip>
+      </div>
+      <div className={styles.rightSection}>
+        <Tooltip title="缩放比例" placement="bottom">
+          <InputNumber
+            min={50}
+            max={250}
+            defaultValue={100}
+            changeOnWheel
+            className={styles.zoomInput}
+            suffix="%"
           />
         </Tooltip>
       </div>
