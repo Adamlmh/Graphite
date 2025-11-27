@@ -1,12 +1,13 @@
 import type { StoreApi } from 'zustand';
-import type { Element, ViewportState } from '../../types';
 import type { RenderEngine } from '../../renderer/RenderEngine';
+import type { Element, ViewportState } from '../../types';
 import { type AllRenderCommand, RenderPriority } from '../../types/render.types';
 
 type ElementsState = Record<string, Element>;
 type BridgeStoreState = {
   elements: ElementsState;
   viewport: ViewportState;
+  tool: { tempElement?: Element | null };
 };
 
 // todo 未来可以考虑使用 subscribeWithSelector 来优化订阅
@@ -64,7 +65,12 @@ export class CanvasBridge {
       (next) => this.handleViewportChange(next),
     );
 
-    this.unsubscribes.push(elementsUnsubscribe, viewportUnsubscribe);
+    const tempElementUnsubscribe = this.subscribeToSlice(
+      (state) => state.tool.tempElement,
+      (next, prev) => this.handleTempElementChange(next, prev),
+    );
+
+    this.unsubscribes.push(elementsUnsubscribe, viewportUnsubscribe, tempElementUnsubscribe);
   }
 
   /**
@@ -155,6 +161,30 @@ export class CanvasBridge {
   }
 
   /**
+   * 处理临时元素（预览）变化
+   *
+   * @param next - 最新的临时元素
+   * @param prev - 之前的临时元素
+   */
+  protected handleTempElementChange(
+    next: Element | null | undefined,
+    prev: Element | null | undefined,
+  ): void {
+    // 如果临时元素没有变化，直接返回
+    if (Object.is(next, prev)) {
+      return;
+    }
+
+    if (next) {
+      // 有新的临时元素，创建或更新预览
+      this.updatePreviewElement(next);
+    } else {
+      // 临时元素被清除，移除预览
+      this.removePreviewElement();
+    }
+  }
+
+  /**
    * 派发渲染命令
    *
    * @param commands - 渲染命令
@@ -228,5 +258,21 @@ export class CanvasBridge {
       value !== null &&
       Object.prototype.toString.call(value) === '[object Object]'
     );
+  }
+
+  /**
+   * 更新预览元素
+   *
+   * @param element - 临时元素
+   */
+  private async updatePreviewElement(element: Element): Promise<void> {
+    await this.renderEngine.updatePreviewElement(element);
+  }
+
+  /**
+   * 移除预览元素
+   */
+  private removePreviewElement(): void {
+    this.renderEngine.removePreviewElement();
   }
 }

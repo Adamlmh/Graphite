@@ -1,6 +1,6 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
-import type { ElementType } from '../types';
+import type { Element, ElementType } from '../types';
 import {
   type AllRenderCommand,
   type CreateElementCommand,
@@ -24,6 +24,9 @@ export class RenderEngine {
 
   // 元素图形映射表：维护业务元素与PIXI图形对象的关联
   private elementGraphics: Map<string, PIXI.Container> = new Map();
+
+  // 预览元素相关
+  private previewGraphics: PIXI.Container | null = null;
 
   private container: HTMLElement;
 
@@ -206,5 +209,44 @@ export class RenderEngine {
    */
   getPixiApp(): PIXI.Application {
     return this.pixiApp;
+  }
+
+  /**
+   * 更新预览元素
+   */
+  async updatePreviewElement(element: Element): Promise<void> {
+    try {
+      if (this.previewGraphics) {
+        // 更新现有预览
+        const renderer = this.rendererRegistry.getRenderer(element.type);
+        renderer.update(this.previewGraphics, element);
+      } else {
+        // 创建新的预览
+        const resources = await this.resourceManager.prepareResources(element);
+        const renderer = this.rendererRegistry.getRenderer(element.type);
+        const graphics = renderer.render(element, resources);
+
+        // 设置预览样式（半透明）
+        graphics.alpha = 0.5;
+
+        // 添加到舞台
+        this.pixiApp.stage.addChild(graphics);
+
+        this.previewGraphics = graphics;
+      }
+    } catch (error) {
+      console.error('更新预览元素失败:', error);
+    }
+  }
+
+  /**
+   * 移除预览元素
+   */
+  removePreviewElement(): void {
+    if (this.previewGraphics) {
+      this.previewGraphics.parent?.removeChild(this.previewGraphics);
+      this.previewGraphics.destroy();
+      this.previewGraphics = null;
+    }
   }
 }
