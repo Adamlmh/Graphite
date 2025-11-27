@@ -1,36 +1,7 @@
 import type { StoreApi } from 'zustand';
 import type { Element, ViewportState } from '../../types';
-
-interface IRenderLayer {
-  /**
-   * 创建元素。后续 diff/patch 完成后，Bridge 将调用该方法创建渲染实例。
-   */
-  createElement: (element: Element) => void;
-
-  /**
-   * 更新已有元素。changes 为增量数据，当前阶段可以直接传完整元素对象。
-   */
-  updateElement: (id: string, changes: Partial<Element>) => void;
-
-  /**
-   * 删除元素，对应渲染实例的销毁。
-   */
-  deleteElement: (id: string) => void;
-
-  /**
-   * 更新视口参数（缩放、偏移等）。
-   */
-  updateViewport: (viewport: ViewportState) => void;
-
-  /**
-   * 当前阶段 Bridge 不做 diff，直接把 next/prev 快照交给渲染层
-   * 渲染层可以自行决定如何消费；未来会被 create/update/delete 替代
-   */
-  syncElementsSnapshot?: (payload: {
-    next: Record<string, Element>;
-    prev: Record<string, Element>;
-  }) => void;
-}
+import type { RenderEngine } from '../../renderer/RenderEngine';
+import { type AllRenderCommand, RenderPriority } from '../../types/render.types';
 
 type ElementsState = Record<string, Element>;
 type BridgeStoreState = {
@@ -44,16 +15,19 @@ type StoreWithSelector = Pick<StoreApi<BridgeStoreState>, 'getState' | 'subscrib
 /**
  * CanvasBridge 负责把 Zustand 状态的“大类”变化同步到渲染层
  * 这里不写任何业务逻辑，只是做状态到渲染接口的转发
+ *
+ * @param store - 状态存储
+ * @param renderEngine - 渲染引擎
  */
 export class CanvasBridge {
   private unsubscribes: Array<() => void> = [];
   private isRunning = false;
   private readonly store: StoreWithSelector;
-  private readonly renderLayer: IRenderLayer;
+  private readonly renderEngine: RenderEngine;
 
-  constructor(store: StoreWithSelector, renderLayer: IRenderLayer) {
+  constructor(store: StoreWithSelector, renderEngine: RenderEngine) {
     this.store = store;
-    this.renderLayer = renderLayer;
+    this.renderEngine = renderEngine;
   }
 
   /**
@@ -128,15 +102,47 @@ export class CanvasBridge {
    * 未来可以在这里插入 diff / patch / 批处理 等高级能力。
    */
   protected handleElementsChange(next: ElementsState, prev: ElementsState): void {
-    if (this.renderLayer.syncElementsSnapshot) {
-      this.renderLayer.syncElementsSnapshot({ next, prev });
-      return;
-    }
+    const commands: AllRenderCommand[] = [];
 
-    // fallback：没有 snapshot 能力时，直接把最新元素逐个 update。
-    Object.values(next).forEach((element) => {
-      this.renderLayer.updateElement(element.id, element);
+    // 处理删除
+    Object.keys(prev).forEach((elementId) => {
+      if (!next[elementId]) {
+        commands.push({
+          type: 'DELETE_ELEMENT',
+          elementId,
+          priority: RenderPriority.NORMAL,
+        });
+      }
     });
+
+    // 处理新增与更新
+    Object.values(next).forEach((nextElement) => {
+      const prevElement = prev[nextElement.id];
+      if (!prevElement) {
+        commands.push({
+          type: 'CREATE_ELEMENT',
+          elementId: nextElement.id,
+          elementType: nextElement.type,
+          elementData: nextElement,
+          priority: RenderPriority.NORMAL,
+        });
+        return;
+      }
+
+      const properties = this.diffElement(prevElement, nextElement);
+      if (properties) {
+        commands.push({
+          type: 'UPDATE_ELEMENT',
+          elementId: nextElement.id,
+          properties,
+          priority: RenderPriority.NORMAL,
+        });
+      }
+    });
+
+    if (commands.length > 0) {
+      void this.dispatchCommands(commands);
+    }
   }
 
   /**
@@ -145,6 +151,82 @@ export class CanvasBridge {
    * @param next - 最新的视口状态
    */
   protected handleViewportChange(next: ViewportState): void {
-    this.renderLayer.updateViewport(next);
+    void next; // 视口的渲染联动后续接入，目前仅监听变化以便未来扩展
+  }
+
+  /**
+   * 派发渲染命令
+   *
+   * @param commands - 渲染命令
+   */
+  private async dispatchCommands(commands: AllRenderCommand[]): Promise<void> {
+    for (const command of commands) {
+      await this.renderEngine.executeRenderCommand(command);
+    }
+  }
+
+  /**
+   * 比较两个元素
+   *
+   * @param prevElement - 之前的元素
+   * @param nextElement - 最新的元素
+   * @returns 差异属性
+   */
+  private diffElement(prevElement: Element, nextElement: Element): Partial<Element> | null {
+    const patch = this.diffRecord(
+      prevElement as unknown as Record<string, unknown>,
+      nextElement as unknown as Record<string, unknown>,
+    );
+    return patch && Object.keys(patch).length > 0 ? (patch as Partial<Element>) : null;
+  }
+
+  /**
+   * 比较两个记录
+   *
+   * @param prevValue - 之前的记录
+   * @param nextValue - 最新的记录
+   * @returns 差异属性
+   */
+  private diffRecord(
+    prevValue: Record<string, unknown>,
+    nextValue: Record<string, unknown>,
+  ): Record<string, unknown> | null {
+    const patch: Record<string, unknown> = {};
+
+    Object.keys(nextValue).forEach((key) => {
+      const nextEntry = nextValue[key];
+      const prevEntry = prevValue[key];
+
+      if (this.isPlainObject(nextEntry) && this.isPlainObject(prevEntry)) {
+        const nestedPatch = this.diffRecord(
+          prevEntry as Record<string, unknown>,
+          nextEntry as Record<string, unknown>,
+        );
+        if (nestedPatch && Object.keys(nestedPatch).length > 0) {
+          patch[key] = nestedPatch;
+        }
+        return;
+      }
+
+      if (!Object.is(prevEntry, nextEntry)) {
+        patch[key] = nextEntry;
+      }
+    });
+
+    return Object.keys(patch).length > 0 ? patch : null;
+  }
+
+  /**
+   * 判断是否是普通对象
+   *
+   * @param value - 值
+   * @returns 是否是普通对象
+   */
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      Object.prototype.toString.call(value) === '[object Object]'
+    );
   }
 }
