@@ -123,14 +123,6 @@ export interface ImageExtensions {
     hue: number; // 色相调整
     blur: number; // 模糊效果
   };
-  // 图片数值调整 - 对应属性面板滑块
-  adjustments?: {
-    brightness: number; // 亮度调整
-    contrast: number; // 对比度调整
-    saturation: number; // 饱和度调整
-    temperature: number; // 色温调整
-    blur: number; // 模糊调整
-  };
 }
 
 /** 组合元素扩展属性 */
