@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Button, Tooltip, InputNumber } from 'antd';
 import {
   DragOutlined,
@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
+import { useTheme } from '../../../../hooks/useTheme';
 import styles from './ToolBar.module.less';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;
@@ -20,8 +21,7 @@ const RoundedRectangleIcon = () => <span className={styles.roundedRectangleIcon}
 const ToolBar: React.FC = () => {
   const activeTool = useCanvasStore((state) => state.tool.activeTool);
   const setActiveTool = useCanvasStore((state) => state.setTool);
-
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
 
   const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
     { id: 'hand', label: '移动', icon: <DragOutlined /> },
@@ -55,7 +55,7 @@ const ToolBar: React.FC = () => {
             type="text"
             className={styles.toolButton}
             icon={isDarkMode ? <MoonOutlined /> : <SunOutlined />}
-            onClick={() => setIsDarkMode((prev) => !prev)}
+            onClick={toggleTheme}
           />
         </Tooltip>
       </div>
@@ -68,6 +68,7 @@ const ToolBar: React.FC = () => {
             changeOnWheel
             className={styles.zoomInput}
             suffix="%"
+            controls={false}
           />
         </Tooltip>
       </div>

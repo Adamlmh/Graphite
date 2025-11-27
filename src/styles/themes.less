@@ -1,0 +1,95 @@
+// 明亮主题变量
+:root {
+  // 基础颜色
+  --bg-primary: #f5f6f8;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f9fafb;
+
+  // 文字颜色
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+
+  // 边框颜色
+  --border-light: rgba(15, 23, 42, 0.06);
+  --border-normal: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.2);
+
+  // 按钮颜色
+  --btn-bg-normal: var(--bg-primary);
+  --btn-bg-hover: #e5e7eb;
+  --btn-bg-active: #dbeafe;
+  --btn-border-active: rgba(37, 99, 235, 0.5);
+
+  // 阴影
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 12px 30px rgba(2, 6, 23, 0.12);
+
+  // 主题色
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+
+  // 面板背景
+  --panel-bg: #ffffff;
+
+  // 画布相关
+  --canvas-bg: #ffffff;
+  --canvas-grid: rgba(15, 23, 42, 0.08);
+}
+
+// 暗夜主题变量
+[data-theme='dark'] {
+  // 基础颜色
+  --bg-primary: #1f2937;
+  --bg-secondary: #111827;
+  --bg-tertiary: #374151;
+
+  // 文字颜色
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-tertiary: #9ca3af;
+
+  // 边框颜色
+  --border-light: rgba(255, 255, 255, 0.08);
+  --border-normal: rgba(255, 255, 255, 0.16);
+  --border-strong: rgba(255, 255, 255, 0.24);
+
+  // 按钮颜色
+  --btn-bg-normal: var(--bg-primary);
+  --btn-bg-hover: #374151;
+  --btn-bg-active: #1e3a8a;
+  --btn-border-active: rgba(59, 130, 246, 0.6);
+
+  // 阴影
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.35);
+
+  // 主题色
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+
+  // 面板背景
+  --panel-bg: #1f2937;
+
+  // 画布相关
+  --canvas-bg: #111827;
+  --canvas-grid: rgba(255, 255, 255, 0.1);
+
+  /* 添加 InputNumber 专用变量 */
+  --input-bg: var(--bg-primary);
+  --input-color: var(--text-primary);
+  --input-placeholder-color: var(--text-tertiary);
+  --input-border-color: var(--border-normal);
+  --input-hover-border-color: var(--primary-color);
+  --input-focus-border-color: var(--primary-color);
+  --input-focus-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+// 主题过渡动画
+* {
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease,
+    box-shadow 0.3s ease;
+}
