@@ -1,10 +1,12 @@
 // hotKeyHandlers.ts
 import { hotKeyManager } from './hotKeyManager';
+import { testElementCreation } from '../interaction/ElementCreationTest';
 
 export function bindCanvasHotKeys() {
   // 例如 Ctrl+A 全选
   hotKeyManager.setHandler('selectAll', () => {
     console.log('按下了 Ctrl+A');
+    testElementCreation(); // 调用测试函数
   });
   hotKeyManager.setHandler('zoomIn', () => {
     console.log('放大');
