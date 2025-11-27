@@ -28,7 +28,7 @@ class HotKeyManager {
     this.userOverrides = loadUserOverrides(); //加载用户定义的快捷键
     this.setupDefaults(); //配置默认快捷键
     eventBus.on('keyboard:down', this.onKeyDown as (payload: unknown) => void); // 订阅键盘事件，总线来自 DOMEventBridge
-    // eventBus.on('wheel', this.onWheel);
+    eventBus.on('wheel', this.onWheel as (payload: unknown) => void);
   }
 
   static get instance() {
@@ -38,7 +38,7 @@ class HotKeyManager {
 
   dispose() {
     eventBus.off('keyboard:down', this.onKeyDown as (payload: unknown) => void);
-    // eventBus.off('wheel', this.onWheel);
+    eventBus.off('wheel', this.onWheel as (payload: unknown) => void);
     this.regs.clear();
     this.index.clear();
     HotKeyManager._instance = null;
@@ -281,46 +281,45 @@ class HotKeyManager {
 
   // 鼠标滚轮事件
   // ========== 滚轮（wheel）事件 ==========
-  // private onWheel = (evt: any) => {
-  //   if (!this.enabled) return;
+  private onWheel = (evt: WheelEvent | { nativeEvent: WheelEvent }) => {
+    if (!this.enabled) return;
 
-  //   const e: WheelEvent = evt.nativeEvent || evt;
-  //   const ctxList = this.getActiveContextsOrder();
+    const e: WheelEvent = 'nativeEvent' in evt ? evt.nativeEvent : evt;
+    const ctxList = this.getActiveContextsOrder();
 
-  //   // “Ctrl 或 Meta + 滚轮”才触发快捷键
-  //   if (!e.shiftKey && !e.metaKey) return;
+    // “Ctrl 或 Meta + 滚轮”才触发快捷键
+    if (!e.ctrlKey && !e.metaKey) return;
 
-  //   const normalized =
-  //     e.deltaY < 0 ? 'WheelUp' : 'WheelDown';
+    const normalized = e.deltaY < 0 ? 'WheelUp' : 'WheelDown';
 
-  //   for (const ctx of ctxList) {
-  //     const idxKey = HotKeyManager.indexKey(normalized, ctx);
-  //     const id = this.index.get(idxKey);
-  //     if (!id) continue;
+    for (const ctx of ctxList) {
+      const idxKey = HotKeyManager.indexKey(normalized, ctx);
+      const id = this.index.get(idxKey);
+      if (!id) continue;
 
-  //     const desc = this.regs.get(id);
-  //     if (!desc) continue;
+      const desc = this.regs.get(id);
+      if (!desc) continue;
 
-  //     const payload: HotKeyTriggerPayload = {
-  //       native: e,
-  //       normalized,
-  //       context: ctx,
-  //       isWheel: true,
-  //       wheelDelta: e.deltaY,
-  //       modifiers: {
-  //         ctrl: e.ctrlKey,
-  //         meta: e.metaKey,
-  //         shift: e.shiftKey,
-  //         alt: e.altKey,
-  //       },
-  //       repeat: false,
-  //     };
+      const payload: HotKeyTriggerPayload = {
+        native: e,
+        normalized,
+        context: ctx,
+        isWheel: true,
+        wheelDelta: e.deltaY,
+        modifiers: {
+          ctrl: e.ctrlKey,
+          meta: e.metaKey,
+          shift: e.shiftKey,
+          alt: e.altKey,
+        },
+        repeat: false,
+      };
 
-  //     desc.handler(payload);
-  //     e.preventDefault();
-  //     return;
-  //   }
-  // };
+      desc.handler(payload);
+      e.preventDefault();
+      return;
+    }
+  };
 
   // ---- 静态工具方法 ----
 
