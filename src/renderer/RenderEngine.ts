@@ -47,7 +47,7 @@ export class RenderEngine {
     this.pixiApp = new PIXI.Application();
 
     await this.pixiApp.init({
-      backgroundColor: 0xd8d9db,
+      backgroundAlpha: 0, // 使用透明背景，由CSS控制背景色
       resolution: window.devicePixelRatio || 1,
       antialias: true,
       autoDensity: true,
@@ -66,6 +66,15 @@ export class RenderEngine {
     this.resourceManager = new ResourceManager();
     this.rendererRegistry = new ElementRendererRegistry(this.resourceManager);
     this.renderScheduler = new RenderScheduler(this.pixiApp);
+  }
+
+  /**
+   * 动态设置背景色（如果需要的话）
+   */
+  setBackgroundColor(color: number): void {
+    if (this.pixiApp && this.pixiApp.renderer) {
+      this.pixiApp.renderer.background.color = color;
+    }
   }
 
   /**
