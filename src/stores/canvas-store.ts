@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { Element, Tool, ViewportState, ToolState, Point } from '../types/index';
-interface CanvasState {
+export interface CanvasState {
   // === 核心数据状态 ===
 
   /**
