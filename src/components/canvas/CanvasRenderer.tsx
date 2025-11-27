@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { eventBridge } from '../../lib/EventBridge';
+import { CanvasBridge } from '../../lib/CanvasBridge/CanvasBridge';
 import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { RenderPriority } from '../../types/render.types';
+import { useCanvasStore } from '../../stores/canvas-store';
 import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
@@ -10,6 +12,7 @@ import './CanvasRenderer.less';
 const CanvasRenderer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderEngineRef = useRef<RenderEngine | null>(null);
+  const bridgeRef = useRef<CanvasBridge | null>(null);
 
   useEffect(() => {
     // 防止 React 严格模式下的重复初始化
@@ -40,7 +43,18 @@ const CanvasRenderer: React.FC = () => {
         const pixiApp = renderEngine.getPixiApp();
         setPixiApp(pixiApp);
 
-        console.log('CanvasRenderer: RenderEngine 初始化完成，创建测试矩形');
+        console.log('CanvasRenderer: RenderEngine 初始化完成，启动 CanvasBridge');
+
+        const storeApi = {
+          getState: useCanvasStore.getState,
+          subscribe: useCanvasStore.subscribe,
+        };
+
+        const bridge = new CanvasBridge(storeApi, renderEngine);
+        bridge.start();
+        bridgeRef.current = bridge;
+
+        console.log('CanvasRenderer: CanvasBridge 启动完成，创建测试矩形');
 
         // 创建一个测试矩形元素
         const rectElement = {
@@ -134,6 +148,10 @@ const CanvasRenderer: React.FC = () => {
     // 清理函数：组件卸载时销毁 RenderEngine
     return () => {
       isMounted = false;
+
+      // 停止桥接
+      bridgeRef.current?.stop();
+      bridgeRef.current = null;
 
       // 使用 renderEngineRef.current 而不是闭包变量，确保获取最新的实例
       const renderEngine = renderEngineRef.current;
