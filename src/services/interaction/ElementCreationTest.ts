@@ -13,10 +13,10 @@ export function testElementCreation(): void {
     // 1. 创建测试元素
     const testElement = ElementFactory.createElement(
       'rect',
-      100, // x
-      100, // y
-      200, // width
-      150, // height
+      300, // x
+      500, // y
+      300, // width
+      550, // height
       {
         style: {
           fill: '#3498db',

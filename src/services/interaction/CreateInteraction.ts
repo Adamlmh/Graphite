@@ -1,12 +1,19 @@
 // interactions/CreateInteraction.ts
-import { ElementFactory } from '../element-factory';
-import type { Point, Tool, Element, ElementType } from '../../types/index';
-import { useCanvasStore } from '../../stores/canvas-store';
-import type { CanvasState } from '../../stores/canvas-store';
-import { type CreationState, CreationEvent } from './interactionTypes';
-import { eventBus } from '../../lib/eventBus';
 import type { CanvasEvent } from '../../lib/EventBridge';
-import type { BaseElementStyle, RectElementStyle, TextStyle } from '../../types/index';
+import { eventBus } from '../../lib/eventBus';
+import type { CanvasState } from '../../stores/canvas-store';
+import { useCanvasStore } from '../../stores/canvas-store';
+import type {
+  BaseElementStyle,
+  Element,
+  ElementType,
+  Point,
+  RectElementStyle,
+  TextStyle,
+  Tool,
+} from '../../types/index';
+import { ElementFactory } from '../element-factory';
+import { type CreationState, CreationEvent } from './interactionTypes';
 
 // 定义创建选项接口
 interface CreationOptions {
@@ -116,6 +123,8 @@ export class CreateInteraction {
       // 其他工具创建临时元素用于预览
       this.createTempElement(point);
     }
+
+    console.log('CreateInteraction: 开始创建元素', activeTool, point);
 
     // 发出创建开始事件
     this.emitCreationEvent(CreationEvent.CREATION_START, {

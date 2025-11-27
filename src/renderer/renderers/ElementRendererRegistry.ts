@@ -2,7 +2,11 @@
 import type { Element, ElementType } from '../../types/index';
 import { type IElementRenderer } from '../../types/render.types';
 import { ResourceManager } from '../resources/ResourceManager';
+import { CircleRenderer } from './CircleRenderer';
+import { ImageRenderer } from './ImageRenderer';
 import { RectangleRenderer } from './RectangleRenderer';
+import { TextRenderer } from './TextRenderer';
+import { TriangleRenderer } from './TriangleRenderer';
 
 /**
  * 元素渲染器注册表 - 负责管理和分发各种元素类型的渲染器
@@ -19,11 +23,18 @@ export class ElementRendererRegistry {
 
   /**
    * 初始化所有元素渲染器
-   * 第一阶段只注册矩形渲染器
    */
   private initializeRenderers(): void {
     // 注册矩形渲染器
     this.registerRenderer('rect', new RectangleRenderer(this.resourceManager));
+    // 注册圆形渲染器
+    this.registerRenderer('circle', new CircleRenderer(this.resourceManager));
+    // 注册三角形渲染器
+    this.registerRenderer('triangle', new TriangleRenderer(this.resourceManager));
+    // 注册文本渲染器
+    this.registerRenderer('text', new TextRenderer(this.resourceManager));
+    // 注册图片渲染器
+    this.registerRenderer('image', new ImageRenderer(this.resourceManager));
 
     console.log(
       'ElementRendererRegistry: 初始化完成，支持的渲染器:',
