@@ -4,6 +4,8 @@ import { eventBridge } from '../../lib/EventBridge';
 import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { useCanvasStore } from '../../stores/canvas-store';
+import { SelectionManager } from '../../services/SelectionManager';
+import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
 import { RenderPriority } from '../../types/render.types';
 import './CanvasRenderer.less';
 /**
@@ -13,6 +15,7 @@ const CanvasRenderer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderEngineRef = useRef<RenderEngine | null>(null);
   const bridgeRef = useRef<CanvasBridge | null>(null);
+  const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
 
   useEffect(() => {
     // 防止 React 严格模式下的重复初始化
@@ -54,7 +57,14 @@ const CanvasRenderer: React.FC = () => {
         bridge.start();
         bridgeRef.current = bridge;
 
-        console.log('CanvasRenderer: CanvasBridge 启动完成，创建测试矩形');
+        console.log('CanvasRenderer: CanvasBridge 启动完成，初始化选择交互系统');
+        // 初始化选择管理器和选择交互
+        const selectionManager = new SelectionManager(
+          () => storeApi.getState().viewport,
+          () => container,
+        );
+        const selectionInteraction = new SelectionInteraction(selectionManager);
+        selectionInteractionRef.current = selectionInteraction;
 
         // 创建一个测试矩形元素
         const rectElement = {
@@ -78,8 +88,8 @@ const CanvasRenderer: React.FC = () => {
           transform: {
             scaleX: 1,
             scaleY: 1,
-            pivotX: 0.5,
-            pivotY: 0.5,
+            pivotX: 0.0,
+            pivotY: 0.0,
           },
           version: 1,
           createdAt: Date.now(),
@@ -87,12 +97,13 @@ const CanvasRenderer: React.FC = () => {
           visibility: 'visible' as const,
         };
 
-        // 先将元素添加到 store（这样命中检测才能找到）
-        useCanvasStore.getState().addElement(rectElement);
-        console.log('CanvasRenderer: 元素已添加到 store', {
-          elementId: rectElement.id,
-          storeElements: Object.keys(useCanvasStore.getState().elements),
-        });
+        // 将测试元素添加到 store
+        console.log('CanvasRenderer: 添加测试元素到store', rectElement);
+        storeApi.getState().addElement(rectElement);
+
+        // 验证元素是否被添加
+        const currentElements = storeApi.getState().elementList;
+        console.log('CanvasRenderer: 当前store中的元素列表', currentElements);
 
         // 执行创建命令
         await renderEngine.executeRenderCommand({
