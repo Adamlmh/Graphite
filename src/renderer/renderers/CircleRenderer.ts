@@ -40,8 +40,8 @@ export class CircleRenderer implements IElementRenderer {
     this.drawCircle(graphics, centerX, centerY, radius, style);
 
     // 设置位置和变换
-    graphics.x = x;
-    graphics.y = y;
+    graphics.x = x + transform.pivotX * width;
+    graphics.y = y + transform.pivotY * height;
     graphics.alpha = opacity;
 
     // 设置缩放
@@ -71,8 +71,16 @@ export class CircleRenderer implements IElementRenderer {
     const circleChanges = changes as Partial<CircleElement>;
 
     // 更新位置
-    if (circleChanges.x !== undefined) graphics.x = circleChanges.x;
-    if (circleChanges.y !== undefined) graphics.y = circleChanges.y;
+    if (circleChanges.x !== undefined)
+      graphics.x =
+        circleChanges.x +
+        (circleChanges.transform?.pivotX ?? 0) *
+          (circleChanges.width ?? (graphics as any).lastWidth);
+    if (circleChanges.y !== undefined)
+      graphics.y =
+        circleChanges.y +
+        (circleChanges.transform?.pivotY ?? 0) *
+          (circleChanges.height ?? (graphics as any).lastHeight);
 
     // 更新透明度
     if (circleChanges.opacity !== undefined) graphics.alpha = circleChanges.opacity;
