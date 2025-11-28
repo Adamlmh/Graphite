@@ -11,7 +11,12 @@ export enum RenderPriority {
 
 /** 渲染命令 - 桥接层传递给渲染层的指令 */
 
-export type AllRenderCommand = CreateElementCommand | UpdateElementCommand | DeleteElementCommand;
+export type AllRenderCommand =
+  | CreateElementCommand
+  | UpdateElementCommand
+  | DeleteElementCommand
+  | BatchDeleteElementCommand
+  | BatchUpdateElementCommand;
 
 export interface RenderCommand {
   type: string;
@@ -34,6 +39,16 @@ export interface UpdateElementCommand extends RenderCommand {
 export interface DeleteElementCommand extends RenderCommand {
   type: 'DELETE_ELEMENT';
   elementId: string;
+}
+
+export interface BatchDeleteElementCommand extends RenderCommand {
+  type: 'BATCH_DELETE_ELEMENTS';
+  elementIds: string[];
+}
+
+export interface BatchUpdateElementCommand extends RenderCommand {
+  type: 'BATCH_UPDATE_ELEMENTS';
+  updates: Array<{ elementId: string; properties: Partial<Element> }>;
 }
 
 /** 渲染资源 */
