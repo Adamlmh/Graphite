@@ -106,7 +106,10 @@ export class TriangleRenderer implements IElementRenderer {
     ) {
       const width = triangleChanges.width ?? (graphics as any).lastWidth;
       const height = triangleChanges.height ?? (graphics as any).lastHeight;
-      const style = triangleChanges.style ?? (graphics as any).lastStyle;
+
+      // 合并 style 更新：保留旧样式，只更新变化的字段
+      const lastStyle = (graphics as any).lastStyle || {};
+      const style = triangleChanges.style ? { ...lastStyle, ...triangleChanges.style } : lastStyle;
 
       graphics.clear();
       this.drawTriangle(graphics, 0, 0, width, height, style);

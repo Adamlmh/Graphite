@@ -23,15 +23,16 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 }) => {
   // 获取选中的元素ID数组
   const selectedElementIds = useCanvasStore((state) => state.selectedElementIds);
-  const elements = useCanvasStore((state) => state.elements);
   const updateElement = useCanvasStore((state) => state.updateElement);
 
-  // 缓存选中的元素，避免无限循环
+  // 订阅 elements 变化以触发重新渲染
+  const elements = useCanvasStore((state) => state.elements);
+
+  // 缓存选中的元素，当选中ID或元素对象变化时重新计算
   const selectedElements = useMemo(() => {
-    const result = selectedElementIds
+    return selectedElementIds
       .map((id) => elements[id])
       .filter((element): element is Element => element !== undefined);
-    return result;
   }, [selectedElementIds, elements]);
 
   // 使用 useElementCategory 判断显示哪个面板
@@ -40,6 +41,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   // 样式更新回调
   const handleStyleChange = (elementId: string, newStyle: Element['style']) => {
+    console.log('PropertiesPanel: 更新元素样式', { elementId, newStyle });
     updateElement(elementId, { style: newStyle });
   };
 
