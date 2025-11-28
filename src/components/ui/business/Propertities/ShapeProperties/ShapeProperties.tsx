@@ -44,7 +44,8 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
   // 使用 Hook 获取公共样式
   const commonStyle = useCommonStyle(effectiveElements);
 
-  // 状态管理
+  // 状态管理 - 使用 commonStyle 的序列化版本作为依赖
+  const styleKey = useMemo(() => JSON.stringify(commonStyle), [commonStyle]);
   const [shapeStyle, setShapeStyle] = useState<Partial<Element['style']> | undefined>(commonStyle);
   const [applyToChildren] = useState(true);
 
@@ -57,7 +58,8 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
   // 当元素变化时，更新样式状态
   React.useEffect(() => {
     setShapeStyle(commonStyle);
-  }, [commonStyle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styleKey]); // 使用 styleKey 而不是 commonStyle 避免无限循环
 
   // 如果不是图形元素，不显示面板
   if (!shouldShowShapePanel) {
