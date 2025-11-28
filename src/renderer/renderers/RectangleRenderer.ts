@@ -95,7 +95,17 @@ export class RectangleRenderer implements IElementRenderer {
     if (rectChanges.width !== undefined || rectChanges.height !== undefined || rectChanges.style) {
       const width = rectChanges.width ?? (graphics as any).lastWidth;
       const height = rectChanges.height ?? (graphics as any).lastHeight;
-      const style = rectChanges.style ?? (graphics as any).lastStyle;
+
+      const lastStyle = (graphics as any).lastStyle || {};
+      const style = rectChanges.style ? { ...lastStyle, ...rectChanges.style } : lastStyle;
+
+      console.log('RectangleRenderer: 重新绘制', {
+        width,
+        height,
+        oldStyle: lastStyle,
+        styleChanges: rectChanges.style,
+        mergedStyle: style,
+      });
 
       graphics.clear();
       this.drawRectangle(graphics, 0, 0, width, height, style);

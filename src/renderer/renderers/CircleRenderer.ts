@@ -103,7 +103,10 @@ export class CircleRenderer implements IElementRenderer {
     ) {
       const width = circleChanges.width ?? (graphics as any).lastWidth;
       const height = circleChanges.height ?? (graphics as any).lastHeight;
-      const style = circleChanges.style ?? (graphics as any).lastStyle;
+
+      // 合并 style 更新：保留旧样式，只更新变化的字段
+      const lastStyle = (graphics as any).lastStyle || {};
+      const style = circleChanges.style ? { ...lastStyle, ...circleChanges.style } : lastStyle;
 
       const radius = Math.min(width, height) / 2;
       const centerX = width / 2;
