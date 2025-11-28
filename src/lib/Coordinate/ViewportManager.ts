@@ -10,11 +10,10 @@
  */
 
 import type * as PIXI from 'pixi.js';
-import type {
-  CoordinateTransformer,
-  IViewportProvider,
-  ICanvasDOMProvider,
-} from './CoordinateTransformer';
+import type { IViewportProvider, ICanvasDOMProvider } from './CoordinateTransformer';
+import { CoordinateTransformer } from './CoordinateTransformer';
+import { ViewportProvider } from './providers/ViewportProvider';
+import { CanvasDOMProvider } from './providers/CanvasDOMProvider';
 
 /**
  * 边界框类型，用于表示矩形区域
@@ -40,18 +39,23 @@ export class ViewportManager {
 
   /**
    * 构造函数
-   * @param viewportProvider 视口状态提供者（提供 zoom/offset）
-   * @param canvasDOMProvider 画布 DOM 提供者（提供画布位置和尺寸）
-   * @param coordinateTransformer 坐标转换器（用于坐标转换）
+   * @param coordinateTransformer 坐标转换器（用于坐标转换，可选，默认创建新的）
+   * @param viewportProvider 视口状态提供者（可选，默认使用 ViewportProvider）
+   * @param canvasDOMProvider 画布 DOM 提供者（可选，默认使用 CanvasDOMProvider）
    */
   constructor(
-    viewportProvider: IViewportStateProvider,
-    canvasDOMProvider: ICanvasDOMProvider,
-    coordinateTransformer: CoordinateTransformer,
+    coordinateTransformer?: CoordinateTransformer,
+    viewportProvider?: IViewportStateProvider,
+    canvasDOMProvider?: ICanvasDOMProvider,
   ) {
-    this.viewportProvider = viewportProvider;
-    this.canvasDOMProvider = canvasDOMProvider;
-    this.coordinateTransformer = coordinateTransformer;
+    // 如果没有传入提供者，使用默认实现（自动获取数据）
+    this.viewportProvider = viewportProvider || new ViewportProvider();
+    this.canvasDOMProvider = canvasDOMProvider || new CanvasDOMProvider();
+
+    // 如果没有传入坐标转换器，使用默认提供者创建新的
+    this.coordinateTransformer =
+      coordinateTransformer ||
+      new CoordinateTransformer(this.viewportProvider, this.canvasDOMProvider);
   }
 
   /**
