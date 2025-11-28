@@ -87,6 +87,13 @@ const CanvasRenderer: React.FC = () => {
           visibility: 'visible' as const,
         };
 
+        // 先将元素添加到 store（这样命中检测才能找到）
+        useCanvasStore.getState().addElement(rectElement);
+        console.log('CanvasRenderer: 元素已添加到 store', {
+          elementId: rectElement.id,
+          storeElements: Object.keys(useCanvasStore.getState().elements),
+        });
+
         // 执行创建命令
         await renderEngine.executeRenderCommand({
           type: 'CREATE_ELEMENT',
@@ -96,7 +103,11 @@ const CanvasRenderer: React.FC = () => {
           priority: RenderPriority.CRITICAL,
         });
 
-        console.log('CanvasRenderer: 测试矩形创建完成');
+        // 再次确认元素是否还在 store 中
+        console.log('CanvasRenderer: 测试矩形创建完成', {
+          storeElements: Object.keys(useCanvasStore.getState().elements),
+          elementCount: Object.keys(useCanvasStore.getState().elements).length,
+        });
       } catch (error) {
         console.error('Failed to initialize RenderEngine:', error);
       }
