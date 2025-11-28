@@ -1,7 +1,7 @@
 // src/interaction/hotkeys/hotKeyTypes.ts
+import type * as PIXI from 'pixi.js';
 export type Context = string; // e.g. 'global', 'canvas', 'textInput', 'modal'
 export type HotKeyType = 'keyboard' | 'wheel';
-
 //描述一个快捷键的结构（key、context、handler等）
 export interface HotKeyDescriptor {
   id: string; // 唯一 id，用于 unregister / 覆盖
@@ -16,7 +16,7 @@ export interface HotKeyDescriptor {
 }
 
 export interface HotKeyTriggerPayload {
-  native: KeyboardEvent | WheelEvent;
+  native: KeyboardEvent | WheelEvent | PIXI.FederatedWheelEvent | PIXI.FederatedPointerEvent;
   normalized: string; // 规范化的键名
   context: Context;
   isWheel?: boolean;

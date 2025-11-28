@@ -3,6 +3,7 @@ import type { KeyboardEventPayload } from '../../lib/DOMEventBridge';
 // import type { CanvasEvent } from '../../lib/EventBridge';
 import type { HotKeyDescriptor, HotKeyTriggerPayload, Context } from './hotKeyTypes';
 import { DEFAULT_HOTKEYS, loadUserOverrides, saveUserOverrides } from './hotKeyConfig';
+import type { CanvasEvent } from '../../lib/EventBridge';
 
 /**
  * HotKeyManager 单例
@@ -269,28 +270,18 @@ class HotKeyManager {
     }
   };
 
-  // active contexts order: top-of-stack first (we only have set so we'll prefer 'global' last)
-  private getActiveContextsOrder(): Context[] {
-    // simple heuristic: active contexts except 'global' first, then 'global'
-    const arr = Array.from(this.enabledContexts);
-    // ensure 'global' is last
-    const filtered = arr.filter((c) => c !== 'global');
-    if (this.enabledContexts.has('global')) filtered.push('global');
-    return filtered;
-  }
-
   // 鼠标滚轮事件
   // ========== 滚轮（wheel）事件 ==========
-  private onWheel = (evt: WheelEvent | { nativeEvent: WheelEvent }) => {
+  private onWheel = (evt: CanvasEvent) => {
     if (!this.enabled) return;
 
-    const e: WheelEvent = 'nativeEvent' in evt ? evt.nativeEvent : evt;
+    const e = evt; // CanvasEvent
     const ctxList = this.getActiveContextsOrder();
 
-    // “Ctrl 或 Meta + 滚轮”才触发快捷键
-    if (!e.ctrlKey && !e.metaKey) return;
+    // Ctrl 或 Meta 才触发缩放
+    if (!e.modifiers.ctrl && !e.modifiers.meta) return;
 
-    const normalized = e.deltaY < 0 ? 'WheelUp' : 'WheelDown';
+    const normalized = e.deltaY! < 0 ? 'WheelUp' : 'WheelDown';
 
     for (const ctx of ctxList) {
       const idxKey = HotKeyManager.indexKey(normalized, ctx);
@@ -301,25 +292,33 @@ class HotKeyManager {
       if (!desc) continue;
 
       const payload: HotKeyTriggerPayload = {
-        native: e,
+        native: e.nativeEvent,
         normalized,
         context: ctx,
         isWheel: true,
         wheelDelta: e.deltaY,
-        modifiers: {
-          ctrl: e.ctrlKey,
-          meta: e.metaKey,
-          shift: e.shiftKey,
-          alt: e.altKey,
-        },
+        modifiers: e.modifiers,
         repeat: false,
       };
 
+      // 触发 handler
       desc.handler(payload);
-      e.preventDefault();
+
+      // 可避免 passive 警告
+      setTimeout(() => e.preventDefault(), 0);
       return;
     }
   };
+
+  // active contexts order: top-of-stack first (we only have set so we'll prefer 'global' last)
+  private getActiveContextsOrder(): Context[] {
+    // simple heuristic: active contexts except 'global' first, then 'global'
+    const arr = Array.from(this.enabledContexts);
+    // ensure 'global' is last
+    const filtered = arr.filter((c) => c !== 'global');
+    if (this.enabledContexts.has('global')) filtered.push('global');
+    return filtered;
+  }
 
   // ---- 静态工具方法 ----
 
