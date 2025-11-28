@@ -35,8 +35,8 @@ export class TriangleRenderer implements IElementRenderer {
     this.drawTriangle(graphics, 0, 0, width, height, style);
 
     // 设置位置和变换
-    graphics.x = x;
-    graphics.y = y;
+    graphics.x = x + transform.pivotX * width;
+    graphics.y = y + transform.pivotY * height;
     graphics.alpha = opacity;
 
     // 设置缩放
@@ -66,8 +66,16 @@ export class TriangleRenderer implements IElementRenderer {
     const triangleChanges = changes as Partial<TriangleElement>;
 
     // 更新位置
-    if (triangleChanges.x !== undefined) graphics.x = triangleChanges.x;
-    if (triangleChanges.y !== undefined) graphics.y = triangleChanges.y;
+    if (triangleChanges.x !== undefined)
+      graphics.x =
+        triangleChanges.x +
+        (triangleChanges.transform?.pivotX ?? 0) *
+          (triangleChanges.width ?? (graphics as any).lastWidth);
+    if (triangleChanges.y !== undefined)
+      graphics.y =
+        triangleChanges.y +
+        (triangleChanges.transform?.pivotY ?? 0) *
+          (triangleChanges.height ?? (graphics as any).lastHeight);
 
     // 更新透明度
     if (triangleChanges.opacity !== undefined) graphics.alpha = triangleChanges.opacity;

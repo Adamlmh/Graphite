@@ -7,6 +7,10 @@
 import * as PIXI from 'pixi.js';
 import { getPixiApp, onPixiAppInit } from './pixiApp';
 import { eventBus } from './eventBus';
+import { useCanvasStore } from '../stores/canvas-store';
+import { GeometryService } from '../lib/Coordinate/GeometryService';
+import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
+import type { Point } from '../types';
 
 /**
  * 统一的事件数据格式
@@ -38,6 +42,7 @@ export interface CanvasEvent {
 class EventBridge {
   private app: PIXI.Application | null = null;
   private isInitialized = false;
+  private geometryService: GeometryService;
   // 保存事件处理函数引用，用于正确清理
   /**
    * @param pointerdown 鼠标按下事件
@@ -66,6 +71,10 @@ class EventBridge {
     lastFlushTime: 0,
   };
   private readonly WHEEL_THROTTLE_MS = 16; // 时间节流窗口：16ms
+
+  constructor() {
+    this.geometryService = new GeometryService();
+  }
 
   /**
    * 初始化事件桥接
@@ -292,8 +301,139 @@ class EventBridge {
       },
     };
 
+    // 如果是点击事件，进行命中判断并更新选中状态
+    if (type === 'pointerdown') {
+      this.handleHitTest(canvasEvent);
+    }
+
     // 通过 eventBus 分发事件
     eventBus.emit(type, canvasEvent);
+  }
+
+  /**
+   * 处理命中检测和选中状态更新
+   */
+  private handleHitTest(event: CanvasEvent): void {
+    // 检查当前工具是否为选择工具
+    const store = useCanvasStore.getState();
+    const activeTool = store.tool.activeTool;
+
+    // 只在选择工具时进行命中检测
+    if (activeTool !== 'select') {
+      return;
+    }
+
+    const worldPoint: Point = {
+      x: event.world.x,
+      y: event.world.y,
+    };
+
+    console.log('[EventBridge] 命中检测，点击位置:', worldPoint);
+
+    // 查找命中的元素
+    const hitElementId = this.findHitElement(worldPoint);
+
+    console.log(
+      '[EventBridge] 命中检测结果:',
+      hitElementId ? `命中元素: ${hitElementId}` : '未命中任何元素',
+    );
+
+    if (hitElementId) {
+      // 命中元素，更新选中状态
+      const store = useCanvasStore.getState();
+      const currentSelectedIds = store.selectedElementIds;
+
+      if (event.modifiers.shift || event.modifiers.ctrl || event.modifiers.meta) {
+        // 按住 Shift/Ctrl/Cmd，添加到选中列表（如果已选中则取消选中）
+        const isAlreadySelected = currentSelectedIds.includes(hitElementId);
+        if (isAlreadySelected) {
+          // 取消选中
+          const newSelectedIds = currentSelectedIds.filter((id) => id !== hitElementId);
+          store.setSelectedElements(newSelectedIds);
+          console.log('[EventBridge] 取消选中，新的选中列表:', newSelectedIds);
+        } else {
+          // 添加到选中列表
+          store.setSelectedElements([...currentSelectedIds, hitElementId]);
+          console.log('[EventBridge] 添加到选中列表，新的选中列表:', [
+            ...currentSelectedIds,
+            hitElementId,
+          ]);
+        }
+      } else {
+        // 没有修饰键，替换选中（只选中当前元素）
+        store.setSelectedElements([hitElementId]);
+        console.log('[EventBridge] 替换选中，新的选中列表:', [hitElementId]);
+      }
+    } else {
+      // 未命中任何元素，清空选中
+      useCanvasStore.getState().clearSelection();
+      console.log('[EventBridge] 清空选中');
+    }
+  }
+
+  /**
+   * 查找点击位置命中的元素
+   * 从 zIndex 高的元素开始检查（后渲染的元素在上层）
+   *
+   * @param worldPoint 世界坐标点
+   * @returns 命中的元素ID，如果没有命中则返回 null
+   */
+  private findHitElement(worldPoint: Point): string | null {
+    const store = useCanvasStore.getState();
+    // 直接使用 Object.values(store.elements) 而不是 store.elementList
+    // 因为 elementList 是 getter，可能在某些情况下返回错误的状态
+    const elements = Object.values(store.elements);
+    const elementsRecord = store.elements;
+
+    console.log('[EventBridge] Store 中的元素数量:', elements.length);
+    console.log('[EventBridge] Store.elements 对象:', elementsRecord);
+    console.log('[EventBridge] 直接获取的元素列表:', elements);
+    console.log(
+      '[EventBridge] Store 中的元素列表:',
+      elements.map((el) => ({
+        id: el.id,
+        type: el.type,
+        x: el.x,
+        y: el.y,
+        width: el.width,
+        height: el.height,
+      })),
+    );
+
+    // 按 zIndex 从高到低排序，后渲染的元素优先命中
+    const sortedElements = [...elements].sort((a, b) => {
+      // zIndex 高的优先，如果相同则按创建时间（后创建的优先）
+      if (a.zIndex !== b.zIndex) {
+        return b.zIndex - a.zIndex;
+      }
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    // 遍历元素，查找第一个命中的
+    for (const element of sortedElements) {
+      // 跳过不可见的元素
+      if (element.visibility !== 'visible') {
+        console.log(`[EventBridge] 跳过不可见元素: ${element.id}`);
+        continue;
+      }
+
+      // 创建元素提供者
+      const elementProvider = new ElementProvider(element.id);
+
+      // 判断点是否在元素内部
+      const isHit = this.geometryService.isPointInElement(worldPoint, elementProvider);
+      console.log(`[EventBridge] 检测元素 ${element.id}:`, {
+        elementBounds: { x: element.x, y: element.y, width: element.width, height: element.height },
+        worldPoint,
+        isHit,
+      });
+
+      if (isHit) {
+        return element.id;
+      }
+    }
+
+    return null;
   }
 
   /**

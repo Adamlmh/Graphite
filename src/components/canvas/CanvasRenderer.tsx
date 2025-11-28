@@ -114,7 +114,11 @@ const CanvasRenderer: React.FC = () => {
           priority: RenderPriority.CRITICAL,
         });
 
-        console.log('CanvasRenderer: 测试矩形创建完成');
+        // 再次确认元素是否还在 store 中
+        console.log('CanvasRenderer: 测试矩形创建完成', {
+          storeElements: Object.keys(useCanvasStore.getState().elements),
+          elementCount: Object.keys(useCanvasStore.getState().elements).length,
+        });
       } catch (error) {
         console.error('Failed to initialize RenderEngine:', error);
       }

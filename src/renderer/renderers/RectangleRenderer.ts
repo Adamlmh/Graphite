@@ -36,8 +36,8 @@ export class RectangleRenderer implements IElementRenderer {
     this.drawRectangle(graphics, 0, 0, width, height, style);
 
     // 设置位置和变换
-    graphics.x = x;
-    graphics.y = y;
+    graphics.x = x + transform.pivotX * width;
+    graphics.y = y + transform.pivotY * height;
     graphics.alpha = opacity;
 
     // 设置缩放
@@ -67,8 +67,14 @@ export class RectangleRenderer implements IElementRenderer {
     const rectChanges = changes as Partial<RectElement>;
 
     // 更新位置
-    if (rectChanges.x !== undefined) graphics.x = rectChanges.x;
-    if (rectChanges.y !== undefined) graphics.y = rectChanges.y;
+    if (rectChanges.x !== undefined)
+      graphics.x =
+        rectChanges.x +
+        (rectChanges.transform?.pivotX ?? 0) * (rectChanges.width ?? (graphics as any).lastWidth);
+    if (rectChanges.y !== undefined)
+      graphics.y =
+        rectChanges.y +
+        (rectChanges.transform?.pivotY ?? 0) * (rectChanges.height ?? (graphics as any).lastHeight);
 
     // 更新透明度
     if (rectChanges.opacity !== undefined) graphics.alpha = rectChanges.opacity;
