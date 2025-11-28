@@ -3,6 +3,8 @@ import * as PIXI from 'pixi.js';
 import type { Element, ElementType } from '../types';
 import {
   type AllRenderCommand,
+  type BatchDeleteElementCommand,
+  type BatchUpdateElementCommand,
   type CreateElementCommand,
   type DeleteElementCommand,
   type UpdateElementCommand,
@@ -97,6 +99,12 @@ export class RenderEngine {
         case 'DELETE_ELEMENT':
           this.deleteElement(command as DeleteElementCommand);
           break;
+        case 'BATCH_DELETE_ELEMENTS':
+          this.batchDeleteElements(command as BatchDeleteElementCommand);
+          break;
+        case 'BATCH_UPDATE_ELEMENTS':
+          this.batchUpdateElements(command as BatchUpdateElementCommand);
+          break;
         default:
           console.warn('未知渲染命令:', command);
       }
@@ -174,6 +182,57 @@ export class RenderEngine {
       // 调度渲染
       this.renderScheduler.scheduleRender(command.priority);
     }
+  }
+
+  /**
+   * 批量删除元素
+   */
+  private batchDeleteElements(command: BatchDeleteElementCommand): void {
+    const { elementIds } = command;
+
+    elementIds.forEach((elementId) => {
+      const graphics = this.elementGraphics.get(elementId);
+
+      if (graphics) {
+        // 从父容器移除
+        graphics.parent?.removeChild(graphics);
+
+        // 清理资源
+        this.resourceManager.cleanupElementResources(elementId);
+
+        // 从映射表移除
+        this.elementGraphics.delete(elementId);
+      }
+    });
+
+    // 调度渲染
+    this.renderScheduler.scheduleRender(command.priority);
+  }
+
+  /**
+   * 批量更新元素
+   */
+  private batchUpdateElements(command: BatchUpdateElementCommand): void {
+    const { updates } = command;
+
+    updates.forEach(({ elementId, properties }) => {
+      const graphics = this.elementGraphics.get(elementId);
+
+      if (!graphics) {
+        console.warn(`找不到元素的图形对象: ${elementId}`);
+        return;
+      }
+
+      // 获取元素类型和对应的渲染器
+      const elementType = this.getElementTypeFromGraphics(graphics);
+      const renderer = this.rendererRegistry.getRenderer(elementType);
+
+      // 执行具体的图形更新
+      renderer.update(graphics, properties);
+    });
+
+    // 调度渲染
+    this.renderScheduler.scheduleRender(command.priority);
   }
 
   /**

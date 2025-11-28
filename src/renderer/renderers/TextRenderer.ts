@@ -22,7 +22,7 @@ export class TextRenderer implements IElementRenderer {
   render(element: Element, resources: RenderResources): PIXI.Text {
     console.log(`TextRenderer: resources received`, resources);
     const textElement = element as TextElement;
-    const { x, y, width, height, opacity, content, textStyle } = textElement;
+    const { x, y, width, height, opacity, content, textStyle, transform, rotation } = textElement;
 
     // 创建PIXI文本对象
     const pixiText = new PIXI.Text(content, this.createTextStyle(textStyle));
@@ -36,11 +36,23 @@ export class TextRenderer implements IElementRenderer {
     pixiText.y = y;
     pixiText.alpha = opacity;
 
+    // 设置缩放
+    pixiText.scale.set(transform.scaleX, transform.scaleY);
+
+    // 设置变换中心
+    pixiText.pivot.set(transform.pivotX * width, transform.pivotY * height);
+
     // 设置旋转
-    pixiText.rotation = textElement.rotation * (Math.PI / 180);
+    pixiText.rotation = rotation * (Math.PI / 180);
 
     // 设置文本对齐和布局
     this.applyTextLayout(pixiText, textElement);
+
+    // 缓存当前尺寸、样式和变换
+    (pixiText as any).lastWidth = width;
+    (pixiText as any).lastHeight = height;
+    (pixiText as any).lastTextStyle = textStyle;
+    (pixiText as any).lastTransform = transform;
 
     console.log(`TextRenderer: 创建文本元素 ${element.id}`, { x, y, content });
 
@@ -63,6 +75,19 @@ export class TextRenderer implements IElementRenderer {
     // 更新旋转
     if (textChanges.rotation !== undefined) {
       text.rotation = textChanges.rotation * (Math.PI / 180);
+    }
+
+    // 更新变换
+    if (textChanges.transform !== undefined) {
+      const transform = textChanges.transform;
+      text.scale.set(transform.scaleX, transform.scaleY);
+
+      // 如果有尺寸变化，需要重新计算变换中心
+      const width = textChanges.width ?? (text as any).lastWidth;
+      const height = textChanges.height ?? (text as any).lastHeight;
+      if (width !== undefined && height !== undefined) {
+        text.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      }
     }
 
     // 更新内容

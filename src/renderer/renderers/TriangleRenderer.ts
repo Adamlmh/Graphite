@@ -22,7 +22,7 @@ export class TriangleRenderer implements IElementRenderer {
   render(element: Element, resources: RenderResources): PIXI.Graphics {
     console.log(`TriangleRenderer: resources received`, resources);
     const triangleElement = element as TriangleElement;
-    const { x, y, width, height, style, opacity } = triangleElement;
+    const { x, y, width, height, style, opacity, transform, rotation } = triangleElement;
 
     // 创建PIXI图形对象
     const graphics = new PIXI.Graphics();
@@ -39,8 +39,20 @@ export class TriangleRenderer implements IElementRenderer {
     graphics.y = y;
     graphics.alpha = opacity;
 
+    // 设置缩放
+    graphics.scale.set(transform.scaleX, transform.scaleY);
+
+    // 设置变换中心
+    graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+
     // 设置旋转
-    graphics.rotation = triangleElement.rotation * (Math.PI / 180);
+    graphics.rotation = rotation * (Math.PI / 180);
+
+    // 缓存当前尺寸、样式和变换
+    (graphics as any).lastWidth = width;
+    (graphics as any).lastHeight = height;
+    (graphics as any).lastStyle = style;
+    (graphics as any).lastTransform = transform;
 
     console.log(`TriangleRenderer: 创建三角形元素 ${element.id}`, { x, y, width, height });
 
@@ -65,6 +77,19 @@ export class TriangleRenderer implements IElementRenderer {
       graphics.rotation = triangleChanges.rotation * (Math.PI / 180);
     }
 
+    // 更新变换
+    if (triangleChanges.transform !== undefined) {
+      const transform = triangleChanges.transform;
+      graphics.scale.set(transform.scaleX, transform.scaleY);
+
+      // 如果有尺寸变化，需要重新计算变换中心
+      const width = triangleChanges.width ?? (graphics as any).lastWidth;
+      const height = triangleChanges.height ?? (graphics as any).lastHeight;
+      if (width !== undefined && height !== undefined) {
+        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      }
+    }
+
     // 更新尺寸或样式需要重新绘制
     if (
       triangleChanges.width !== undefined ||
@@ -82,6 +107,12 @@ export class TriangleRenderer implements IElementRenderer {
       (graphics as any).lastWidth = width;
       (graphics as any).lastHeight = height;
       (graphics as any).lastStyle = style;
+
+      // 如果有变换，需要重新设置变换中心
+      const transform = triangleChanges.transform ?? (graphics as any).lastTransform;
+      if (transform) {
+        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      }
     }
 
     console.log(`TriangleRenderer: 更新三角形元素`, changes);

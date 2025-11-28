@@ -22,7 +22,7 @@ export class ImageRenderer implements IElementRenderer {
   render(element: Element, resources: RenderResources): PIXI.Sprite {
     console.log(`ImageRenderer: resources received`, resources);
     const imageElement = element as ImageElement;
-    const { x, y, width, height, opacity, src, adjustments } = imageElement;
+    const { x, y, width, height, opacity, src, adjustments, transform, rotation } = imageElement;
 
     // 从资源中获取纹理
     const texture = resources.textures.get(src);
@@ -52,13 +52,24 @@ export class ImageRenderer implements IElementRenderer {
     sprite.y = y;
     sprite.alpha = opacity;
 
+    // 设置缩放
+    sprite.scale.set(transform.scaleX, transform.scaleY);
+
+    // 设置变换中心
+    sprite.pivot.set(transform.pivotX * width, transform.pivotY * height);
+
     // 设置旋转
-    sprite.rotation = imageElement.rotation * (Math.PI / 180);
+    sprite.rotation = rotation * (Math.PI / 180);
 
     // 应用图片调整
     if (adjustments) {
       this.applyAdjustments(sprite, adjustments);
     }
+
+    // 缓存当前尺寸、样式和变换
+    (sprite as any).lastWidth = width;
+    (sprite as any).lastHeight = height;
+    (sprite as any).lastTransform = transform;
 
     console.log(`ImageRenderer: 创建图片元素 ${element.id}`, { x, y, width, height, src });
 
@@ -81,6 +92,19 @@ export class ImageRenderer implements IElementRenderer {
     // 更新旋转
     if (imageChanges.rotation !== undefined) {
       sprite.rotation = imageChanges.rotation * (Math.PI / 180);
+    }
+
+    // 更新变换
+    if (imageChanges.transform !== undefined) {
+      const transform = imageChanges.transform;
+      sprite.scale.set(transform.scaleX, transform.scaleY);
+
+      // 如果有尺寸变化，需要重新计算变换中心
+      const width = imageChanges.width ?? (sprite as any).lastWidth;
+      const height = imageChanges.height ?? (sprite as any).lastHeight;
+      if (width !== undefined && height !== undefined) {
+        sprite.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      }
     }
 
     // 更新尺寸

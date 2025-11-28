@@ -23,7 +23,7 @@ export class RectangleRenderer implements IElementRenderer {
   render(element: Element, resources: RenderResources): PIXI.Graphics {
     console.log(`RectangleRenderer: resources received`, resources);
     const rectElement = element as RectElement;
-    const { x, y, width, height, style, opacity } = rectElement;
+    const { x, y, width, height, style, opacity, transform, rotation } = rectElement;
 
     // 创建PIXI图形对象
     const graphics = new PIXI.Graphics();
@@ -40,8 +40,20 @@ export class RectangleRenderer implements IElementRenderer {
     graphics.y = y;
     graphics.alpha = opacity;
 
+    // 设置缩放
+    graphics.scale.set(transform.scaleX, transform.scaleY);
+
+    // 设置变换中心
+    graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+
     // 设置旋转
-    graphics.rotation = rectElement.rotation * (Math.PI / 180);
+    graphics.rotation = rotation * (Math.PI / 180);
+
+    // 缓存当前尺寸、样式和变换
+    (graphics as any).lastWidth = width;
+    (graphics as any).lastHeight = height;
+    (graphics as any).lastStyle = style;
+    (graphics as any).lastTransform = transform;
 
     console.log(`RectangleRenderer: 创建矩形元素 ${element.id}`, { x, y, width, height });
 
@@ -66,6 +78,19 @@ export class RectangleRenderer implements IElementRenderer {
       graphics.rotation = rectChanges.rotation * (Math.PI / 180);
     }
 
+    // 更新变换
+    if (rectChanges.transform !== undefined) {
+      const transform = rectChanges.transform;
+      graphics.scale.set(transform.scaleX, transform.scaleY);
+
+      // 如果有尺寸变化，需要重新计算变换中心
+      const width = rectChanges.width ?? (graphics as any).lastWidth;
+      const height = rectChanges.height ?? (graphics as any).lastHeight;
+      if (width !== undefined && height !== undefined) {
+        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      }
+    }
+
     // 更新尺寸或样式需要重新绘制
     if (rectChanges.width !== undefined || rectChanges.height !== undefined || rectChanges.style) {
       const width = rectChanges.width ?? (graphics as any).lastWidth;
@@ -79,6 +104,12 @@ export class RectangleRenderer implements IElementRenderer {
       (graphics as any).lastWidth = width;
       (graphics as any).lastHeight = height;
       (graphics as any).lastStyle = style;
+
+      // 如果有变换，需要重新设置变换中心
+      const transform = rectChanges.transform ?? (graphics as any).lastTransform;
+      if (transform) {
+        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      }
     }
 
     console.log(`RectangleRenderer: 更新矩形元素`, changes);
