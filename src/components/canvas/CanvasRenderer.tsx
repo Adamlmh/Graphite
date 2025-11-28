@@ -5,6 +5,8 @@ import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { RenderPriority } from '../../types/render.types';
 import { useCanvasStore } from '../../stores/canvas-store';
+import { SelectionManager } from '../../services/SelectionManager';
+import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
 import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
@@ -13,6 +15,7 @@ const CanvasRenderer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderEngineRef = useRef<RenderEngine | null>(null);
   const bridgeRef = useRef<CanvasBridge | null>(null);
+  const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
 
   useEffect(() => {
     // 防止 React 严格模式下的重复初始化
@@ -54,7 +57,14 @@ const CanvasRenderer: React.FC = () => {
         bridge.start();
         bridgeRef.current = bridge;
 
-        console.log('CanvasRenderer: CanvasBridge 启动完成，创建测试矩形');
+        console.log('CanvasRenderer: CanvasBridge 启动完成，初始化选择交互系统');
+        // 初始化选择管理器和选择交互
+        const selectionManager = new SelectionManager(
+          () => storeApi.getState().viewport,
+          () => container,
+        );
+        const selectionInteraction = new SelectionInteraction(selectionManager);
+        selectionInteractionRef.current = selectionInteraction;
 
         // 创建一个测试矩形元素
         const rectElement = {
@@ -87,6 +97,14 @@ const CanvasRenderer: React.FC = () => {
           visibility: 'visible' as const,
         };
 
+        // 将测试元素添加到 store
+        console.log('CanvasRenderer: 添加测试元素到store', rectElement);
+        storeApi.getState().addElement(rectElement);
+
+        // 验证元素是否被添加
+        const currentElements = storeApi.getState().elementList;
+        console.log('CanvasRenderer: 当前store中的元素列表', currentElements);
+
         // 执行创建命令
         await renderEngine.executeRenderCommand({
           type: 'CREATE_ELEMENT',
@@ -97,45 +115,45 @@ const CanvasRenderer: React.FC = () => {
         });
 
         //定时器测试更新随机产生的元素
-        setInterval(() => {
-          const randomElement = {
-            id: `test-rect-${Date.now()}`,
-            type: 'rect' as const,
-            zIndex: 1,
-            x: Math.random() * 500,
-            y: Math.random() * 500,
-            width: 100,
-            height: 100,
-            rotation: Math.random() * 360,
-            style: {
-              fill: '#00ff00',
-              fillOpacity: 1,
-              stroke: '#000000',
-              strokeWidth: 2,
-              strokeOpacity: 1,
-              borderRadius: 0,
-            },
-            opacity: 1,
-            transform: {
-              scaleX: 1,
-              scaleY: 1,
-              pivotX: 0.5,
-              pivotY: 0.5,
-            },
-            version: 1,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            visibility: 'visible' as const,
-          };
+        // setInterval(() => {
+        //   const randomElement = {
+        //     id: `test-rect-${Date.now()}`,
+        //     type: 'rect' as const,
+        //     zIndex: 1,
+        //     x: Math.random() * 500,
+        //     y: Math.random() * 500,
+        //     width: 100,
+        //     height: 100,
+        //     rotation: Math.random() * 360,
+        //     style: {
+        //       fill: '#00ff00',
+        //       fillOpacity: 1,
+        //       stroke: '#000000',
+        //       strokeWidth: 2,
+        //       strokeOpacity: 1,
+        //       borderRadius: 0,
+        //     },
+        //     opacity: 1,
+        //     transform: {
+        //       scaleX: 1,
+        //       scaleY: 1,
+        //       pivotX: 0.5,
+        //       pivotY: 0.5,
+        //     },
+        //     version: 1,
+        //     createdAt: Date.now(),
+        //     updatedAt: Date.now(),
+        //     visibility: 'visible' as const,
+        //   };
 
-          renderEngine.executeRenderCommand({
-            type: 'CREATE_ELEMENT',
-            elementId: randomElement.id,
-            elementType: randomElement.type,
-            elementData: randomElement,
-            priority: RenderPriority.CRITICAL,
-          });
-        }, 2000);
+        //   renderEngine.executeRenderCommand({
+        //     type: 'CREATE_ELEMENT',
+        //     elementId: randomElement.id,
+        //     elementType: randomElement.type,
+        //     elementData: randomElement,
+        //     priority: RenderPriority.CRITICAL,
+        //   });
+        // }, 2000);
 
         console.log('CanvasRenderer: 测试矩形创建完成');
       } catch (error) {
