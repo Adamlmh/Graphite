@@ -5,12 +5,14 @@ import {
   type AllRenderCommand,
   type CreateElementCommand,
   type UpdateElementCommand,
+  type UpdateSelectionCommand,
   RenderPriority,
 } from '../../types/render.types';
 
 type ElementsState = Record<string, Element>;
 type BridgeStoreState = {
   elements: ElementsState;
+  selectedElementIds: string[];
   viewport: ViewportState;
   tool: { tempElement?: Element | null };
 };
@@ -75,6 +77,11 @@ export class CanvasBridge {
       (next, prev) => this.handleElementsChange(next, prev),
     );
 
+    const selectedElementIdsUnsubscribe = this.subscribeToSlice(
+      (state) => state.selectedElementIds,
+      (next, prev) => this.handleSelectionChange(next, prev),
+    );
+
     const viewportUnsubscribe = this.subscribeToSlice(
       (state) => state.viewport,
       (next) => this.handleViewportChange(next),
@@ -85,7 +92,12 @@ export class CanvasBridge {
       (next, prev) => this.handleTempElementChange(next, prev),
     );
 
-    this.unsubscribes.push(elementsUnsubscribe, viewportUnsubscribe, tempElementUnsubscribe);
+    this.unsubscribes.push(
+      elementsUnsubscribe,
+      selectedElementIdsUnsubscribe,
+      viewportUnsubscribe,
+      tempElementUnsubscribe,
+    );
   }
 
   /**
@@ -167,6 +179,48 @@ export class CanvasBridge {
   }
 
   /**
+   * 处理选中状态的变化
+   *
+   * @param next - 最新的选中元素ID数组
+   * @param prev - 之前的选中元素ID数组
+   */
+  protected handleSelectionChange(next: string[], prev: string[]): void {
+    // 如果选中状态没有变化，直接返回
+    if (this.arraysEqual(next, prev)) {
+      return;
+    }
+
+    // 生成 UPDATE_SELECTION 命令
+    const command: UpdateSelectionCommand = {
+      type: 'UPDATE_SELECTION',
+      selectedElementIds: next,
+      priority: RenderPriority.HIGH, // 选中状态变化需要高优先级渲染
+    };
+
+    // 直接执行命令，不需要合并（选中状态是独立的）
+    this.renderEngine.executeRenderCommand(command);
+  }
+
+  /**
+   * 比较两个数组是否相等（浅比较）
+   *
+   * @param a - 第一个数组
+   * @param b - 第二个数组
+   * @returns 是否相等
+   */
+  private arraysEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * 处理视口状态的变化
    *
    * @param next - 最新的视口状态
@@ -208,6 +262,16 @@ export class CanvasBridge {
   private enqueueCommands(commands: AllRenderCommand[]): void {
     // 将命令添加到队列，应用合并规则
     for (const command of commands) {
+      // 对于没有 elementId 的命令（如 UPDATE_SELECTION、BATCH_*），直接执行
+      if (
+        command.type === 'UPDATE_SELECTION' ||
+        command.type === 'BATCH_DELETE_ELEMENTS' ||
+        command.type === 'BATCH_UPDATE_ELEMENTS'
+      ) {
+        this.renderEngine.executeRenderCommand(command);
+        continue;
+      }
+
       this.mergeCommand(command);
     }
 
@@ -218,10 +282,21 @@ export class CanvasBridge {
   /**
    * 合并命令到队列
    * 根据专业画布架构实现命令合并规则
+   * 注意：此方法只处理有 elementId 的命令（CREATE_ELEMENT、UPDATE_ELEMENT、DELETE_ELEMENT）
    *
    * @param command - 新的渲染命令
    */
   private mergeCommand(command: AllRenderCommand): void {
+    // 类型守卫：确保命令有 elementId
+    if (
+      command.type !== 'CREATE_ELEMENT' &&
+      command.type !== 'UPDATE_ELEMENT' &&
+      command.type !== 'DELETE_ELEMENT'
+    ) {
+      console.warn('mergeCommand: 不支持的命令类型', command.type);
+      return;
+    }
+
     const elementId = command.elementId;
     const existing = this.pendingCommands.get(elementId);
 
