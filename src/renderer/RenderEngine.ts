@@ -118,6 +118,21 @@ export class RenderEngine {
   }
 
   /**
+   * TODO: 未来需要提供的批处理接口
+   *
+   * 批处理执行渲染命令
+   * 用于优化性能，在同一帧内批量处理多个命令
+   *
+   * 预期接口签名：
+   * async batchExecute(commands: AllRenderCommand[]): Promise<void>
+   *
+   * 功能要求：
+   * - 按优先级和类型排序：DELETE > CREATE > UPDATE
+   * - 批量执行命令，减少渲染调度次数
+   * - 提供更好的性能优化
+   */
+
+  /**
    * 创建新元素
    */
   private async createElement(command: CreateElementCommand): Promise<void> {
