@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { eventBridge } from '../../lib/EventBridge';
 import { CanvasBridge } from '../../lib/CanvasBridge/CanvasBridge';
+import { eventBridge } from '../../lib/EventBridge';
 import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
-import { RenderPriority } from '../../types/render.types';
 import { useCanvasStore } from '../../stores/canvas-store';
 import { SelectionManager } from '../../services/SelectionManager';
 import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
+import { RenderPriority } from '../../types/render.types';
 import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
@@ -88,8 +88,8 @@ const CanvasRenderer: React.FC = () => {
           transform: {
             scaleX: 1,
             scaleY: 1,
-            pivotX: 0.5,
-            pivotY: 0.5,
+            pivotX: 0.0,
+            pivotY: 0.0,
           },
           version: 1,
           createdAt: Date.now(),
@@ -113,47 +113,6 @@ const CanvasRenderer: React.FC = () => {
           elementData: rectElement,
           priority: RenderPriority.CRITICAL,
         });
-
-        //定时器测试更新随机产生的元素
-        // setInterval(() => {
-        //   const randomElement = {
-        //     id: `test-rect-${Date.now()}`,
-        //     type: 'rect' as const,
-        //     zIndex: 1,
-        //     x: Math.random() * 500,
-        //     y: Math.random() * 500,
-        //     width: 100,
-        //     height: 100,
-        //     rotation: Math.random() * 360,
-        //     style: {
-        //       fill: '#00ff00',
-        //       fillOpacity: 1,
-        //       stroke: '#000000',
-        //       strokeWidth: 2,
-        //       strokeOpacity: 1,
-        //       borderRadius: 0,
-        //     },
-        //     opacity: 1,
-        //     transform: {
-        //       scaleX: 1,
-        //       scaleY: 1,
-        //       pivotX: 0.5,
-        //       pivotY: 0.5,
-        //     },
-        //     version: 1,
-        //     createdAt: Date.now(),
-        //     updatedAt: Date.now(),
-        //     visibility: 'visible' as const,
-        //   };
-
-        //   renderEngine.executeRenderCommand({
-        //     type: 'CREATE_ELEMENT',
-        //     elementId: randomElement.id,
-        //     elementType: randomElement.type,
-        //     elementData: randomElement,
-        //     priority: RenderPriority.CRITICAL,
-        //   });
-        // }, 2000);
 
         console.log('CanvasRenderer: 测试矩形创建完成');
       } catch (error) {

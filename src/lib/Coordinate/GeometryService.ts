@@ -10,7 +10,11 @@
  *
  */
 
-import type { CoordinateTransformer, IElementProvider, LocalPoint } from './CoordinateTransformer';
+import {
+  CoordinateTransformer,
+  type IElementProvider,
+  type LocalPoint,
+} from './CoordinateTransformer';
 import type { Point } from '../../types';
 import type { Bounds } from './ViewportManager';
 
@@ -27,10 +31,11 @@ export class GeometryService {
 
   /**
    * 构造函数
-   * @param coordinateTransformer 坐标转换器（用于 worldToLocal 和 localToWorld）
+   * @param coordinateTransformer 坐标转换器（可选，默认创建新的，自动获取数据）
    */
-  constructor(coordinateTransformer: CoordinateTransformer) {
-    this.coordinateTransformer = coordinateTransformer;
+  constructor(coordinateTransformer?: CoordinateTransformer) {
+    // 如果没有传入坐标转换器，使用默认提供者创建新的（自动获取数据）
+    this.coordinateTransformer = coordinateTransformer || new CoordinateTransformer();
   }
 
   /**

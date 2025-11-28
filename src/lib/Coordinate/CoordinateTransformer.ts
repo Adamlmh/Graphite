@@ -1,4 +1,6 @@
 import type { ElementType } from '../../types';
+import { ViewportProvider } from './providers/ViewportProvider';
+import { CanvasDOMProvider } from './providers/CanvasDOMProvider';
 
 /**
  * 坐标转换模块（CoordinateTransformer）
@@ -121,12 +123,13 @@ export class CoordinateTransformer {
 
   /**
    * 构造函数
-   * @param viewportProvider 视口提供者
-   * @param canvasDOMProvider 画布 DOM 提供者
+   * @param viewportProvider 视口提供者（可选，默认使用 ViewportProvider）
+   * @param canvasDOMProvider 画布 DOM 提供者（可选，默认使用 CanvasDOMProvider）
    */
-  constructor(viewportProvider: IViewportProvider, canvasDOMProvider: ICanvasDOMProvider) {
-    this.viewportProvider = viewportProvider;
-    this.canvasDOMProvider = canvasDOMProvider;
+  constructor(viewportProvider?: IViewportProvider, canvasDOMProvider?: ICanvasDOMProvider) {
+    // 如果没有传入提供者，使用默认实现（自动获取数据）
+    this.viewportProvider = viewportProvider || new ViewportProvider();
+    this.canvasDOMProvider = canvasDOMProvider || new CanvasDOMProvider();
   }
 
   /**
