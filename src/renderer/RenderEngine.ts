@@ -8,6 +8,7 @@ import {
   type CreateElementCommand,
   type DeleteElementCommand,
   type UpdateElementCommand,
+  type UpdateSelectionCommand,
 } from '../types/render.types';
 import { LayerManager } from './layers/LayerManager';
 import { ElementRendererRegistry } from './renderers/ElementRendererRegistry';
@@ -104,6 +105,9 @@ export class RenderEngine {
           break;
         case 'BATCH_UPDATE_ELEMENTS':
           this.batchUpdateElements(command as BatchUpdateElementCommand);
+          break;
+        case 'UPDATE_SELECTION':
+          this.updateSelection(command as UpdateSelectionCommand);
           break;
         default:
           console.warn('未知渲染命令:', command);
@@ -233,6 +237,68 @@ export class RenderEngine {
 
     // 调度渲染
     this.renderScheduler.scheduleRender(command.priority);
+  }
+
+  /**
+   * 更新选中状态
+   */
+  private updateSelection(command: UpdateSelectionCommand): void {
+    const { selectedElementIds } = command;
+
+    // 清除选择层
+    this.layerManager.getSelectionLayer().removeChildren();
+
+    // 为每个选中的元素绘制选择框和调整手柄
+    selectedElementIds.forEach((elementId) => {
+      const graphics = this.elementGraphics.get(elementId);
+      if (graphics) {
+        this.drawSelectionBox(graphics);
+      }
+    });
+
+    // 调度渲染
+    this.renderScheduler.scheduleRender(command.priority);
+  }
+
+  /**
+   * 绘制选择框和调整手柄
+   */
+  private drawSelectionBox(elementGraphics: PIXI.Container): void {
+    const bounds = elementGraphics.getBounds();
+    const selectionLayer = this.layerManager.getSelectionLayer();
+
+    // 创建选择框图形
+    const selectionBox = new PIXI.Graphics();
+    selectionBox.lineStyle(2, 0x007bff, 1); // 蓝色边框
+    selectionBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    selectionLayer.addChild(selectionBox);
+
+    // 调整手柄大小
+    const handleSize = 8;
+    const handleColor = 0xffffff;
+    const handleBorderColor = 0x007bff;
+
+    // 8个调整手柄位置：4个角 + 4个边中点
+    const handlePositions = [
+      { x: bounds.x, y: bounds.y }, // 左上
+      { x: bounds.x + bounds.width / 2, y: bounds.y }, // 上中
+      { x: bounds.x + bounds.width, y: bounds.y }, // 右上
+      { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 }, // 右中
+      { x: bounds.x + bounds.width, y: bounds.y + bounds.height }, // 右下
+      { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height }, // 下中
+      { x: bounds.x, y: bounds.y + bounds.height }, // 左下
+      { x: bounds.x, y: bounds.y + bounds.height / 2 }, // 左中
+    ];
+
+    handlePositions.forEach((pos) => {
+      const handle = new PIXI.Graphics();
+      handle.beginFill(handleColor);
+      handle.lineStyle(1, handleBorderColor, 1);
+      handle.drawCircle(0, 0, handleSize / 2);
+      handle.endFill();
+      handle.position.set(pos.x, pos.y);
+      selectionLayer.addChild(handle);
+    });
   }
 
   /**

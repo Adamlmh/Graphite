@@ -16,7 +16,8 @@ export type AllRenderCommand =
   | UpdateElementCommand
   | DeleteElementCommand
   | BatchDeleteElementCommand
-  | BatchUpdateElementCommand;
+  | BatchUpdateElementCommand
+  | UpdateSelectionCommand;
 
 export interface RenderCommand {
   type: string;
@@ -49,6 +50,11 @@ export interface BatchDeleteElementCommand extends RenderCommand {
 export interface BatchUpdateElementCommand extends RenderCommand {
   type: 'BATCH_UPDATE_ELEMENTS';
   updates: Array<{ elementId: string; properties: Partial<Element> }>;
+}
+
+export interface UpdateSelectionCommand extends RenderCommand {
+  type: 'UPDATE_SELECTION';
+  selectedElementIds: string[];
 }
 
 /** 渲染资源 */

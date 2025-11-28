@@ -8,6 +8,7 @@ export type {
   RenderCommand,
   RenderResources,
   UpdateElementCommand,
+  UpdateSelectionCommand,
 } from '../types/render.types';
 export { LayerManager } from './layers/LayerManager';
 export { RenderEngine } from './RenderEngine';
