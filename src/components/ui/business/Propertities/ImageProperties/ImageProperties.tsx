@@ -9,6 +9,8 @@ import {
 } from '../../../../../hooks/useElementCategory';
 
 type ImagePropertiesProps = {
+  element?: Element;
+  elements?: Element[];
   selectedElements?: Element[];
   onChange?: (elementId: string, newStyle: Element['style']) => void;
   onGroupStyleChange?: (
@@ -47,19 +49,37 @@ const FILTER_LABEL: Record<FilterType, string> = {
 
 const EMPTY_ELEMENTS: Element[] = [];
 
-const ImageProperties: React.FC<ImagePropertiesProps> = ({
+const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
+  element,
+  elements,
   selectedElements = EMPTY_ELEMENTS,
   onChange,
   onGroupStyleChange,
 }) => {
-  const elements = selectedElements.length ? selectedElements : EMPTY_ELEMENTS;
-  const { shouldShowImagePanel, elementCount } = useElementCategory(elements);
-  const commonStyle = useCommonStyle(elements);
+  // 统一处理单个和多个元素的情况
+  const effectiveElements = React.useMemo(() => {
+    if (elements?.length) {
+      return elements;
+    }
+    if (selectedElements?.length) {
+      return selectedElements;
+    }
+    if (element) {
+      return [element];
+    }
+    return EMPTY_ELEMENTS;
+  }, [element, elements, selectedElements]);
+
+  const { shouldShowImagePanel, elementCount } = useElementCategory(effectiveElements);
+  const commonStyle = useCommonStyle(effectiveElements);
+
+  // 使用 commonStyle 的序列化版本作为依赖，避免无限循环
+  const styleKey = React.useMemo(() => JSON.stringify(commonStyle), [commonStyle]);
   const [imageStyle, setImageStyle] = useState<ImageStylePatch | undefined>(
     commonStyle as ImageStylePatch,
   );
 
-  const emitStylePatch = useElementStyleUpdater(elements, elementCount, {
+  const emitStylePatch = useElementStyleUpdater(effectiveElements, elementCount, {
     onChange,
     onGroupStyleChange,
     applyToChildren: true,
@@ -67,7 +87,8 @@ const ImageProperties: React.FC<ImagePropertiesProps> = ({
 
   React.useEffect(() => {
     setImageStyle(commonStyle as ImageStylePatch);
-  }, [commonStyle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styleKey]);
 
   // 只在图像元素时显示该面板
   if (!shouldShowImagePanel) {
@@ -223,6 +244,12 @@ const ImageProperties: React.FC<ImagePropertiesProps> = ({
       </div>
     </div>
   );
+};
+
+// 使用 key prop 来重置组件状态
+const ImageProperties: React.FC<ImagePropertiesProps> = (props) => {
+  const key = props.elements?.map((e) => e.id).join(',') || props.element?.id;
+  return <ImagePropertiesInner key={key} {...props} />;
 };
 
 export default ImageProperties;
