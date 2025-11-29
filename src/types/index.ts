@@ -225,7 +225,7 @@ export interface ViewportState {
 }
 
 /** 🆕 增强的参考线定义 - 对应【挑战】辅助线功能 */
-interface Guideline {
+export interface Guideline {
   type: 'horizontal' | 'vertical'; // 水平或垂直参考线
   position: number; // 参考线位置
   source: 'element-edge' | 'element-center' | 'canvas-center' | 'spacing'; // 参考线来源

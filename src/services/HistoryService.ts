@@ -1,11 +1,17 @@
 // historyservice.ts
 import { compress, decompress } from 'lz-string';
 import { v4 as uuidv4 } from 'uuid';
-import { StoreApi, Unsubscribe } from 'zustand';
-import { useCanvasStore } from '../stores/canvas-store';
-import ElementFactory, { Element } from './element-factory';
+//import type { StoreApi} from 'zustand';
+//import { useCanvasStore } from '../stores/canvas-store';
+import type { Tool, Guideline } from '../types/index.ts';
+import type { Element } from './element-factory';
+import ElementFactory from './element-factory';
+import type { CanvasState } from '../stores/canvas-store';
+//import {Point} from "../types/index.ts"; // 直接导入接口
+//type CanvasState = ReturnType<typeof useCanvasStore>;
 
-// 操作类型定义
+/*
+// 协同操作类型定义
 export interface Operation {
   id: string;
   type: string;
@@ -14,6 +20,7 @@ export interface Operation {
   version: number;
   dependencies?: string[];
 }
+*/
 
 // 快照接口
 export interface Snapshot {
@@ -56,7 +63,9 @@ interface PersistedViewport {
     showGuidelines: boolean;
     snapToElements: boolean;
     snapToCanvas: boolean;
+    guidelines: Guideline[];
   };
+  contentBounds: { x: number; y: number; width: number; height: number };
 }
 
 // 持久化选择状态
@@ -66,9 +75,12 @@ interface PersistedSelection {
 
 // 持久化工具状态
 interface PersistedTool {
-  activeTool: string;
+  activeTool: Tool;
+  drawing: boolean;
+  isCreating: boolean;
 }
 
+/*
 // 画布元数据
 interface CanvasMetadata {
   id: string;
@@ -76,8 +88,8 @@ interface CanvasMetadata {
   createdAt: number;
   updatedAt: number;
   createdBy: string;
-  settings?: {
-    grid?: {
+  settings: {
+    grid: {
       enabled: boolean;
       size: number;
       color: string;
@@ -85,24 +97,28 @@ interface CanvasMetadata {
   };
 }
 
+ */
+
 // 持久化画布状态
 interface PersistedCanvasState {
   elements: Record<string, PersistedElement>;
   viewport: PersistedViewport;
-  selection?: PersistedSelection;
-  tool?: PersistedTool;
-  metadata: CanvasMetadata;
+  selection: PersistedSelection;
+  tool: PersistedTool;
+  //metadata: CanvasMetadata;
   version: string;
   schemaVersion: number;
+  lastModified: number;
 }
 
 // 保存状态类型
-export enum SaveStatus {
-  IDLE = 'idle',
-  SAVING = 'saving',
-  SAVED = 'saved',
-  ERROR = 'error',
-}
+export const SaveStatus = {
+  IDLE: 'idle',
+  SAVING: 'saving',
+  SAVED: 'saved',
+  ERROR: 'error',
+} as const;
+export type SaveStatus = (typeof SaveStatus)[keyof typeof SaveStatus];
 
 // 性能监控指标
 interface PerformanceMetrics {
@@ -117,26 +133,36 @@ export class HistoryService {
   private redoStack: Command[] = [];
   private snapshots: Snapshot[] = [];
   private currentVersion: number = 0;
-  private unsubscribe: Unsubscribe | null = null;
-  private store: typeof useCanvasStore; // 直接使用 store 类型
+  //private unsubscribe: (() => void) | null = null;
+  //private store: typeof useCanvasStore; // 直接使用 store 类型
+  private store: {
+    getState: () => CanvasState;
+    setState: (
+      state: Partial<CanvasState> | ((state: CanvasState) => Partial<CanvasState>),
+    ) => void;
+  };
 
-  constructor(store: typeof useCanvasStore) {
+  constructor(store: {
+    getState: () => CanvasState;
+    setState: (
+      state: Partial<CanvasState> | ((state: CanvasState) => Partial<CanvasState>),
+    ) => void;
+  }) {
     this.store = store;
-  }
-  // 自动保存相关
-  private autoSaveTimeout: number | NodeJS.Timeout | null = null;
-  private lastSaveTime: number = 0;
-  private saveStatus: SaveStatus = SaveStatus.IDLE;
-  private saveError: Error | null = null;
-  private lastSavedVersion: number = 0;
-  private hasUnsavedChanges: boolean = false;
-  private autoSaveEnabled: boolean = true;
-  private autoSaveInterval: number = 10000; // 10秒自动保存间隔
-
-  constructor() {
+    this.setupAutoSave();
+    this.setupPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
+  // 自动保存相关
+  private autoSaveTimeout: number | null = null;
+  private lastSaveTime: number = 0;
+  private saveStatus: SaveStatus = SaveStatus.IDLE;
+  private saveError: Error | null = null;
+  private lastSavedVersion: number = 0; //待确认
+  private hasUnsavedChanges: boolean = false;
+  private autoSaveEnabled: boolean = true;
+  //private autoSaveInterval: number = 10000; // 10秒自动保存间隔
 
   // 性能监控
   private performanceMetrics: PerformanceMetrics = {
@@ -155,27 +181,25 @@ export class HistoryService {
     compressionEnabled: true,
   };
 
-  constructor(store: StoreApi<typeof useCanvasStore>) {
-    this.store = store;
-    this.setupAutoSave();
-    this.setupPageUnloadListener();
-  }
-
   /**
    * 设置自动保存监听
    */
   private setupAutoSave(): void {
-    this.unsubscribe = this.store.subscribe((state, previousState) => {
-      // 检查是否有意义的变更
-      if (this.hasMeaningfulChange(state, previousState)) {
+    // 使用轮询方式替代 subscribe
+    let previousState = JSON.stringify(this.store.getState());
+
+    setInterval(() => {
+      const currentState = JSON.stringify(this.store.getState());
+      if (this.hasMeaningfulChange(currentState, previousState)) {
+        previousState = currentState;
         this.scheduleAutoSave();
       }
-    });
+    }, 1000); // 每秒检查一次
 
     // 设置定时保存
     setInterval(() => {
       if (this.shouldAutoSave()) {
-        this.createSnapshot(false);
+        this.createSnapshot(false).catch(console.error);
       }
     }, 30000); // 30秒定时保存
   }
@@ -193,32 +217,40 @@ export class HistoryService {
     });
   }
 
-  /**
-   * 检查是否有意义的变更
-   */
-  private hasMeaningfulChange(current: unknown, previous: unknown): boolean {
-    // 检查元素变化
-    if (current.elements !== previous.elements) {
+  //检查是否有意义的变更
+  private hasMeaningfulChange(current: string, previous: string): boolean {
+    try {
+      // 解析 JSON 字符串为对象
+      const currentObj = JSON.parse(current) as CanvasState;
+      const previousObj = JSON.parse(previous) as CanvasState;
+
+      // 检查元素变化
+      if (JSON.stringify(currentObj.elements) !== JSON.stringify(previousObj.elements)) {
+        return true;
+      }
+
+      // 检查视口变化
+      if (
+        currentObj.viewport.zoom !== previousObj.viewport.zoom ||
+        currentObj.viewport.offset.x !== previousObj.viewport.offset.x ||
+        currentObj.viewport.offset.y !== previousObj.viewport.offset.y
+      ) {
+        return true;
+      }
+
+      // 检查选择变化
+      if (
+        JSON.stringify(currentObj.selectedElementIds) !==
+        JSON.stringify(previousObj.selectedElementIds)
+      ) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      // 如果解析失败，认为有变化
       return true;
     }
-
-    // 检查视口变化
-    if (
-      current.viewport.zoom !== previous.viewport.zoom ||
-      current.viewport.offset.x !== previous.viewport.offset.x ||
-      current.viewport.offset.y !== previous.viewport.offset.y
-    ) {
-      return true;
-    }
-
-    // 检查选择变化
-    if (
-      JSON.stringify(current.selectedElementIds) !== JSON.stringify(previous.selectedElementIds)
-    ) {
-      return true;
-    }
-
-    return false;
   }
 
   /**
@@ -258,9 +290,9 @@ export class HistoryService {
   /**
    * 序列化需要持久化的状态字段
    */
-  private serializeStateForPersistence(state: unknown): string {
+  private serializeStateForPersistence(state: CanvasState): string {
     const startTime = performance.now();
-
+    // 显式声明类型并按正确顺序构造
     const persistableState: PersistedCanvasState = {
       elements: this.serializeElementsForPersistence(state.elements),
       viewport: {
@@ -270,29 +302,42 @@ export class HistoryService {
         snapping: state.viewport.snapping
           ? {
               enabled: state.viewport.snapping.enabled,
-              threshold: state.viewport.snapping.threshold,
-              showGuidelines: state.viewport.snapping.showGuidelines,
-              snapToElements: state.viewport.snapping.snapToElements,
-              snapToCanvas: state.viewport.snapping.snapToCanvas,
+              threshold: state.viewport.snapping.threshold || 5,
+              showGuidelines: state.viewport.snapping.showGuidelines || true,
+              snapToElements: state.viewport.snapping.snapToElements || true,
+              snapToCanvas: state.viewport.snapping.snapToCanvas || true,
+              guidelines: state.viewport.snapping.guidelines || [],
             }
           : undefined,
+        contentBounds: state.viewport.contentBounds || { x: 0, y: 0, width: 3000, height: 2000 },
       },
       selection: {
         selectedElementIds: state.selectedElementIds,
       },
       tool: {
         activeTool: state.tool.activeTool,
+        drawing: state.tool.drawing || false,
+        isCreating: state.tool.isCreating || false,
       },
+      /*
       metadata: {
         id: state.metadata?.id || 'canvas-id',
         title: state.metadata?.title || 'Untitled',
         createdAt: state.metadata?.createdAt || Date.now(),
         updatedAt: Date.now(),
         createdBy: state.metadata?.createdBy || 'user',
-        settings: state.metadata?.settings,
+        settings: {
+          grid: {
+            enabled: state.metadata?.settings?.grid?.enabled ?? true,
+            size: state.metadata?.settings?.grid?.size ?? 20,
+            color: state.metadata?.settings?.grid?.color ?? '#e0e0e0',
+          },
+        },
       },
+      */
       version: '1.0',
       schemaVersion: 1,
+      lastModified: Date.now(),
     };
 
     const jsonString = JSON.stringify(persistableState);
@@ -327,7 +372,7 @@ export class HistoryService {
   /**
    * 反序列化持久化的状态
    */
-  private deserializeStateFromPersistence(compressedData: string): Partial<unknown> {
+  private deserializeStateFromPersistence(compressedData: string): Partial<CanvasState> {
     try {
       const jsonString = this.config.compressionEnabled
         ? decompress(compressedData)
@@ -353,15 +398,15 @@ export class HistoryService {
             showGuidelines: parsedData.viewport.snapping?.showGuidelines ?? true,
             snapToElements: parsedData.viewport.snapping?.snapToElements ?? true,
             snapToCanvas: parsedData.viewport.snapping?.snapToCanvas ?? true,
-            guidelines: [],
+            guidelines: parsedData.viewport.snapping?.guidelines ?? [],
           },
         },
         tool: {
-          activeTool: parsedData.tool?.activeTool || 'select',
+          activeTool: (parsedData.tool?.activeTool as Tool) ?? 'select',
           drawing: false,
           isCreating: false,
         },
-        metadata: parsedData.metadata,
+        //metadata: parsedData.metadata,
       };
     } catch (error) {
       console.error('Failed to deserialize state:', error);
@@ -373,8 +418,13 @@ export class HistoryService {
    * 创建恢复错误
    */
   private createRecoveryError(originalError: unknown): Error {
-    const recoveryError = new Error(`Data recovery failed: ${originalError.message}`);
-    recoveryError.cause = originalError;
+    const errorMessage =
+      originalError instanceof Error ? originalError.message : String(originalError);
+
+    const recoveryError = new Error(`Data recovery failed: ${errorMessage}`);
+    if (originalError instanceof Error) {
+      recoveryError.cause = originalError;
+    }
     return recoveryError;
   }
 
@@ -458,6 +508,7 @@ export class HistoryService {
 
       this.saveStatus = SaveStatus.SAVED;
       this.saveError = null;
+      this.lastSavedVersion = this.currentVersion;
 
       return snapshot;
     } catch (error) {
@@ -502,11 +553,13 @@ export class HistoryService {
     }
 
     try {
-      const stateData = this.deserializeStateFromPersistence(snapshot.data);
-      this.store.setState((prevState) => ({
-        ...prevState,
-        ...stateData,
-      }));
+      const stateData = this.deserializeStateFromPersistence(snapshot.data) as Partial<CanvasState>;
+      this.store.setState((prevState: CanvasState) => {
+        return {
+          ...prevState,
+          ...stateData,
+        };
+      });
 
       this.currentVersion = snapshot.version;
     } catch (error) {
@@ -528,10 +581,9 @@ export class HistoryService {
     for (const snapshot of recentSnapshots) {
       try {
         const stateData = this.deserializeStateFromPersistence(snapshot.data);
-        this.store.setState((prevState) => ({
-          ...prevState,
-          ...stateData,
-        }));
+        this.store.setState((prevState: CanvasState) => {
+          return Object.assign({} as CanvasState, prevState, stateData as Partial<CanvasState>);
+        });
         console.log('Recovery successful from snapshot:', snapshot.id);
         return;
       } catch (recoveryError) {
@@ -641,7 +693,7 @@ export class HistoryService {
 
       // 验证快照数据
       const validSnapshots = parsedData.snapshots.filter(
-        (s: unknown) => s && s.id && s.timestamp && s.data && s.version !== undefined,
+        (s: Snapshot) => s && s.id && s.timestamp && s.data && s.version !== undefined,
       );
 
       if (validSnapshots.length === 0) {
@@ -671,9 +723,12 @@ export class HistoryService {
         snapshots: this.snapshots.length,
         currentVersion: this.currentVersion,
       });
+      // 读取 / 使用 lastSavedVersion，例如打印 /通知 /存储 UI 状态
+      console.log(`[HistoryService] lastSavedVersion set to ${this.lastSavedVersion}`);
     } catch (error) {
       console.error('Failed to import history:', error);
-      throw new Error(`History import failed: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`History import failed: ${errorMessage}`);
     }
   }
 
@@ -691,10 +746,9 @@ export class HistoryService {
     }
   }
 
-  /**
-   * 序列化用于协同编辑的状态字段
-   */
-  private serializeStateForCollaboration(state: useCanvasStore): string {
+  /*
+  //序列化用于协同编辑的状态字段
+  private serializeStateForCollaboration(state: CanvasState): string {
     const collaborationState = {
       elements: this.serializeElementsForCollaboration(state.elements),
       selectedElementIds: state.selectedElementIds,
@@ -704,10 +758,10 @@ export class HistoryService {
 
     return JSON.stringify(collaborationState);
   }
+  */
 
-  /**
-   * 序列化元素字典用于协同编辑
-   */
+  /*
+  //序列化元素字典用于协同编辑
   private serializeElementsForCollaboration(
     elements: Record<string, Element>,
   ): Record<string, unknown> {
@@ -719,13 +773,13 @@ export class HistoryService {
 
     return serialized;
   }
+  */
 
-  /**
-   * 序列化单个元素用于协同编辑
-   */
-  private serializeElementForCollaboration(element: Element): unknown {
+  /*
+  //序列化单个元素用于协同编辑
+  private serializeElementForCollaboration(element: Element): any {
     // 只包含协同编辑需要的字段
-    return {
+    const result: any = {
       id: element.id,
       type: element.type,
       x: element.x,
@@ -736,22 +790,21 @@ export class HistoryService {
       opacity: element.opacity,
       transform: element.transform,
       version: element.version,
-      // 类型特定的协同字段
-      ...(element.type === 'text' && {
-        content: (element as unknown).content,
-      }),
-      ...(element.type === 'image' && {
-        src: (element as unknown).src,
-      }),
-      ...(element.type === 'group' && {
-        children: (element as unknown).children,
-      }),
     };
+      // 类型特定的协同字段
+    if (element.type === 'text') {
+      result.content = (element as any).content;
+    } else if (element.type === 'image') {
+      result.src = (element as any).src;
+    } else if (element.type === 'group') {
+      result.children = (element as any).children;
+    }
+    return result;
   }
+  */
 
-  /**
-   * 处理协同编辑操作
-   */
+  /*
+  //处理协同编辑操作
   async applyCollaborationOperation(operation: Operation): Promise<void> {
     if (operation.dependencies && !this.areDependenciesSatisfied(operation.dependencies)) {
       throw new Error(`Operation dependencies not satisfied: ${operation.dependencies.join(', ')}`);
@@ -771,10 +824,10 @@ export class HistoryService {
 
     this.currentVersion = Math.max(this.currentVersion, operation.version) + 1;
   }
+  */
 
-  /**
-   * 合并协同编辑的变更
-   */
+  /*
+  //合并协同编辑的变更
   private mergeCollaborationChanges(
     localElements: Record<string, Element>,
     remoteChanges: Record<string, unknown>,
@@ -797,11 +850,11 @@ export class HistoryService {
 
     return result;
   }
+  */
 
-  /**
-   * 从协同数据创建元素
-   */
-  private createElementFromCollaborationData(data: unknown): Element {
+  /*
+  //从协同数据创建元素
+  private createElementFromCollaborationData(data: any): Element {
     const baseElement = ElementFactory.createBaseElement(
       data.type,
       data.x || 0,
@@ -818,12 +871,12 @@ export class HistoryService {
 
     return elementWithData as Element;
   }
+  */
 
-  /**
-   * 过滤只允许协同编辑的字段
-   */
-  private filterCollaborationFields(data: unknown): unknown {
-    const filtered: unknown = {};
+  /*
+   // 过滤只允许协同编辑的字段
+   private filterCollaborationFields(data: any): any {
+    const filtered: any = {};
 
     // 基础字段
     const collaborationFields = [
@@ -848,13 +901,14 @@ export class HistoryService {
 
     return filtered;
   }
+  */
 
-  /**
-   * 检查操作依赖是否满足
-   */
+  /*
+  //检查操作依赖是否满足
   private areDependenciesSatisfied(dependencies: string[]): boolean {
     return dependencies.every((depId) => this.snapshots.some((snapshot) => snapshot.id === depId));
   }
+   */
 
   /**
    * 撤销操作
