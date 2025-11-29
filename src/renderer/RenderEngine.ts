@@ -1,5 +1,6 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
+import { eventBus } from '../lib/eventBus';
 import type { Element, ElementType } from '../types';
 import {
   type AllRenderCommand,
@@ -267,7 +268,7 @@ export class RenderEngine {
     selectedElementIds.forEach((elementId) => {
       const graphics = this.elementGraphics.get(elementId);
       if (graphics) {
-        this.drawSelectionBox(graphics);
+        this.drawSelectionBox(graphics, elementId);
       }
     });
 
@@ -278,7 +279,7 @@ export class RenderEngine {
   /**
    * 绘制选择框和调整手柄
    */
-  private drawSelectionBox(elementGraphics: PIXI.Container): void {
+  private drawSelectionBox(elementGraphics: PIXI.Container, elementId: string): void {
     const bounds = elementGraphics.getBounds();
     const selectionLayer = this.layerManager.getSelectionLayer();
 
@@ -305,15 +306,45 @@ export class RenderEngine {
       { x: bounds.x, y: bounds.y + bounds.height / 2 }, // 左中
     ];
 
-    handlePositions.forEach((pos) => {
+    const handleTypes = [
+      'top-left',
+      'top',
+      'top-right',
+      'right',
+      'bottom-right',
+      'bottom',
+      'bottom-left',
+      'left',
+    ];
+
+    handlePositions.forEach((pos, index) => {
       const handle = new PIXI.Graphics();
       handle.beginFill(handleColor);
       handle.lineStyle(1, handleBorderColor, 1);
       handle.drawCircle(0, 0, handleSize / 2);
       handle.endFill();
       handle.position.set(pos.x, pos.y);
+      handle.interactive = true;
+      handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+        event.stopPropagation();
+        eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
+      });
       selectionLayer.addChild(handle);
     });
+
+    // 添加旋转手柄：圆形样式，位于元素下方中心
+    const rotationHandle = new PIXI.Graphics();
+    rotationHandle.beginFill(handleColor);
+    rotationHandle.lineStyle(1, handleBorderColor, 1);
+    rotationHandle.drawCircle(0, 0, 6); // 半径6，比调整手柄稍大
+    rotationHandle.endFill();
+    rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
+    rotationHandle.interactive = true;
+    rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+      event.stopPropagation();
+      eventBus.emit('rotation-start', { elementId, event });
+    });
+    selectionLayer.addChild(rotationHandle);
   }
 
   /**

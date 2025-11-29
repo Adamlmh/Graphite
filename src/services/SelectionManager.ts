@@ -27,8 +27,8 @@ export class SelectionManager {
     try {
       console.log('SelectionManager: 处理点击事件', { screenPoint, elementCount: elements.length });
 
+      // 此处无需将屏幕坐标转换为世界坐标，因为传进来的就是直接相对于画布的世界坐标
       const worldPoint = { x: screenPoint.x, y: screenPoint.y };
-
       console.log('SelectionManager: 坐标转换', { screenPoint, worldPoint });
 
       // 按 zIndex 从高到低排序，优先检测上层元素
