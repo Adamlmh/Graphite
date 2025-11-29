@@ -31,9 +31,9 @@ export class SelectionInteraction {
   private isDragging = false;
   private dragStartPoint: Point | null = null;
 
-  constructor(selectionManager: SelectionManager) {
+  constructor() {
     this.canvasStore = useCanvasStore;
-    this.selectionManager = selectionManager;
+    this.selectionManager = new SelectionManager();
     this.setupEventListeners();
   }
 

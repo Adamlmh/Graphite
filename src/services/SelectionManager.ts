@@ -1,34 +1,19 @@
 import type { Element, Point } from '../types';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
-import {
-  ElementAdapter,
-  ViewportAdapter,
-  CanvasDOMAdapter,
-} from '../lib/Coordinate/ElementAdapter';
+import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 
 /**
  * 选择管理器 - 处理画布点击事件和元素选择逻辑
+ * 使用默认 Provider 自动获取视口和画布信息
  */
 export class SelectionManager {
   private coordinateTransformer: CoordinateTransformer;
   private geometryService: GeometryService;
-  private viewportAdapter: ViewportAdapter;
-  private canvasDOMAdapter: CanvasDOMAdapter;
 
-  constructor(
-    getViewportState: () => { zoom: number; offset: { x: number; y: number } },
-    getCanvasElement: () => HTMLElement | null,
-  ) {
-    // 创建适配器
-    this.viewportAdapter = new ViewportAdapter(getViewportState);
-    this.canvasDOMAdapter = new CanvasDOMAdapter(getCanvasElement);
-
-    // 创建坐标转换器和几何服务
-    this.coordinateTransformer = new CoordinateTransformer(
-      this.viewportAdapter,
-      this.canvasDOMAdapter,
-    );
+  constructor() {
+    // 使用默认 Provider（自动从 store 和 pixiApp 获取数据）
+    this.coordinateTransformer = new CoordinateTransformer();
     this.geometryService = new GeometryService(this.coordinateTransformer);
   }
 
@@ -42,8 +27,8 @@ export class SelectionManager {
     try {
       console.log('SelectionManager: 处理点击事件', { screenPoint, elementCount: elements.length });
 
-      // 将屏幕坐标转换为世界坐标
-      const worldPoint = this.coordinateTransformer.screenToWorld(screenPoint.x, screenPoint.y);
+      const worldPoint = { x: screenPoint.x, y: screenPoint.y };
+
       console.log('SelectionManager: 坐标转换', { screenPoint, worldPoint });
 
       // 按 zIndex 从高到低排序，优先检测上层元素
@@ -60,8 +45,9 @@ export class SelectionManager {
           continue;
         }
 
-        const elementAdapter = new ElementAdapter(element);
-        const isHit = this.geometryService.isPointInElement(worldPoint, elementAdapter);
+        // 使用 ElementProvider 根据 ID 获取元素信息
+        const elementProvider = new ElementProvider(element.id);
+        const isHit = this.geometryService.isPointInElement(worldPoint, elementProvider);
         console.log('SelectionManager: 检测元素', {
           elementId: element.id,
           elementBounds: {
@@ -105,8 +91,9 @@ export class SelectionManager {
           continue;
         }
 
-        const elementAdapter = new ElementAdapter(element);
-        const elementBounds = this.geometryService.getElementBoundsWorld(elementAdapter);
+        // 使用 ElementProvider 根据 ID 获取元素信息
+        const elementProvider = new ElementProvider(element.id);
+        const elementBounds = this.geometryService.getElementBoundsWorld(elementProvider);
 
         // 检测元素边界框是否与选择矩形相交
         if (this.isRectIntersect(selectionRect, elementBounds)) {
