@@ -19,6 +19,7 @@ export class ImageInteraction {
   private fileInputElement: HTMLInputElement | null = null;
   private isActive = false;
   private coordinateTransformer: CoordinateTransformer;
+  private cancelCheckTimeout: number | null = null;
 
   constructor() {
     this.coordinateTransformer = new CoordinateTransformer();
@@ -56,19 +57,51 @@ export class ImageInteraction {
     if (this.fileInputElement) {
       this.isActive = true;
       this.fileInputElement.click();
+
+      const checkCancel = () => {
+        this.cancelCheckTimeout = window.setTimeout(() => {
+          if (this.isActive) {
+            this.handleCancel();
+          }
+        }, 300);
+      };
+
+      // 监听窗口焦点事件
+      window.addEventListener('focus', checkCancel, { once: true });
     }
+  }
+
+  /**
+   * 处理用户取消选择
+   */
+  private handleCancel(): void {
+    console.log('ImageInteraction: 处理取消操作');
+    this.isActive = false;
+    useCanvasStore.getState().setTool('select');
   }
 
   /**
    * 处理文件选择变化
    */
   private async handleFileChange(event: Event): Promise<void> {
+    console.log('ImageInteraction: handleFileChange 触发');
+
+    // 清除取消检查定时器
+    if (this.cancelCheckTimeout !== null) {
+      clearTimeout(this.cancelCheckTimeout);
+      this.cancelCheckTimeout = null;
+    }
+
     const input = event.target as HTMLInputElement;
+    console.log('ImageInteraction: input.files', input.files);
     const file = input.files?.[0];
+    console.log('ImageInteraction: file', file);
 
     if (!file) {
-      console.log('ImageInteraction: 未选择文件');
+      console.log('ImageInteraction: 未选择文件，切换回选择工具');
       this.isActive = false;
+      // 用户取消选择，切换回选择工具
+      useCanvasStore.getState().setTool('select');
       return;
     }
 
@@ -87,6 +120,8 @@ export class ImageInteraction {
       this.createImageElement(dataUrl, imageDimensions);
     } catch (error) {
       console.error('ImageInteraction: 图片处理失败', error);
+      // 处理失败时切换回选择工具
+      useCanvasStore.getState().setTool('select');
     } finally {
       // 清空 input 值，允许重复选择同一文件
       input.value = '';
@@ -183,6 +218,10 @@ export class ImageInteraction {
 
     store.addElement(imageElement);
     store.setSelectedElements([imageElement.id]);
+
+    // 切换回选择工具
+    store.setTool('select');
+
     console.log('ImageInteraction: 图片元素已创建', imageElement);
     eventBus.emit('image:created', { elementId: imageElement.id });
   }
@@ -191,6 +230,12 @@ export class ImageInteraction {
    * 销毁交互实例
    */
   public destroy(): void {
+    // 清除定时器
+    if (this.cancelCheckTimeout !== null) {
+      clearTimeout(this.cancelCheckTimeout);
+      this.cancelCheckTimeout = null;
+    }
+
     if (this.fileInputElement) {
       this.fileInputElement.removeEventListener('change', this.handleFileChange.bind(this));
       document.body.removeChild(this.fileInputElement);
