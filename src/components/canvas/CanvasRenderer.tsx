@@ -4,9 +4,9 @@ import { eventBridge } from '../../lib/EventBridge';
 import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { useCanvasStore } from '../../stores/canvas-store';
-import { SelectionManager } from '../../services/SelectionManager';
 import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
 import { RenderPriority } from '../../types/render.types';
+import { useCursor } from '../../hooks/useCursor';
 import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
@@ -16,6 +16,9 @@ const CanvasRenderer: React.FC = () => {
   const renderEngineRef = useRef<RenderEngine | null>(null);
   const bridgeRef = useRef<CanvasBridge | null>(null);
   const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
+
+  // 根据当前工具自动切换光标
+  useCursor(containerRef);
 
   useEffect(() => {
     // 防止 React 严格模式下的重复初始化
@@ -58,12 +61,8 @@ const CanvasRenderer: React.FC = () => {
         bridgeRef.current = bridge;
 
         console.log('CanvasRenderer: CanvasBridge 启动完成，初始化选择交互系统');
-        // 初始化选择管理器和选择交互
-        const selectionManager = new SelectionManager(
-          () => storeApi.getState().viewport,
-          () => container,
-        );
-        const selectionInteraction = new SelectionInteraction(selectionManager);
+        // 初始化选择交互（使用默认 Provider，无需传入参数）
+        const selectionInteraction = new SelectionInteraction();
         selectionInteractionRef.current = selectionInteraction;
 
         // 创建一个测试矩形元素
