@@ -11,6 +11,7 @@ import {
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { useTheme } from '../../../../hooks/useTheme';
+import { eventBus } from '../../../../lib/eventBus';
 import styles from './ToolBar.module.less';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;
@@ -22,6 +23,18 @@ const ToolBar: React.FC = () => {
   const activeTool = useCanvasStore((state) => state.tool.activeTool);
   const setActiveTool = useCanvasStore((state) => state.setTool);
   const { isDarkMode, toggleTheme } = useTheme();
+
+  // 处理工具点击
+  const handleToolClick = (toolId: Tool) => {
+    if (toolId === 'image') {
+      // 图片工具：触发文件选择对话框
+      console.log('ToolBar: 点击图片工具，触发上传');
+      eventBus.emit('image:trigger-upload');
+    } else {
+      // 其他工具：正常切换
+      setActiveTool(toolId);
+    }
+  };
 
   const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
     { id: 'hand', label: '移动', icon: <DragOutlined /> },
@@ -45,7 +58,7 @@ const ToolBar: React.FC = () => {
                 .filter(Boolean)
                 .join(' ')}
               icon={tool.icon}
-              onClick={() => setActiveTool(tool.id)}
+              onClick={() => handleToolClick(tool.id)}
             />
           </Tooltip>
         ))}

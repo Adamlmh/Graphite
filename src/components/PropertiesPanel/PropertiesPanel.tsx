@@ -70,7 +70,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <TextProperties elements={selectedElements} onChange={handleStyleChange} />
         )}
 
-        {shouldShowImagePanel && <ImageProperties onChange={handleStyleChange} />}
+        {shouldShowImagePanel && (
+          <ImageProperties elements={selectedElements} onChange={handleStyleChange} />
+        )}
       </div>
     </FloatingPanel>
   );

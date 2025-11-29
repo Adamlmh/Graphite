@@ -5,6 +5,7 @@ import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { useCanvasStore } from '../../stores/canvas-store';
 import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
+import { ImageInteraction } from '../../services/interaction/ImageInteraction';
 import { RenderPriority } from '../../types/render.types';
 import { useCursor } from '../../hooks/useCursor';
 import './CanvasRenderer.less';
@@ -16,6 +17,7 @@ const CanvasRenderer: React.FC = () => {
   const renderEngineRef = useRef<RenderEngine | null>(null);
   const bridgeRef = useRef<CanvasBridge | null>(null);
   const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
+  const imageInteractionRef = useRef<ImageInteraction | null>(null);
 
   // 根据当前工具自动切换光标
   useCursor(containerRef);
@@ -64,6 +66,11 @@ const CanvasRenderer: React.FC = () => {
         // 初始化选择交互（使用默认 Provider，无需传入参数）
         const selectionInteraction = new SelectionInteraction();
         selectionInteractionRef.current = selectionInteraction;
+
+        // 初始化图片上传交互
+        console.log('CanvasRenderer: 初始化图片上传交互系统');
+        const imageInteraction = new ImageInteraction();
+        imageInteractionRef.current = imageInteraction;
 
         // 创建一个测试矩形元素
         const rectElement = {
@@ -132,6 +139,10 @@ const CanvasRenderer: React.FC = () => {
       // 停止桥接
       bridgeRef.current?.stop();
       bridgeRef.current = null;
+
+      // 销毁图片交互
+      imageInteractionRef.current?.destroy();
+      imageInteractionRef.current = null;
 
       // 使用 renderEngineRef.current 而不是闭包变量，确保获取最新的实例
       const renderEngine = renderEngineRef.current;
