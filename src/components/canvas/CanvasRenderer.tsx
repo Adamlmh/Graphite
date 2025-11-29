@@ -6,6 +6,7 @@ import { RenderEngine } from '../../renderer/RenderEngine';
 import { useCanvasStore } from '../../stores/canvas-store';
 import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
 import { RenderPriority } from '../../types/render.types';
+import { useCursor } from '../../hooks/useCursor';
 import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
@@ -15,6 +16,9 @@ const CanvasRenderer: React.FC = () => {
   const renderEngineRef = useRef<RenderEngine | null>(null);
   const bridgeRef = useRef<CanvasBridge | null>(null);
   const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
+
+  // 根据当前工具自动切换光标
+  useCursor(containerRef);
 
   useEffect(() => {
     // 防止 React 严格模式下的重复初始化
