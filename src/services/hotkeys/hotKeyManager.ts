@@ -1,7 +1,9 @@
 import { eventBus } from '../../lib/eventBus';
 import type { KeyboardEventPayload } from '../../lib/DOMEventBridge';
+// import type { CanvasEvent } from '../../lib/EventBridge';
 import type { HotKeyDescriptor, HotKeyTriggerPayload, Context } from './hotKeyTypes';
 import { DEFAULT_HOTKEYS, loadUserOverrides, saveUserOverrides } from './hotKeyConfig';
+import type { CanvasEvent } from '../../lib/EventBridge';
 
 /**
  * HotKeyManager 单例
@@ -27,6 +29,7 @@ class HotKeyManager {
     this.userOverrides = loadUserOverrides(); //加载用户定义的快捷键
     this.setupDefaults(); //配置默认快捷键
     eventBus.on('keyboard:down', this.onKeyDown as (payload: unknown) => void); // 订阅键盘事件，总线来自 DOMEventBridge
+    eventBus.on('wheel', this.onWheel as (payload: unknown) => void);
   }
 
   static get instance() {
@@ -36,6 +39,7 @@ class HotKeyManager {
 
   dispose() {
     eventBus.off('keyboard:down', this.onKeyDown as (payload: unknown) => void);
+    eventBus.off('wheel', this.onWheel as (payload: unknown) => void);
     this.regs.clear();
     this.index.clear();
     HotKeyManager._instance = null;
@@ -61,30 +65,62 @@ class HotKeyManager {
    * @param desc 完整 descriptor，若 conflict 且 !override 返回 false
    * @param override 若为 true，允许覆盖原有绑定
    */
-  register(desc: HotKeyDescriptor, override = false): boolean {
-    const normalized = HotKeyManager.normalizeKeyString(desc.key);
-    const ctx = desc.context || 'global';
-    const idxKey = HotKeyManager.indexKey(normalized, ctx);
+  // register(desc: HotKeyDescriptor, override = false): boolean {
+  //   const normalized = HotKeyManager.normalizeKeyString(desc.key);
+  //   const ctx = desc.context || 'global';
+  //   const idxKey = HotKeyManager.indexKey(normalized, ctx);
 
-    // 冲突检测（同 context）
-    const existingId = this.index.get(idxKey);
-    if (existingId && existingId !== desc.id && !override) {
-      console.warn(`[HotKeyManager] conflict: ${desc.key} in ${ctx} already used by ${existingId}`);
-      return false;
+  //   // 冲突检测（同 context）
+  //   const existingId = this.index.get(idxKey);
+  //   if (existingId && existingId !== desc.id && !override) {
+  //     console.warn(`[HotKeyManager] conflict: ${desc.key} in ${ctx} already used by ${existingId}`);
+  //     return false;
+  //   }
+
+  //   // 存储
+  //   this.regs.set(desc.id, { ...desc, key: normalized });
+  //   this.index.set(idxKey, desc.id);
+  //   return true;
+  // }
+
+  // 注册多个键位：key: string | string[]
+  register(desc: HotKeyDescriptor, override = false): boolean {
+    const keys = Array.isArray(desc.key) ? desc.key : [desc.key];
+    const ctx = desc.context || 'global';
+
+    for (const k of keys) {
+      const normalized = HotKeyManager.normalizeKeyString(k);
+      const idxKey = HotKeyManager.indexKey(normalized, ctx);
+
+      const existing = this.index.get(idxKey);
+      if (existing && existing !== desc.id && !override) {
+        console.warn(`HotKeyManager conflict: ${normalized} already bound to ${existing}`);
+        return false;
+      }
     }
 
-    // 存储
-    this.regs.set(desc.id, { ...desc, key: normalized });
-    this.index.set(idxKey, desc.id);
+    this.regs.set(desc.id, desc);
+
+    // 逐个键写入 index
+    for (const k of keys) {
+      const normalized = HotKeyManager.normalizeKeyString(k);
+      const ctx = desc.context ?? 'global';
+      this.index.set(HotKeyManager.indexKey(normalized, ctx), desc.id);
+    }
     return true;
   }
 
   unregister(id: string) {
     const desc = this.regs.get(id);
     if (!desc) return;
-    const normalized = HotKeyManager.normalizeKeyString(desc.key);
+
+    const keys = Array.isArray(desc.key) ? desc.key : [desc.key];
     const ctx = desc.context || 'global';
-    this.index.delete(HotKeyManager.indexKey(normalized, ctx));
+
+    for (const k of keys) {
+      const normalized = HotKeyManager.normalizeKeyString(k);
+      this.index.delete(HotKeyManager.indexKey(normalized, ctx));
+    }
     this.regs.delete(id);
   }
 
@@ -135,19 +171,37 @@ class HotKeyManager {
   }
 
   // ---- 内部逻辑 ----
+  // private setupDefaults() {
+  //   // 注册默认快捷键（handler 为空占位，真实 handler 应由上层注册）
+  //   for (const base of DEFAULT_HOTKEYS) {
+  //     const desc: HotKeyDescriptor = {
+  //       id: base.id,
+  //       key: this.userOverrides?.[base.id] || base.key,
+  //       context: base.context,
+  //       description: base.description,
+  //       handler: () => {
+  //         /* NO-OP placeholder; user must set handler later */
+  //       },
+  //       userAssignable: base.userAssignable,
+  //     };
+  //     this.register(desc, true);
+  //   }
+  // }
+  // ============ 默认加载 ============
   private setupDefaults() {
-    // 注册默认快捷键（handler 为空占位，真实 handler 应由上层注册）
     for (const base of DEFAULT_HOTKEYS) {
+      const keys = Array.isArray(base.key) ? base.key : [base.key];
+      const useKeys = keys.map((k) => this.userOverrides?.[base.id] || k);
+
       const desc: HotKeyDescriptor = {
         id: base.id,
-        key: this.userOverrides?.[base.id] || base.key,
+        key: useKeys,
         context: base.context,
         description: base.description,
-        handler: () => {
-          /* NO-OP placeholder; user must set handler later */
-        },
+        handler: () => {},
         userAssignable: base.userAssignable,
       };
+
       this.register(desc, true);
     }
   }
@@ -212,6 +266,46 @@ class HotKeyManager {
         console.error('[HotKeyManager] handler error', err);
       }
       // by design：触发第一个匹配的（可配置为继续传播，但目前停止）
+      return;
+    }
+  };
+
+  // 鼠标滚轮事件
+  // ========== 滚轮（wheel）事件 ==========
+  private onWheel = (evt: CanvasEvent) => {
+    if (!this.enabled) return;
+
+    const e = evt; // CanvasEvent
+    const ctxList = this.getActiveContextsOrder();
+
+    // Ctrl 或 Meta 才触发缩放
+    if (!e.modifiers.ctrl && !e.modifiers.meta) return;
+
+    const normalized = e.deltaY! < 0 ? 'WheelUp' : 'WheelDown';
+
+    for (const ctx of ctxList) {
+      const idxKey = HotKeyManager.indexKey(normalized, ctx);
+      const id = this.index.get(idxKey);
+      if (!id) continue;
+
+      const desc = this.regs.get(id);
+      if (!desc) continue;
+
+      const payload: HotKeyTriggerPayload = {
+        native: e.nativeEvent,
+        normalized,
+        context: ctx,
+        isWheel: true,
+        wheelDelta: e.deltaY,
+        modifiers: e.modifiers,
+        repeat: false,
+      };
+
+      // 触发 handler
+      desc.handler(payload);
+
+      // 可避免 passive 警告
+      setTimeout(() => e.preventDefault(), 0);
       return;
     }
   };

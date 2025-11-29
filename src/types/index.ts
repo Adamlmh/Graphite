@@ -23,8 +23,16 @@ interface Bounds {
 /** 元素类型枚举，支持6种基础元素 */
 export type ElementType = 'rect' | 'circle' | 'triangle' | 'text' | 'image' | 'group';
 
-/** 工具类型，支持7种交互工具 */
-export type Tool = 'select' | 'hand' | 'rect' | 'circle' | 'triangle' | 'text' | 'image';
+/** 工具类型，支持常见绘制工具 */
+export type Tool =
+  | 'select'
+  | 'hand'
+  | 'rect'
+  | 'rounded-rect'
+  | 'circle'
+  | 'triangle'
+  | 'text'
+  | 'image';
 
 // === 样式系统 ===
 
@@ -44,6 +52,8 @@ export interface BaseElementStyle {
 export interface RectElementStyle extends BaseElementStyle {
   borderRadius?: number; // 圆角半径（像素）- 矩形特有
 }
+/** 文本装饰类型，支持组合样式 */
+export type TextDecoration = 'none' | 'underline' | 'line-through' | 'underline line-through';
 
 /** 文本样式 - 对应【P0】富文本属性需求 */
 export interface TextStyle {
@@ -52,7 +62,7 @@ export interface TextStyle {
   fontSize: number; // 字号大小
   fontWeight: 'normal' | 'bold'; // 字重（B：加粗）
   fontStyle: 'normal' | 'italic'; // 字体样式（I：斜体）
-  textDecoration: 'none' | 'underline' | 'line-through'; // 文本装饰（U：下划线，S：删除线）
+  textDecoration: TextDecoration; // 文本装饰（U：下划线，S：删除线）
 
   // 布局属性
   textAlign: 'left' | 'center' | 'right'; // 文本对齐
@@ -266,3 +276,6 @@ export const isRectElement = (element: Element): element is RectElement => eleme
 
 /** 类型守卫：判断元素是否为文本 */
 export const isTextElement = (element: Element): element is TextElement => element.type === 'text';
+
+export const isImageElement = (element: Element): element is ImageElement =>
+  element.type === 'image';

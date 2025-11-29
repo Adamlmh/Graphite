@@ -28,6 +28,9 @@ export interface CanvasEvent {
   };
   /** 原始 Pixi 事件 */
   nativeEvent: PIXI.FederatedPointerEvent | PIXI.FederatedWheelEvent;
+  /** wheel 事件的累积 delta 值（可选，仅 wheel 事件有） */
+  deltaX?: number;
+  deltaY?: number;
   preventDefault: () => void;
   stopPropagation: () => void;
 }
@@ -49,10 +52,20 @@ class EventBridge {
     pointerup?: (event: PIXI.FederatedPointerEvent) => void;
     pointerupoutside?: (event: PIXI.FederatedPointerEvent) => void;
     wheel?: (event: PIXI.FederatedWheelEvent) => void;
+    domWheel?: (event: WheelEvent) => void;
   } = {};
   // pointermove 节流相关状态
   private pendingPointerMoveEvent: PIXI.FederatedPointerEvent | null = null;
   private pointerMoveRafId: number | null = null;
+  // wheel 时间节流 + delta 合流相关状态
+  private wheelState = {
+    deltaX: 0,
+    deltaY: 0,
+    event: null as PIXI.FederatedWheelEvent | null,
+    rafId: null as number | null,
+    lastFlushTime: 0,
+  };
+  private readonly WHEEL_THROTTLE_MS = 16; // 时间节流窗口：16ms
 
   /**
    * 初始化事件桥接
@@ -88,6 +101,7 @@ class EventBridge {
     if (!this.app) return;
 
     const stage = this.app.stage;
+    const view = this.app.view as HTMLCanvasElement | undefined;
 
     // 创建并保存事件处理函数引用
     this.eventHandlers.pointerdown = (event: PIXI.FederatedPointerEvent) => {
@@ -103,7 +117,7 @@ class EventBridge {
       this.handlePointerEvent('pointerupoutside', event);
     };
     this.eventHandlers.wheel = (event: PIXI.FederatedWheelEvent) => {
-      this.handleWheelEvent(event);
+      this.throttledWheel(event);
     };
 
     // 注册事件监听器
@@ -112,6 +126,16 @@ class EventBridge {
     stage.on('pointerup', this.eventHandlers.pointerup);
     stage.on('pointerupoutside', this.eventHandlers.pointerupoutside);
     stage.on('wheel', this.eventHandlers.wheel);
+
+    // DOM 层阻止 Ctrl + 滚轮触发浏览器缩放
+    if (view) {
+      this.eventHandlers.domWheel = (event: WheelEvent) => {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+        }
+      };
+      view.addEventListener('wheel', this.eventHandlers.domWheel, { passive: false });
+    }
   }
 
   /**
@@ -146,9 +170,98 @@ class EventBridge {
   }
 
   /**
+   * 节流处理 wheel 事件
+   * 使用时间节流 + delta 合流，在 16ms 窗口内合并多次 wheel 事件
+   */
+  private throttledWheel(event: PIXI.FederatedWheelEvent): void {
+    const now = performance.now();
+
+    // 累加 delta 值
+    this.wheelState.deltaX += event.deltaX;
+    this.wheelState.deltaY += event.deltaY;
+
+    // 保存最后一次事件（用于取坐标、修饰键等）
+    this.wheelState.event = event;
+
+    // 如果这是本轮合流的第一条 wheel，初始化时间
+    if (this.wheelState.lastFlushTime === 0) {
+      this.wheelState.lastFlushTime = now;
+    }
+
+    // 计算距离上次分发的时间
+    const timeSinceLastFlush = now - this.wheelState.lastFlushTime;
+
+    // 如果已经超过 16ms，立即分发
+    if (timeSinceLastFlush >= this.WHEEL_THROTTLE_MS) {
+      this.flushWheel();
+    } else {
+      // 如果还在 16ms 窗口内，且没有待执行的定时器，则设置定时器
+      if (this.wheelState.rafId === null) {
+        const remainingTime = this.WHEEL_THROTTLE_MS - timeSinceLastFlush;
+        this.wheelState.rafId = window.setTimeout(() => {
+          this.wheelState.rafId = null;
+          this.flushWheel();
+        }, remainingTime);
+      }
+      // 如果已有定时器，什么都不做，等待定时器触发
+    }
+  }
+
+  /**
+   * 分发累积的 wheel 事件
+   */
+  private flushWheel(): void {
+    // 如果没有待处理的事件，直接返回
+    if (!this.wheelState.event) {
+      return;
+    }
+
+    const event = this.wheelState.event;
+    const deltaX = this.wheelState.deltaX;
+    const deltaY = this.wheelState.deltaY;
+
+    // 构造 CanvasEvent
+    const canvasEvent: CanvasEvent = {
+      type: 'wheel',
+      screen: {
+        x: event.screen.x,
+        y: event.screen.y,
+      },
+      world: {
+        x: event.global.x,
+        y: event.global.y,
+      },
+      buttons: event.buttons,
+      modifiers: {
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        meta: event.metaKey,
+      },
+      nativeEvent: event,
+      // 附加合并后的 delta 值
+      deltaX,
+      deltaY,
+      preventDefault: () => {
+        event.preventDefault();
+      },
+      stopPropagation: () => {
+        event.stopPropagation();
+      },
+    };
+
+    // 通过 eventBus 分发事件
+    eventBus.emit('wheel', canvasEvent);
+
+    // 重置状态
+    this.wheelState.deltaX = 0;
+    this.wheelState.deltaY = 0;
+    this.wheelState.event = null;
+    this.wheelState.lastFlushTime = performance.now();
+  }
+
+  /**
    * 处理指针事件
-   * @param type 事件类型
-   * @param event 指针事件
    */
   private handlePointerEvent(type: string, event: PIXI.FederatedPointerEvent): void {
     if (!this.app) return;
@@ -166,7 +279,7 @@ class EventBridge {
       buttons: event.buttons,
       modifiers: {
         shift: event.shiftKey,
-        ctrl: event.ctrlKey || event.metaKey,
+        ctrl: event.ctrlKey,
         alt: event.altKey,
         meta: event.metaKey,
       },
@@ -184,43 +297,6 @@ class EventBridge {
   }
 
   /**
-   * 处理滚轮事件
-   * @param event 滚轮事件
-   */
-  private handleWheelEvent(event: PIXI.FederatedWheelEvent): void {
-    if (!this.app) return;
-
-    const canvasEvent: CanvasEvent = {
-      type: 'wheel',
-      screen: {
-        x: event.screen.x,
-        y: event.screen.y,
-      },
-      world: {
-        x: event.global.x,
-        y: event.global.y,
-      },
-      buttons: event.buttons,
-      modifiers: {
-        shift: event.shiftKey,
-        ctrl: event.ctrlKey || event.metaKey,
-        alt: event.altKey,
-        meta: event.metaKey,
-      },
-      nativeEvent: event,
-      preventDefault: () => {
-        event.preventDefault();
-      },
-      stopPropagation: () => {
-        event.stopPropagation();
-      },
-    };
-
-    // 通过 eventBus 分发事件
-    eventBus.emit('wheel', canvasEvent);
-  }
-
-  /**
    * 销毁事件桥接
    */
   destroy(): void {
@@ -230,8 +306,21 @@ class EventBridge {
       this.pointerMoveRafId = null;
     }
 
-    // 清空待处理的指针移动事件
+    // 取消待执行的 wheel 定时器
+    if (this.wheelState.rafId !== null) {
+      clearTimeout(this.wheelState.rafId);
+      this.wheelState.rafId = null;
+    }
+
+    // 清空待处理的事件
     this.pendingPointerMoveEvent = null;
+    this.wheelState = {
+      deltaX: 0,
+      deltaY: 0,
+      event: null,
+      rafId: null,
+      lastFlushTime: 0,
+    };
 
     if (this.app) {
       const stage = this.app.stage;
@@ -250,6 +339,12 @@ class EventBridge {
       }
       if (this.eventHandlers.wheel) {
         stage.off('wheel', this.eventHandlers.wheel);
+      }
+      if (this.eventHandlers.domWheel) {
+        const view = this.app.view as HTMLCanvasElement | undefined;
+        if (view) {
+          view.removeEventListener('wheel', this.eventHandlers.domWheel);
+        }
       }
     }
     // 清空事件处理函数引用

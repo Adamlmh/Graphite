@@ -1,34 +1,25 @@
-import './lib/DOMEventBridge';
 import './App.css';
-import TextProperties from './components/ui/business/Propertities/TextProperties/TextProperties';
-import ShapeProperties from './components/ui/business/Propertities/ShapeProperties/ShapeProperties';
-import ImageProperties from './components/ui/business/Propertities/ImageProperties/ImageProperties';
+import './styles/themes.less';
+import CanvasRenderer from './components/canvas/CanvasRenderer';
 import ToolBar from './components/ui/business/ToolBar/ToolBar';
-import FloatingPanel from './components/ui/layout/FloatingPanel/FloatingPanel';
+import PropertiesPanel from './components/PropertiesPanel/PropertiesPanel';
+import './lib/DOMEventBridge';
+
 function App() {
   return (
     //下为ui组件展示
-    <div>
-      <header>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <header style={{ minHeight: '60px' }}>
         <ToolBar />
       </header>
-      <main>
-        <aside>
-          <FloatingPanel position={{ top: 20, right: 0 }}>
-            <p>文本属性栏基础样式</p>
-            <TextProperties />
-          </FloatingPanel>
+      <main style={{ display: 'flex', flex: 1 }}>
+        {/* 画布区域 */}
+        <div style={{ flex: 1 }}>
+          <CanvasRenderer />
+        </div>
 
-          <FloatingPanel position={{ top: 280, right: 0 }}>
-            <p>图形属性栏基础样式</p>
-            <ShapeProperties />
-          </FloatingPanel>
-
-          <FloatingPanel position={{ top: 500, right: 0 }}>
-            <p>图片属性栏基础样式</p>
-            <ImageProperties />
-          </FloatingPanel>
-        </aside>
+        {/* 属性面板 */}
+        <PropertiesPanel />
       </main>
     </div>
   );

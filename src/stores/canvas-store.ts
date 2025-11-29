@@ -98,6 +98,24 @@ export interface CanvasState {
    */
   clearSelection: () => void;
 
+  /**
+   * 添加元素到选择列表
+   * 示例用法：store.addToSelection('el1');
+   */
+  addToSelection: (id: string) => void;
+
+  /**
+   * 从选择列表中移除元素
+   * 示例用法：store.removeFromSelection('el1');
+   */
+  removeFromSelection: (id: string) => void;
+
+  /**
+   * 切换元素选择状态
+   * 示例用法：store.toggleSelection('el1');
+   */
+  toggleSelection: (id: string) => void;
+
   // === 视口操作 ===
 
   /**
@@ -209,7 +227,9 @@ export const useCanvasStore = create<CanvasState>()(
     // === 派生状态实现 ===
     get selectedElements() {
       const state = get();
-      return state.selectedElementIds.map((id) => state.elements[id]).filter(Boolean);
+      return state.selectedElementIds
+        .map((id) => state.elements[id])
+        .filter((element): element is Element => element !== undefined);
     },
 
     get elementList() {
@@ -260,6 +280,32 @@ export const useCanvasStore = create<CanvasState>()(
     clearSelection: () =>
       set((state) => {
         state.selectedElementIds = [];
+      }),
+
+    addToSelection: (id) =>
+      set((state) => {
+        if (!state.selectedElementIds.includes(id) && state.elements[id]) {
+          state.selectedElementIds.push(id);
+        }
+      }),
+
+    removeFromSelection: (id) =>
+      set((state) => {
+        state.selectedElementIds = state.selectedElementIds.filter((elId) => elId !== id);
+      }),
+
+    toggleSelection: (id) =>
+      set((state) => {
+        const index = state.selectedElementIds.indexOf(id);
+        if (index === -1) {
+          // 不在选择列表中，添加
+          if (state.elements[id]) {
+            state.selectedElementIds.push(id);
+          }
+        } else {
+          // 已在选择列表中，移除
+          state.selectedElementIds.splice(index, 1);
+        }
       }),
 
     setViewport: (updates) =>
