@@ -1,8 +1,11 @@
 // services/interaction/SelectionInteraction.ts
-import { useCanvasStore } from '../../stores/canvas-store';
+import { SelectHelper } from '../../lib/Coordinate/SelectHelper';
 import { eventBus } from '../../lib/eventBus';
-import { SelectionManager } from '../SelectionManager';
+import type { CanvasState } from '../../stores/canvas-store';
+import { useCanvasStore } from '../../stores/canvas-store';
 import type { Point } from '../../types';
+import { ElementFactory } from '../element-factory';
+import { SelectionManager } from '../SelectionManager';
 
 // 定义画布事件接口（匹配 EventBridge 的结构）
 interface CanvasEvent {
@@ -30,10 +33,13 @@ export class SelectionInteraction {
   private selectionManager: SelectionManager;
   private isDragging = false;
   private dragStartPoint: Point | null = null;
+  private dragStartWorld: Point | null = null;
+  private selectHelper: SelectHelper;
 
   constructor() {
     this.canvasStore = useCanvasStore;
     this.selectionManager = new SelectionManager();
+    this.selectHelper = new SelectHelper();
     this.setupEventListeners();
   }
 
@@ -57,6 +63,7 @@ export class SelectionInteraction {
 
     this.isDragging = true;
     this.dragStartPoint = { x: event.screen.x, y: event.screen.y };
+    this.dragStartWorld = { x: event.world.x, y: event.world.y };
 
     // 这里可以开始框选逻辑的准备
     console.log('SelectionInteraction: 开始拖拽', event.screen);
@@ -70,9 +77,27 @@ export class SelectionInteraction {
       return;
     }
 
-    // 这里可以实现框选预览逻辑
-    if (this.dragStartPoint) {
-      console.log('SelectionInteraction: 拖拽中', event.screen);
+    // 框选预览：在 OVERLAY 层显示透明填充+边框的预览矩形
+    if (this.dragStartWorld) {
+      const start = this.dragStartWorld;
+      const end = { x: event.world.x, y: event.world.y };
+      const x = Math.min(start.x, end.x);
+      const y = Math.min(start.y, end.y);
+      const width = Math.abs(end.x - start.x);
+      const height = Math.abs(end.y - start.y);
+
+      const preview = ElementFactory.createRectangle(x, y, width, height, {
+        fill: '#3b82f6',
+        fillOpacity: 0.08,
+        stroke: '#3b82f6',
+        strokeOpacity: 1,
+        strokeWidth: 1,
+        borderRadius: 0,
+      });
+
+      this.canvasStore.setState((state: CanvasState) => {
+        state.tool.tempElement = preview;
+      });
     }
   };
 
@@ -98,15 +123,26 @@ export class SelectionInteraction {
       if (dragDistance < 5) {
         this.handleClick(event);
       } else {
-        // 处理框选逻辑
-        this.handleDragSelection(this.dragStartPoint, { x: event.screen.x, y: event.screen.y });
+        if (this.dragStartWorld) {
+          this.handleDragSelection(
+            this.dragStartWorld,
+            { x: event.world.x, y: event.world.y },
+            event.modifiers,
+          );
+        }
       }
     } else {
       // 单纯的点击
       this.handleClick(event);
     }
 
+    // 清除预览
+    this.canvasStore.setState((state: CanvasState) => {
+      state.tool.tempElement = undefined;
+    });
+
     this.dragStartPoint = null;
+    this.dragStartWorld = null;
   };
 
   /**
@@ -159,12 +195,21 @@ export class SelectionInteraction {
   /**
    * 处理框选
    */
-  private handleDragSelection(startPoint: Point, endPoint: Point): void {
-    console.log('SelectionInteraction: 框选', startPoint, endPoint);
-
-    // 这里可以实现框选逻辑
-    // 将屏幕坐标转换为世界坐标，然后使用 SelectionManager 的 getElementsInRect 方法
-    // 暂时留空，可以后续实现
+  private handleDragSelection(
+    startWorld: Point,
+    endWorld: Point,
+    modifiers: { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean },
+  ): void {
+    const ids = this.selectHelper.getElementsInSelectionBox(startWorld, endWorld);
+    const isMulti = modifiers.ctrl || modifiers.meta;
+    const state = this.canvasStore.getState();
+    if (isMulti) {
+      const current = state.selectedElementIds;
+      const merged = Array.from(new Set([...current, ...ids]));
+      state.setSelectedElements(merged);
+    } else {
+      state.setSelectedElements(ids);
+    }
   }
 
   /**
