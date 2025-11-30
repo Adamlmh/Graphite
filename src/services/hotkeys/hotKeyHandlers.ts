@@ -1,37 +1,169 @@
 // hotKeyHandlers.ts
 import { hotKeyManager } from './hotKeyManager';
+import { useCanvasStore } from '../../stores/canvas-store';
+import { eventBus } from '../../lib/eventBus';
+import { moveInteraction } from '../interaction/moveInteraction.ts';
+import { deleteInteraction } from '../interaction/DeleteInteraction';
+import { copyPasteInteraction } from '../interaction/CopyPasteInteraction';
 import { testElementCreation } from '../interaction/ElementCreationTest';
+import type { HotKeyTriggerPayload } from './hotKeyTypes.ts';
 
 export function bindCanvasHotKeys() {
-  // 例如 Ctrl+A 全选
-  hotKeyManager.setHandler('selectAll', () => {
-    console.log('按下了 Ctrl+A');
-    testElementCreation(); // 调用测试函数
-  });
-  hotKeyManager.setHandler('zoomIn', () => {
-    console.log('放大');
-  });
-  // 撤销
+  const canvasStore = useCanvasStore;
   hotKeyManager.setHandler('undo', () => {
     console.log('执行撤销');
+    // TODO: 实现撤销逻辑
+    // eventBus.emit('command:undo');
+    testElementCreation();
   });
 
-  // 重做
-  hotKeyManager.setHandler('redo', () => {
-    console.log('执行重做');
+  // hotKeyManager.setHandler('redo', () => {
+  //   console.log('执行重做');
+  //   // TODO: 实现重做逻辑
+  //   eventBus.emit('command:redo');
+  // });
+
+  // 复制快捷键
+  hotKeyManager.setHandler('copy', (payload: HotKeyTriggerPayload) => {
+    console.log('执行复制操作');
+    // 使用安全复制，避免在输入框中误操作
+    const nativeEvent = payload.native as KeyboardEvent | undefined;
+    copyPasteInteraction.safeCopySelectedElements(nativeEvent);
   });
 
-  // 复制
-  hotKeyManager.setHandler('copy', () => {
-    console.log('执行复制');
+  // 剪切快捷键
+  hotKeyManager.setHandler('cut', (payload: HotKeyTriggerPayload) => {
+    console.log('执行剪切操作');
+    // 使用安全剪切，避免在输入框中误操作
+    const nativeEvent = payload.native as KeyboardEvent | undefined;
+    copyPasteInteraction.safeCutSelectedElements(nativeEvent);
   });
 
-  hotKeyManager.setHandler('zoomInWheel', () => {
-    console.log('Zoom In 触发：Ctrl + 滚轮上');
+  // 粘贴快捷键
+  hotKeyManager.setHandler('paste', (payload: HotKeyTriggerPayload) => {
+    console.log('执行粘贴操作');
+    // 使用安全粘贴，避免在输入框中误操作
+    const nativeEvent = payload.native as KeyboardEvent | undefined;
+    copyPasteInteraction.safePasteElements(nativeEvent);
   });
-  hotKeyManager.setHandler('zoomOutWheel', () => {
-    console.log('Zoom Out 触发：Ctrl + 滚轮下');
+
+  // hotKeyManager.setHandler('save', () => {
+  //   console.log('执行保存');
+  //   eventBus.emit('canvas:save');
+  // });
+
+  hotKeyManager.setHandler('delete', () => {
+    console.log('执行删除');
+    deleteInteraction.deleteSelectedElements();
   });
+
+  hotKeyManager.setHandler('selectAll', () => {
+    console.log('执行全选');
+    const allElementIds = Object.keys(canvasStore.getState().elements);
+    canvasStore.getState().setSelectedElements(allElementIds);
+  });
+
+  // === 视图操作 ===
+  // hotKeyManager.setHandler('zoomIn', () => {
+  //   console.log('放大画布');
+  //   const viewport = canvasStore.getState().viewport;
+  //   const newZoom = Math.min(viewport.zoom * 1.2, 10); // 限制最大缩放
+  //   canvasStore.getState().setViewport({ zoom: newZoom });
+  // });
+
+  // hotKeyManager.setHandler('zoomOut', () => {
+  //   console.log('缩小画布');
+  //   const viewport = canvasStore.getState().viewport;
+  //   const newZoom = Math.max(viewport.zoom / 1.2, 0.1); // 限制最小缩放
+  //   canvasStore.getState().setViewport({ zoom: newZoom });
+  // });
+
+  // hotKeyManager.setHandler('zoomInWheel', () => {
+  //   console.log('滚轮放大');
+  //   const viewport = canvasStore.getState().viewport;
+  //   const newZoom = Math.min(viewport.zoom * 1.1, 10);
+  //   canvasStore.getState().setViewport({ zoom: newZoom });
+  // });
+
+  // hotKeyManager.setHandler('zoomOutWheel', () => {
+  //   console.log('滚轮缩小');
+  //   const viewport = canvasStore.getState().viewport;
+  //   const newZoom = Math.max(viewport.zoom / 1.1, 0.1);
+  //   canvasStore.getState().setViewport({ zoom: newZoom });
+  // });
+
+  // === 平移操作 ===
+  // hotKeyManager.setHandler('panToggle', () => {
+  //   console.log('切换平移模式');
+  //   const currentTool = canvasStore.getState().tool.activeTool;
+  //   if (currentTool === 'hand') {
+  //     canvasStore.getState().setTool('select');
+  //   } else {
+  //     canvasStore.getState().setTool('hand');
+  //   }
+  // });
+
+  // // === 微移操作 ===
+  hotKeyManager.setHandler('nudgeLeft', () => {
+    console.log('向左微移');
+    moveInteraction.nudgeLeft();
+  });
+
+  hotKeyManager.setHandler('nudgeRight', () => {
+    console.log('向右微移');
+    moveInteraction.nudgeRight();
+  });
+
+  hotKeyManager.setHandler('nudgeUp', () => {
+    console.log('向上微移');
+    moveInteraction.nudgeUp();
+  });
+
+  hotKeyManager.setHandler('nudgeDown', () => {
+    console.log('向下微移');
+    moveInteraction.nudgeDown();
+  });
+
+  hotKeyManager.setHandler('fastNudgeLeft', () => {
+    console.log('快速向左微移');
+    moveInteraction.nudgeLeft(true); // true 表示快速模式
+  });
+
+  hotKeyManager.setHandler('fastNudgeRight', () => {
+    console.log('快速向右微移');
+    moveInteraction.nudgeRight(true);
+  });
+
+  hotKeyManager.setHandler('fastNudgeUp', () => {
+    console.log('快速向上微移');
+    moveInteraction.nudgeUp(true);
+  });
+
+  hotKeyManager.setHandler('fastNudgeDown', () => {
+    console.log('快速向下微移');
+    moveInteraction.nudgeDown(true);
+  });
+
+  // === 元素操作 ===
+  // hotKeyManager.setHandler('clone', () => {
+  //   console.log('克隆元素');
+  //   const selectedElementIds = canvasStore.getState().selectedElementIds;
+  //   if (selectedElementIds.length > 0) {
+  //     eventBus.emit('elements:clone', { elementIds: selectedElementIds });
+  //   }
+  // });
+
+  // // === 工具切换 ===
+  // hotKeyManager.setHandler('selectTool', () => {
+  //   console.log('切换到选择工具');
+  //   canvasStore.getState().setTool('select');
+  // });
+
+  // hotKeyManager.setHandler('boxSelectTool', () => {
+  //   console.log('切换到框选工具');
+  //   // 如果没有框选工具，可以暂时切换到选择工具
+  //   canvasStore.getState().setTool('select');
+  // });
 
   // 你可以按需增加更多...
 }

@@ -46,7 +46,13 @@ export const DEFAULT_HOTKEYS: Omit<HotKeyDescriptor, 'handler'>[] = [
     description: '保存',
     userAssignable: true,
   },
-  { id: 'delete', key: 'Delete', context: 'global', description: '删除', userAssignable: true },
+  {
+    id: 'delete',
+    key: ['Delete', 'Backspace'],
+    context: 'global',
+    description: '删除',
+    userAssignable: true,
+  },
   {
     id: 'selectAll',
     key: ['Ctrl+A', 'Meta+A'],
