@@ -85,15 +85,18 @@ export class ImageRenderer implements IElementRenderer {
   update(sprite: PIXI.Sprite, changes: Partial<Element>): void {
     const imageChanges = changes as Partial<ImageElement>;
 
-    // 更新位置
-    if (imageChanges.x !== undefined)
-      sprite.x =
-        imageChanges.x +
-        (imageChanges.transform?.pivotX ?? 0) * (imageChanges.width ?? (sprite as any).lastWidth);
-    if (imageChanges.y !== undefined)
-      sprite.y =
-        imageChanges.y +
-        (imageChanges.transform?.pivotY ?? 0) * (imageChanges.height ?? (sprite as any).lastHeight);
+    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
+    const transform = imageChanges.transform ?? (sprite as any).lastTransform;
+    const width = imageChanges.width ?? (sprite as any).lastWidth;
+    const height = imageChanges.height ?? (sprite as any).lastHeight;
+
+    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
+    if (imageChanges.x !== undefined && transform) {
+      sprite.x = imageChanges.x + transform.pivotX * width;
+    }
+    if (imageChanges.y !== undefined && transform) {
+      sprite.y = imageChanges.y + transform.pivotY * height;
+    }
 
     // 更新透明度
     if (imageChanges.opacity !== undefined) sprite.alpha = imageChanges.opacity;

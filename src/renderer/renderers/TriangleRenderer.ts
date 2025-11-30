@@ -65,17 +65,18 @@ export class TriangleRenderer implements IElementRenderer {
   update(graphics: PIXI.Graphics, changes: Partial<Element>): void {
     const triangleChanges = changes as Partial<TriangleElement>;
 
-    // 更新位置
-    if (triangleChanges.x !== undefined)
-      graphics.x =
-        triangleChanges.x +
-        (triangleChanges.transform?.pivotX ?? 0) *
-          (triangleChanges.width ?? (graphics as any).lastWidth);
-    if (triangleChanges.y !== undefined)
-      graphics.y =
-        triangleChanges.y +
-        (triangleChanges.transform?.pivotY ?? 0) *
-          (triangleChanges.height ?? (graphics as any).lastHeight);
+    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
+    const transform = triangleChanges.transform ?? (graphics as any).lastTransform;
+    const width = triangleChanges.width ?? (graphics as any).lastWidth;
+    const height = triangleChanges.height ?? (graphics as any).lastHeight;
+
+    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
+    if (triangleChanges.x !== undefined && transform) {
+      graphics.x = triangleChanges.x + transform.pivotX * width;
+    }
+    if (triangleChanges.y !== undefined && transform) {
+      graphics.y = triangleChanges.y + transform.pivotY * height;
+    }
 
     // 更新透明度
     if (triangleChanges.opacity !== undefined) graphics.alpha = triangleChanges.opacity;

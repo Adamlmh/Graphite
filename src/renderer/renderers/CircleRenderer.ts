@@ -70,17 +70,18 @@ export class CircleRenderer implements IElementRenderer {
   update(graphics: PIXI.Graphics, changes: Partial<Element>): void {
     const circleChanges = changes as Partial<CircleElement>;
 
-    // 更新位置
-    if (circleChanges.x !== undefined)
-      graphics.x =
-        circleChanges.x +
-        (circleChanges.transform?.pivotX ?? 0) *
-          (circleChanges.width ?? (graphics as any).lastWidth);
-    if (circleChanges.y !== undefined)
-      graphics.y =
-        circleChanges.y +
-        (circleChanges.transform?.pivotY ?? 0) *
-          (circleChanges.height ?? (graphics as any).lastHeight);
+    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
+    const transform = circleChanges.transform ?? (graphics as any).lastTransform;
+    const width = circleChanges.width ?? (graphics as any).lastWidth;
+    const height = circleChanges.height ?? (graphics as any).lastHeight;
+
+    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
+    if (circleChanges.x !== undefined && transform) {
+      graphics.x = circleChanges.x + transform.pivotX * width;
+    }
+    if (circleChanges.y !== undefined && transform) {
+      graphics.y = circleChanges.y + transform.pivotY * height;
+    }
 
     // 更新透明度
     if (circleChanges.opacity !== undefined) graphics.alpha = circleChanges.opacity;
