@@ -31,6 +31,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   // 订阅 elements 变化以触发重新渲染
   const elements = useCanvasStore((state) => state.elements);
 
+  // 订阅 viewport 变化（滚动/缩放时需要重新计算位置）
+  const viewport = useCanvasStore((state) => state.viewport);
+
   // 缓存选中的元素，当选中ID或元素对象变化时重新计算
   const selectedElements = useMemo(() => {
     return selectedElementIds
@@ -42,7 +45,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const { shouldShowShapePanel, shouldShowTextPanel, shouldShowImagePanel, elementCount } =
     useElementCategory(selectedElements);
 
-  // 计算动态位置
+  // 计算动态位置（依赖 viewport.offset 确保滚动时重新计算）
   const dynamicPosition = useMemo(() => {
     if (!enableDynamicPositioning || selectedElements.length === 0) {
       return null;
@@ -52,11 +55,27 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     const panelWidth = 280;
     const panelHeight = 60;
 
-    return calculatePanelPosition(selectedElements, { width: panelWidth, height: panelHeight });
-  }, [selectedElements, enableDynamicPositioning]);
+    const position = calculatePanelPosition(selectedElements, {
+      width: panelWidth,
+      height: panelHeight,
+    });
 
-  // 最终使用的位置：动态位置优先，回退到静态位置
-  const finalPosition = dynamicPosition || staticPosition || { right: 0, top: 80 };
+    // 如果返回 null，说明元素不在视口内
+    return position;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedElements,
+    enableDynamicPositioning,
+    viewport.offset.x,
+    viewport.offset.y,
+    viewport.zoom,
+  ]);
+
+  // 最终使用的位置
+  // 注意：如果启用动态定位且 dynamicPosition 为 null（元素不在视口内），则不显示面板
+  const finalPosition = enableDynamicPositioning
+    ? dynamicPosition
+    : staticPosition || { right: 0, top: 80 };
 
   // 样式更新回调
   const handleStyleChange = (elementId: string, newStyle: Element['style']) => {
@@ -69,10 +88,15 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     return null;
   }
 
+  // 如果启用动态定位但元素不在视口内，不显示面板
+  if (enableDynamicPositioning && !finalPosition) {
+    return null;
+  }
+
   const panelClassName = [styles['properties-panel'], className].filter(Boolean).join(' ');
 
   return (
-    <FloatingPanel visible={true} className={panelClassName} position={finalPosition}>
+    <FloatingPanel visible={true} className={panelClassName} position={finalPosition!}>
       {shouldShowShapePanel && (
         <ShapeProperties elements={selectedElements} onChange={handleStyleChange} />
       )}

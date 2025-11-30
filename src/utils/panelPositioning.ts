@@ -36,7 +36,51 @@ interface ScreenBounds {
 }
 
 /**
- * 计算选中元素的世界坐标边界
+ * 计算旋转后的边界框四个顶点
+ */
+function getRotatedCorners(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: number = 0,
+): Array<{ x: number; y: number }> {
+  // 如果没有旋转，直接返回矩形四个角
+  if (!rotation || rotation === 0) {
+    return [
+      { x, y },
+      { x: x + width, y },
+      { x: x + width, y: y + height },
+      { x, y: y + height },
+    ];
+  }
+
+  // 计算中心点（旋转中心）
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+
+  // 旋转角度转弧度
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  // 四个角相对于中心的坐标
+  const corners = [
+    { x: -width / 2, y: -height / 2 },
+    { x: width / 2, y: -height / 2 },
+    { x: width / 2, y: height / 2 },
+    { x: -width / 2, y: height / 2 },
+  ];
+
+  // 旋转后的四个角
+  return corners.map((corner) => ({
+    x: centerX + corner.x * cos - corner.y * sin,
+    y: centerY + corner.x * sin + corner.y * cos,
+  }));
+}
+
+/**
+ * 计算选中元素的世界坐标边界（支持旋转）
  */
 function getElementsWorldBounds(elements: Element[]): {
   minX: number;
@@ -56,20 +100,18 @@ function getElementsWorldBounds(elements: Element[]): {
   let maxY = -Infinity;
 
   elements.forEach((element) => {
-    // 考虑元素的旋转，计算实际的边界框
-    const { x, y, width, height } = element;
+    const { x, y, width, height, rotation = 0 } = element;
 
-    //TODO: 这里可以考虑旋转后的边界计算，目前简化为未旋转的边界
-    // 后续可以扩展为计算旋转后的实际边界
-    const left = x;
-    const top = y;
-    const right = x + width;
-    const bottom = y + height;
+    // 计算旋转后的四个顶点
+    const corners = getRotatedCorners(x, y, width, height, rotation);
 
-    minX = Math.min(minX, left);
-    minY = Math.min(minY, top);
-    maxX = Math.max(maxX, right);
-    maxY = Math.max(maxY, bottom);
+    // 遍历所有顶点，找到最小外接矩形
+    corners.forEach((corner) => {
+      minX = Math.min(minX, corner.x);
+      minY = Math.min(minY, corner.y);
+      maxX = Math.max(maxX, corner.x);
+      maxY = Math.max(maxY, corner.y);
+    });
   });
 
   return {
@@ -263,12 +305,44 @@ function calculateBestPosition(
 }
 
 /**
+ * 检测元素是否在视口可见范围内
+ */
+function isElementInViewport(
+  screenBounds: ScreenBounds,
+  viewportWidth: number,
+  viewportHeight: number,
+  threshold: number = 50, // 允许部分超出的阈值（像素）
+): boolean {
+  // 元素完全在视口左侧
+  if (screenBounds.right < -threshold) {
+    return false;
+  }
+
+  // 元素完全在视口右侧
+  if (screenBounds.left > viewportWidth + threshold) {
+    return false;
+  }
+
+  // 元素完全在视口上方
+  if (screenBounds.bottom < -threshold) {
+    return false;
+  }
+
+  // 元素完全在视口下方
+  if (screenBounds.top > viewportHeight + threshold) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * 计算属性面板的动态位置
  *
  * @param elements 选中的元素列表
  * @param panelSize 面板尺寸 { width, height }
  * @param options 可选配置
- * @returns 面板的定位样式对象
+ * @returns 面板的定位样式对象，如果元素不在视口内则返回 null
  */
 export function calculatePanelPosition(
   elements: Element[],
@@ -300,7 +374,22 @@ export function calculatePanelPosition(
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
 
-  // 4. 计算最佳位置
+  // 4. 检测元素是否在视口内
+  if (!isElementInViewport(screenBounds, viewportWidth, viewportHeight)) {
+    console.log('PanelPositioning: 元素不在视口内，隐藏面板', {
+      screenBounds,
+      viewport: { width: viewportWidth, height: viewportHeight },
+      reason: {
+        left: screenBounds.left > viewportWidth + 50 ? '元素在视口右侧外' : null,
+        right: screenBounds.right < -50 ? '元素在视口左侧外' : null,
+        top: screenBounds.top > viewportHeight + 50 ? '元素在视口下方外' : null,
+        bottom: screenBounds.bottom < -50 ? '元素在视口上方外' : null,
+      },
+    });
+    return null;
+  }
+
+  // 5. 计算最佳位置
   const position = calculateBestPosition(screenBounds, config, viewportWidth, viewportHeight);
 
   console.log('PanelPositioning: 计算面板位置', {
