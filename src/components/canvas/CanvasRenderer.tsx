@@ -11,6 +11,117 @@ import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
  */
+const MinimapOverlay: React.FC<{ containerRef: React.RefObject<HTMLDivElement | null> }> = ({
+  containerRef,
+}) => {
+  const elements = useCanvasStore((state) => state.elements);
+  const viewport = useCanvasStore((state) => state.viewport);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const mapW = 180;
+    const mapH = 120;
+    canvas.width = mapW;
+    canvas.height = mapH;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const list = Object.values(elements);
+    if (list.length === 0) {
+      minX = -500;
+      minY = -500;
+      maxX = 500;
+      maxY = 500;
+    } else {
+      for (const e of list) {
+        const ex = e.x;
+        const ey = e.y;
+        const ew = e.width;
+        const eh = e.height;
+        minX = Math.min(minX, ex);
+        minY = Math.min(minY, ey);
+        maxX = Math.max(maxX, ex + ew);
+        maxY = Math.max(maxY, ey + eh);
+      }
+    }
+
+    const z = viewport.zoom;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    const vw = cw / z;
+    const vh = ch / z;
+    const vx = viewport.offset.x;
+    const vy = viewport.offset.y;
+
+    const padX = vw * 0.2;
+    const padY = vh * 0.2;
+    const uminX = Math.min(minX, vx);
+    const uminY = Math.min(minY, vy);
+    const umaxX = Math.max(maxX, vx + vw);
+    const umaxY = Math.max(maxY, vy + vh);
+    const wbX = uminX - padX;
+    const wbY = uminY - padY;
+    const wbW = umaxX - uminX + padX * 2;
+    const wbH = umaxY - uminY + padY * 2;
+
+    const scale = Math.min(mapW / wbW, mapH / wbH);
+    const offsetX = (mapW - wbW * scale) / 2;
+    const offsetY = (mapH - wbH * scale) / 2;
+
+    ctx.clearRect(0, 0, mapW, mapH);
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, mapW, mapH);
+    ctx.strokeStyle = '#374151';
+    ctx.strokeRect(0, 0, mapW, mapH);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 1;
+    for (const e of list) {
+      const x = (e.x - wbX) * scale + offsetX;
+      const y = (e.y - wbY) * scale + offsetY;
+      const w = e.width * scale;
+      const h = e.height * scale;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    const rx = (vx - wbX) * scale + offsetX;
+    const ry = (vy - wbY) * scale + offsetY;
+    const rw = vw * scale;
+    const rh = vh * scale;
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rx, ry, rw, rh);
+  }, [elements, viewport, containerRef]);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        right: 12,
+        bottom: 12,
+        width: 180,
+        height: 120,
+        border: '1px solid var(--border-normal)',
+        borderRadius: 8,
+        background: 'var(--panel-bg)',
+        zIndex: 1001,
+        boxShadow: 'var(--shadow-sm)',
+        overflow: 'hidden',
+      }}
+    >
+      <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+    </div>
+  );
+};
+
 const CanvasRenderer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderEngineRef = useRef<RenderEngine | null>(null);
@@ -136,7 +247,7 @@ const CanvasRenderer: React.FC = () => {
             type: 'rect' as const,
             zIndex: 1,
             x: 1000,
-            y: 500,
+            y: 1000,
             width: 200,
             height: 150,
             rotation: 0,
@@ -226,7 +337,9 @@ const CanvasRenderer: React.FC = () => {
         height: '100%',
         position: 'relative',
       }}
-    />
+    >
+      <MinimapOverlay containerRef={containerRef} />
+    </div>
   );
 };
 

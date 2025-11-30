@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as PIXI from 'pixi.js';
+import { useCanvasStore } from '../../stores/canvas-store';
 import type { ViewportState } from '../../types';
 import { RenderPriority } from '../../types/render.types';
 import { ViewportController } from '../viewport/ViewportController';
@@ -128,6 +129,8 @@ export class ScrollbarManager {
     this.app.stage.on('pointerup', () => {
       this.dragging = null;
       this.viewportController.enforceBounds(true);
+      const vp = (this.viewportController as any).viewport as ViewportState;
+      useCanvasStore.getState().setViewport({ offset: { x: vp.offset.x, y: vp.offset.y } });
     });
     this.app.stage.on('pointermove', (e: PIXI.FederatedPointerEvent) => {
       if (!this.dragging) return;
@@ -152,6 +155,7 @@ export class ScrollbarManager {
         const targetOffsetX = minOffsetX + normX * (maxOffsetX - minOffsetX);
         const next = { ...vp, offset: { x: targetOffsetX, y: vp.offset.y } } as ViewportState;
         this.viewportController.setViewport(next, RenderPriority.HIGH);
+        useCanvasStore.getState().setViewport({ offset: next.offset });
         this.dragStartPos.copyFrom(e.global);
       } else if (this.dragging === 'v') {
         const vTrackLen = Math.max(0, ch - m * 2 - t);
@@ -165,6 +169,7 @@ export class ScrollbarManager {
         const targetOffsetY = minOffsetY + normY * (maxOffsetY - minOffsetY);
         const next = { ...vp, offset: { x: vp.offset.x, y: targetOffsetY } } as ViewportState;
         this.viewportController.setViewport(next, RenderPriority.HIGH);
+        useCanvasStore.getState().setViewport({ offset: next.offset });
         this.dragStartPos.copyFrom(e.global);
       }
     });
