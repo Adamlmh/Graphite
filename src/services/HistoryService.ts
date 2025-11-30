@@ -289,7 +289,7 @@ export class HistoryService {
       // 保存索引
       const index = JSON.parse(localStorage.getItem('canvas-snapshots-index') || '[]');
       index.push({ id: snapshot.id, timestamp: snapshot.timestamp });
-      index.sort((a: number, b: number) => b.timestamp - a.timestamp);
+      index.sort((a: { timestamp: number }, b: { timestamp: number }) => b.timestamp - a.timestamp);
       index.splice(this.config.maxDBRecords); // 保留最新的
       localStorage.setItem('canvas-snapshots-index', JSON.stringify(index));
     } catch (error) {
