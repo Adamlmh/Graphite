@@ -18,12 +18,8 @@ export class RenderScheduler {
    */
   scheduleRender(priority: RenderPriority = RenderPriority.NORMAL): void {
     console.log(`RenderScheduler: 调度渲染，优先级 ${priority}`);
-
     // PIXI.Application 默认自动渲染，无需手动触发
-    // 高优先级任务可以立即更新ticker
-    if (priority >= RenderPriority.HIGH) {
-      this.immediateUpdate();
-    }
+    // 为避免在ticker回调中触发同步update造成递归，这里不再强制立即更新
   }
 
   /**

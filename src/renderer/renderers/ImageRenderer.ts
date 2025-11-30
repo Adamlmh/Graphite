@@ -43,13 +43,16 @@ export class ImageRenderer implements IElementRenderer {
     (sprite as any).elementType = 'image';
     (sprite as any).elementId = element.id;
 
+    // 启用交互
+    sprite.interactive = true;
+
     // 设置尺寸
     sprite.width = width;
     sprite.height = height;
 
     // 设置位置和变换
-    sprite.x = x;
-    sprite.y = y;
+    sprite.x = x + transform.pivotX * width;
+    sprite.y = y + transform.pivotY * height;
     sprite.alpha = opacity;
 
     // 设置缩放
@@ -82,9 +85,18 @@ export class ImageRenderer implements IElementRenderer {
   update(sprite: PIXI.Sprite, changes: Partial<Element>): void {
     const imageChanges = changes as Partial<ImageElement>;
 
-    // 更新位置
-    if (imageChanges.x !== undefined) sprite.x = imageChanges.x;
-    if (imageChanges.y !== undefined) sprite.y = imageChanges.y;
+    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
+    const transform = imageChanges.transform ?? (sprite as any).lastTransform;
+    const width = imageChanges.width ?? (sprite as any).lastWidth;
+    const height = imageChanges.height ?? (sprite as any).lastHeight;
+
+    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
+    if (imageChanges.x !== undefined && transform) {
+      sprite.x = imageChanges.x + transform.pivotX * width;
+    }
+    if (imageChanges.y !== undefined && transform) {
+      sprite.y = imageChanges.y + transform.pivotY * height;
+    }
 
     // 更新透明度
     if (imageChanges.opacity !== undefined) sprite.alpha = imageChanges.opacity;

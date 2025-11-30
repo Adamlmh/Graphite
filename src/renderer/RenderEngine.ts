@@ -1,7 +1,8 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
 import { eventBus } from '../lib/eventBus';
-import type { Element, ElementType } from '../types';
+import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
+import type { Element, ElementType, ViewportState } from '../types';
 import {
   type AllRenderCommand,
   type BatchDeleteElementCommand,
@@ -10,21 +11,36 @@ import {
   type DeleteElementCommand,
   type UpdateElementCommand,
   type UpdateSelectionCommand,
+  type UpdateViewportCommand,
 } from '../types/render.types';
 import { LayerManager } from './layers/LayerManager';
 import { ElementRendererRegistry } from './renderers/ElementRendererRegistry';
 import { ResourceManager } from './resources/ResourceManager';
 import { RenderScheduler } from './scheduling/RenderScheduler';
+import { ScrollbarManager } from './ui/ScrollbarManager';
+import { ViewportController } from './viewport/ViewportController';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
  */
 export class RenderEngine {
   private pixiApp!: PIXI.Application;
+  private camera!: PIXI.Container;
   private layerManager!: LayerManager;
   private rendererRegistry!: ElementRendererRegistry;
   private resourceManager!: ResourceManager;
   private renderScheduler!: RenderScheduler;
+  private viewportController!: ViewportController;
+  private scrollbarManager!: ScrollbarManager;
+  private currentViewport!: ViewportState;
+  private defaultSnapping = {
+    enabled: false,
+    guidelines: [],
+    threshold: 4,
+    showGuidelines: false,
+    snapToElements: false,
+    snapToCanvas: false,
+  } as ViewportState['snapping'];
 
   // 元素图形映射表：维护业务元素与PIXI图形对象的关联
   private elementGraphics: Map<string, PIXI.Container> = new Map();
@@ -33,6 +49,7 @@ export class RenderEngine {
   private previewGraphics: PIXI.Container | null = null;
 
   private container: HTMLElement;
+  private viewportInteraction!: ViewportInteraction;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -68,11 +85,28 @@ export class RenderEngine {
     this.pixiApp.stage.interactive = true;
     this.pixiApp.stage.hitArea = new PIXI.Rectangle(-10000, -10000, 20000, 20000);
 
-    // 初始化其他模块
-    this.layerManager = new LayerManager(this.pixiApp.stage);
+    this.camera = new PIXI.Container();
+    this.camera.interactive = true;
+    this.pixiApp.stage.addChild(this.camera);
+
+    this.viewportController = new ViewportController(this.pixiApp, this.camera, this.container);
+    this.viewportController.setZoomLimits(0.1, 6);
+    this.scrollbarManager = new ScrollbarManager(this.pixiApp, this.viewportController);
+
+    this.layerManager = new LayerManager(this.camera);
     this.resourceManager = new ResourceManager();
     this.rendererRegistry = new ElementRendererRegistry(this.resourceManager);
     this.renderScheduler = new RenderScheduler(this.pixiApp);
+
+    this.viewportController.onViewportChange = (vp, priority) => {
+      this.currentViewport = vp;
+      this.scrollbarManager.refresh(vp);
+      this.renderScheduler.scheduleRender(priority);
+    };
+
+    // 初始化视口交互
+    this.viewportInteraction = new ViewportInteraction(this.container);
+    this.viewportInteraction.init();
   }
 
   /**
@@ -110,9 +144,15 @@ export class RenderEngine {
         case 'UPDATE_SELECTION':
           this.updateSelection(command as UpdateSelectionCommand);
           break;
+        case 'UPDATE_VIEWPORT':
+          this.updateViewport(command as UpdateViewportCommand);
+          break;
         default:
           console.warn('未知渲染命令:', command);
       }
+
+      // 打印世界坐标
+      this.printWorldCoordinates();
     } catch (error) {
       console.error('执行渲染命令失败:', error);
     }
@@ -264,87 +304,273 @@ export class RenderEngine {
     // 清除选择层
     this.layerManager.getSelectionLayer().removeChildren();
 
-    // 为每个选中的元素绘制选择框和调整手柄
-    selectedElementIds.forEach((elementId) => {
-      const graphics = this.elementGraphics.get(elementId);
-      if (graphics) {
-        this.drawSelectionBox(graphics, elementId);
+    if (selectedElementIds.length <= 1) {
+      selectedElementIds.forEach((elementId) => {
+        const graphics = this.elementGraphics.get(elementId);
+        if (graphics) {
+          this.drawSelectionBox(graphics, elementId, true);
+        }
+      });
+    } else {
+      selectedElementIds.forEach((elementId) => {
+        const graphics = this.elementGraphics.get(elementId);
+        if (graphics) {
+          this.drawSelectionBox(graphics, elementId, false);
+        }
+      });
+    }
+
+    // 如果选择多个元素，绘制组合边界框以增强视觉反馈
+    if (selectedElementIds.length > 1) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      selectedElementIds.forEach((elementId) => {
+        const g = this.elementGraphics.get(elementId);
+        if (!g) return;
+        const b = g.getBounds();
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.width);
+        maxY = Math.max(maxY, b.y + b.height);
+      });
+
+      if (minX !== Infinity) {
+        const selectionLayer = this.layerManager.getSelectionLayer();
+        const box = new PIXI.Graphics();
+        box.lineStyle(2, 0x2563eb, 1);
+        const dash = 10;
+        const gap = 6;
+        const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const ux = dx / len;
+          const uy = dy / len;
+          let pos = 0;
+          while (pos < len) {
+            const sx = x1 + ux * pos;
+            const sy = y1 + uy * pos;
+            const ex = x1 + ux * Math.min(pos + dash, len);
+            const ey = y1 + uy * Math.min(pos + dash, len);
+            box.moveTo(sx, sy);
+            box.lineTo(ex, ey);
+            pos += dash + gap;
+          }
+        };
+        drawDashed(minX, minY, maxX, minY);
+        drawDashed(maxX, minY, maxX, maxY);
+        drawDashed(maxX, maxY, minX, maxY);
+        drawDashed(minX, maxY, minX, minY);
+        box.stroke();
+
+        const fill = new PIXI.Graphics();
+        fill.beginFill(0x3b82f6, 0.04);
+        fill.drawRect(minX, minY, maxX - minX, maxY - minY);
+        fill.endFill();
+
+        selectionLayer.addChild(box);
+        selectionLayer.addChild(fill);
+
+        const handleSize = 8;
+        const handleColor = 0xffffff;
+        const handleBorderColor = 0x2563eb;
+        const handlePositions = [
+          { x: minX, y: minY },
+          { x: (minX + maxX) / 2, y: minY },
+          { x: maxX, y: minY },
+          { x: maxX, y: (minY + maxY) / 2 },
+          { x: maxX, y: maxY },
+          { x: (minX + maxX) / 2, y: maxY },
+          { x: minX, y: maxY },
+          { x: minX, y: (minY + maxY) / 2 },
+        ];
+        const handleTypes = [
+          'top-left',
+          'top',
+          'top-right',
+          'right',
+          'bottom-right',
+          'bottom',
+          'bottom-left',
+          'left',
+        ];
+        handlePositions.forEach((pos, index) => {
+          const handle = new PIXI.Graphics();
+          handle.beginFill(handleColor);
+          handle.lineStyle(1, handleBorderColor, 1);
+          handle.circle(0, 0, handleSize / 2);
+          handle.endFill();
+          handle.position.set(pos.x, pos.y);
+          handle.interactive = true;
+          handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+            event.stopPropagation();
+            eventBus.emit('group-resize-start', {
+              elementIds: selectedElementIds,
+              handleType: handleTypes[index],
+              bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+              event,
+            });
+          });
+          selectionLayer.addChild(handle);
+        });
+
+        const rotationHandle = new PIXI.Graphics();
+        rotationHandle.beginFill(handleColor);
+        rotationHandle.lineStyle(1, handleBorderColor, 1);
+        rotationHandle.circle(0, 0, 6);
+        rotationHandle.endFill();
+        rotationHandle.position.set((minX + maxX) / 2, maxY + 20);
+        rotationHandle.interactive = true;
+        rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+          event.stopPropagation();
+          eventBus.emit('group-rotation-start', {
+            elementIds: selectedElementIds,
+            bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+            event,
+          });
+        });
+        selectionLayer.addChild(rotationHandle);
       }
-    });
+    }
 
     // 调度渲染
     this.renderScheduler.scheduleRender(command.priority);
   }
 
   /**
+   * 更新视口状态
+   */
+  private updateViewport(command: UpdateViewportCommand): void {
+    const { viewport } = command;
+    const base = this.currentViewport || {
+      zoom: 1,
+      offset: { x: 0, y: 0 },
+      canvasSize: { width: this.container.clientWidth, height: this.container.clientHeight },
+      contentBounds: {
+        x: 0,
+        y: 0,
+        width: this.container.clientWidth,
+        height: this.container.clientHeight,
+      },
+      snapping: this.defaultSnapping,
+    };
+    const next: ViewportState = { ...base, ...viewport, snapping: base.snapping };
+    this.viewportController.setViewport(next, command.priority);
+  }
+
+  /**
    * 绘制选择框和调整手柄
    */
-  private drawSelectionBox(elementGraphics: PIXI.Container, elementId: string): void {
+  private drawSelectionBox(
+    elementGraphics: PIXI.Container,
+    elementId: string,
+    withHandles: boolean = true,
+  ): void {
     const bounds = elementGraphics.getBounds();
     const selectionLayer = this.layerManager.getSelectionLayer();
 
-    // 创建选择框图形
-    const selectionBox = new PIXI.Graphics();
-    selectionBox.lineStyle(2, 0x007bff, 1); // 蓝色边框
-    selectionBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
-    selectionLayer.addChild(selectionBox);
+    const dashedBox = new PIXI.Graphics();
+    dashedBox.lineStyle(2, 0x007bff, 1);
+    const dash = 8;
+    const gap = 6;
+    const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const ux = dx / len;
+      const uy = dy / len;
+      let pos = 0;
+      while (pos < len) {
+        const sx = x1 + ux * pos;
+        const sy = y1 + uy * pos;
+        const ex = x1 + ux * Math.min(pos + dash, len);
+        const ey = y1 + uy * Math.min(pos + dash, len);
+        dashedBox.moveTo(sx, sy);
+        dashedBox.lineTo(ex, ey);
+        pos += dash + gap;
+      }
+    };
+    drawDashed(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y);
+    drawDashed(
+      bounds.x + bounds.width,
+      bounds.y,
+      bounds.x + bounds.width,
+      bounds.y + bounds.height,
+    );
+    drawDashed(
+      bounds.x + bounds.width,
+      bounds.y + bounds.height,
+      bounds.x,
+      bounds.y + bounds.height,
+    );
+    drawDashed(bounds.x, bounds.y + bounds.height, bounds.x, bounds.y);
+    dashedBox.stroke();
+    selectionLayer.addChild(dashedBox);
 
-    // 调整手柄大小
-    const handleSize = 8;
-    const handleColor = 0xffffff;
-    const handleBorderColor = 0x007bff;
+    const highlightBox = new PIXI.Graphics();
+    highlightBox.beginFill(0x3b82f6, 0.06);
+    highlightBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    highlightBox.endFill();
+    selectionLayer.addChild(highlightBox);
 
-    // 8个调整手柄位置：4个角 + 4个边中点
-    const handlePositions = [
-      { x: bounds.x, y: bounds.y }, // 左上
-      { x: bounds.x + bounds.width / 2, y: bounds.y }, // 上中
-      { x: bounds.x + bounds.width, y: bounds.y }, // 右上
-      { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 }, // 右中
-      { x: bounds.x + bounds.width, y: bounds.y + bounds.height }, // 右下
-      { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height }, // 下中
-      { x: bounds.x, y: bounds.y + bounds.height }, // 左下
-      { x: bounds.x, y: bounds.y + bounds.height / 2 }, // 左中
-    ];
+    if (withHandles) {
+      const handleSize = 8;
+      const handleColor = 0xffffff;
+      const handleBorderColor = 0x007bff;
 
-    const handleTypes = [
-      'top-left',
-      'top',
-      'top-right',
-      'right',
-      'bottom-right',
-      'bottom',
-      'bottom-left',
-      'left',
-    ];
+      const handlePositions = [
+        { x: bounds.x, y: bounds.y },
+        { x: bounds.x + bounds.width / 2, y: bounds.y },
+        { x: bounds.x + bounds.width, y: bounds.y },
+        { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 },
+        { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+        { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height },
+        { x: bounds.x, y: bounds.y + bounds.height },
+        { x: bounds.x, y: bounds.y + bounds.height / 2 },
+      ];
 
-    handlePositions.forEach((pos, index) => {
-      const handle = new PIXI.Graphics();
-      handle.beginFill(handleColor);
-      handle.lineStyle(1, handleBorderColor, 1);
-      handle.drawCircle(0, 0, handleSize / 2);
-      handle.endFill();
-      handle.position.set(pos.x, pos.y);
-      handle.interactive = true;
-      handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-        event.stopPropagation();
-        eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
+      const handleTypes = [
+        'top-left',
+        'top',
+        'top-right',
+        'right',
+        'bottom-right',
+        'bottom',
+        'bottom-left',
+        'left',
+      ];
+
+      handlePositions.forEach((pos, index) => {
+        const handle = new PIXI.Graphics();
+        handle.beginFill(handleColor);
+        handle.lineStyle(1, handleBorderColor, 1);
+        handle.circle(0, 0, handleSize / 2);
+        handle.endFill();
+        handle.position.set(pos.x, pos.y);
+        handle.interactive = true;
+        handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+          event.stopPropagation();
+          eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
+        });
+        selectionLayer.addChild(handle);
       });
-      selectionLayer.addChild(handle);
-    });
 
-    // 添加旋转手柄：圆形样式，位于元素下方中心
-    const rotationHandle = new PIXI.Graphics();
-    rotationHandle.beginFill(handleColor);
-    rotationHandle.lineStyle(1, handleBorderColor, 1);
-    rotationHandle.drawCircle(0, 0, 6); // 半径6，比调整手柄稍大
-    rotationHandle.endFill();
-    rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
-    rotationHandle.interactive = true;
-    rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-      event.stopPropagation();
-      eventBus.emit('rotation-start', { elementId, event });
-    });
-    selectionLayer.addChild(rotationHandle);
+      const rotationHandle = new PIXI.Graphics();
+      rotationHandle.beginFill(handleColor);
+      rotationHandle.lineStyle(1, handleBorderColor, 1);
+      rotationHandle.circle(0, 0, 6);
+      rotationHandle.endFill();
+      rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
+      rotationHandle.interactive = true;
+      rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+        event.stopPropagation();
+        eventBus.emit('rotation-start', { elementId, event });
+      });
+      selectionLayer.addChild(rotationHandle);
+    }
   }
 
   /**
@@ -400,8 +626,8 @@ export class RenderEngine {
         // 设置预览样式（半透明）
         graphics.alpha = 0.5;
 
-        // 添加到舞台
-        this.pixiApp.stage.addChild(graphics);
+        // 添加到覆盖层（Overlay）
+        this.layerManager.getOverlayLayer().addChild(graphics);
 
         this.previewGraphics = graphics;
       }
@@ -419,5 +645,31 @@ export class RenderEngine {
       this.previewGraphics.destroy();
       this.previewGraphics = null;
     }
+  }
+
+  /**
+   * 打印所有元素的PIXI世界坐标
+   */
+  printWorldCoordinates(): void {
+    console.log('=== PIXI 渲染图形世界坐标 ===');
+    this.elementGraphics.forEach((graphics, elementId) => {
+      // 获取相对于camera的局部坐标
+      const localPos = graphics.position;
+      // 获取camera的偏移量（世界坐标）
+      const cameraOffset = {
+        x: -this.camera.position.x / this.camera.scale.x,
+        y: -this.camera.position.y / this.camera.scale.y,
+      };
+      // 计算真正的世界坐标：局部坐标 + camera偏移
+      const worldPos = {
+        x: localPos.x + cameraOffset.x,
+        y: localPos.y + cameraOffset.y,
+      };
+
+      console.log(
+        `元素 ${elementId}: 世界坐标 (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`,
+      );
+    });
+    console.log('================================');
   }
 }

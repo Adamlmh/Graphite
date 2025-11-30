@@ -32,8 +32,8 @@ export class TextRenderer implements IElementRenderer {
     (pixiText as any).elementId = element.id;
 
     // 设置位置和变换
-    pixiText.x = x;
-    pixiText.y = y;
+    pixiText.x = x + transform.pivotX * width;
+    pixiText.y = y + transform.pivotY * height;
     pixiText.alpha = opacity;
 
     // 设置缩放
@@ -65,9 +65,18 @@ export class TextRenderer implements IElementRenderer {
   update(text: PIXI.Text, changes: Partial<Element>): void {
     const textChanges = changes as Partial<TextElement>;
 
-    // 更新位置
-    if (textChanges.x !== undefined) text.x = textChanges.x;
-    if (textChanges.y !== undefined) text.y = textChanges.y;
+    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
+    const transform = textChanges.transform ?? (text as any).lastTransform;
+    const width = textChanges.width ?? (text as any).lastWidth;
+    const height = textChanges.height ?? (text as any).lastHeight;
+
+    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
+    if (textChanges.x !== undefined && transform) {
+      text.x = textChanges.x + transform.pivotX * width;
+    }
+    if (textChanges.y !== undefined && transform) {
+      text.y = textChanges.y + transform.pivotY * height;
+    }
 
     // 更新透明度
     if (textChanges.opacity !== undefined) text.alpha = textChanges.opacity;
