@@ -2,7 +2,7 @@ import './App.css';
 import './styles/themes.less';
 import CanvasRenderer from './components/canvas/CanvasRenderer';
 import ToolBar from './components/ui/business/ToolBar/ToolBar';
-import PropertiesPanel from './components/PropertiesPanel/PropertiesPanel';
+import PropertiesPanel from './components/ui/business/PropertiesPanel/PropertiesPanel';
 import './lib/DOMEventBridge';
 
 function App() {

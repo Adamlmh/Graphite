@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { ColorPicker, Slider } from 'antd';
+import { ColorPicker, Slider, Popover, Button, Tooltip } from 'antd';
+import { BgColorsOutlined, BorderOutlined } from '@ant-design/icons';
 import type { Element } from '../../../../../types/index';
 import {
   useElementCategory,
@@ -85,43 +86,70 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
 
   const sliderStrokeWidth =
     typeof currentStyle.strokeWidth === 'number' ? currentStyle.strokeWidth : 0;
-  const strokeWidthLabel =
-    typeof currentStyle.strokeWidth === 'number' ? `${currentStyle.strokeWidth}px` : '--';
+
+  const strokeWidthSlider = (
+    <div className={styles.sliderPopover}>
+      <Slider
+        min={0}
+        max={20}
+        step={1}
+        value={sliderStrokeWidth}
+        onChange={(width) => updateStyle({ strokeWidth: width })}
+        className={styles.popoverSlider}
+        tooltip={{ open: false }}
+      />
+      <span className={styles.sliderValue}>{sliderStrokeWidth}px</span>
+    </div>
+  );
 
   return (
-    <div className={styles.container}>
-      <div className={styles.row}>
-        <span className={styles.label}>背景色：</span>
-        <div className={styles.control}>
-          <ColorPicker
-            value={currentStyle.fill}
-            onChange={(_, hex) => updateStyle({ fill: hex })}
+    <div className={styles.toolbar}>
+      <Tooltip title="填充色">
+        <ColorPicker
+          value={currentStyle.fill}
+          onChange={(_, hex) => updateStyle({ fill: hex })}
+          className={styles.colorPicker}
+        >
+          <Button
+            className={styles.colorButton}
+            style={{
+              background: currentStyle.fill || '#ffffff',
+            }}
+          >
+            <BgColorsOutlined className={styles.colorButtonIcon} />
+          </Button>
+        </ColorPicker>
+      </Tooltip>
+
+      <div className={styles.divider} />
+
+      <Popover
+        content={strokeWidthSlider}
+        trigger="hover"
+        placement="top"
+        mouseEnterDelay={0.1}
+        mouseLeaveDelay={0.2}
+      >
+        <Tooltip title="边框大小" placement="bottom" mouseEnterDelay={0.3}>
+          <Button className={styles.toolButton} icon={<BorderOutlined />} />
+        </Tooltip>
+      </Popover>
+
+      <Tooltip title="边框颜色">
+        <ColorPicker
+          value={currentStyle.stroke}
+          onChange={(_, hex) => updateStyle({ stroke: hex })}
+          className={styles.colorPicker}
+        >
+          <Button
+            className={styles.strokeColorButton}
+            style={{
+              borderColor: currentStyle.stroke || '#000000',
+              borderWidth: '10px',
+            }}
           />
-        </div>
-      </div>
-      <div className={styles.row}>
-        <span className={styles.label}>边框宽度：</span>
-        <div className={styles.control}>
-          <Slider
-            min={0}
-            max={20}
-            step={1}
-            value={sliderStrokeWidth}
-            onChange={(width) => updateStyle({ strokeWidth: width })}
-            className={styles.slider}
-          />
-          <span className={styles.value}>{strokeWidthLabel}</span>
-        </div>
-      </div>
-      <div className={styles.row}>
-        <span className={styles.label}>边框颜色：</span>
-        <div className={styles.control}>
-          <ColorPicker
-            value={currentStyle.stroke}
-            onChange={(_, hex) => updateStyle({ stroke: hex })}
-          />
-        </div>
-      </div>
+        </ColorPicker>
+      </Tooltip>
     </div>
   );
 };

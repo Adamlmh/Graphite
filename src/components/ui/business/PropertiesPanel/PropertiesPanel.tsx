@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
-import { useCanvasStore } from '../../stores/canvas-store';
-import { useElementCategory } from '../../hooks/useElementCategory';
-import FloatingPanel from '../ui/layout/FloatingPanel/FloatingPanel';
-import ShapeProperties from '../ui/business/Propertities/ShapeProperties/ShapeProperties';
-import TextProperties from '../ui/business/Propertities/TextProperties/TextProperties';
-import ImageProperties from '../ui/business/Propertities/ImageProperties/ImageProperties';
-import type { Element } from '../../types';
+import { useCanvasStore } from '../../../../stores/canvas-store';
+import { useElementCategory } from '../../../../hooks/useElementCategory';
+import FloatingPanel from '../../layout/FloatingPanel/FloatingPanel';
+import ShapeProperties from '../Propertities/ShapeProperties/ShapeProperties';
+import TextProperties from '../Propertities/TextProperties/TextProperties';
+import ImageProperties from '../Propertities/ImageProperties/ImageProperties';
+import type { Element } from '../../../../types';
 import styles from './PropertiesPanel.module.less';
 
 export interface PropertiesPanelProps {
@@ -54,26 +54,17 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   return (
     <FloatingPanel visible={true} className={panelClassName} position={position}>
-      <div className={styles['properties-panel__header']}>
-        <h3>属性面板</h3>
-        <span className={styles['properties-panel__count']}>
-          {elementCount === 1 ? '1 个元素' : `${elementCount} 个元素`}
-        </span>
-      </div>
+      {shouldShowShapePanel && (
+        <ShapeProperties elements={selectedElements} onChange={handleStyleChange} />
+      )}
 
-      <div className={styles['properties-panel__content']}>
-        {shouldShowShapePanel && (
-          <ShapeProperties elements={selectedElements} onChange={handleStyleChange} />
-        )}
+      {shouldShowTextPanel && (
+        <TextProperties elements={selectedElements} onChange={handleStyleChange} />
+      )}
 
-        {shouldShowTextPanel && (
-          <TextProperties elements={selectedElements} onChange={handleStyleChange} />
-        )}
-
-        {shouldShowImagePanel && (
-          <ImageProperties elements={selectedElements} onChange={handleStyleChange} />
-        )}
-      </div>
+      {shouldShowImagePanel && (
+        <ImageProperties elements={selectedElements} onChange={handleStyleChange} />
+      )}
     </FloatingPanel>
   );
 };
