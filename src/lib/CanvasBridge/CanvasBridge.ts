@@ -197,8 +197,9 @@ export class CanvasBridge {
       priority: RenderPriority.HIGH, // 选中状态变化需要高优先级渲染
     };
 
-    // 直接执行命令，不需要合并（选中状态是独立的）
-    this.renderEngine.executeRenderCommand(command);
+    // 将命令加入队列，而不是立即执行
+    // 这样优先级排序才能生效，确保 CREATE_ELEMENT 在 UPDATE_SELECTION 之前执行
+    this.enqueueCommands([command]);
   }
 
   /**
@@ -262,17 +263,17 @@ export class CanvasBridge {
   private enqueueCommands(commands: AllRenderCommand[]): void {
     // 将命令添加到队列，应用合并规则
     for (const command of commands) {
-      // 对于没有 elementId 的命令（如 UPDATE_SELECTION、BATCH_*），直接执行
-      if (
-        command.type === 'UPDATE_SELECTION' ||
-        command.type === 'BATCH_DELETE_ELEMENTS' ||
-        command.type === 'BATCH_UPDATE_ELEMENTS'
-      ) {
-        this.renderEngine.executeRenderCommand(command);
-        continue;
+      // 检查命令是否有 elementId 字段
+      // 有 elementId 的命令（CREATE_ELEMENT、UPDATE_ELEMENT、DELETE_ELEMENT）使用 mergeCommand
+      // 没有 elementId 的命令（UPDATE_SELECTION、BATCH_*、UPDATE_VIEWPORT）使用特殊 key
+      if ('elementId' in command && command.elementId) {
+        // 有 elementId 的命令，使用 mergeCommand 处理合并逻辑
+        this.mergeCommand(command);
+      } else {
+        // 没有 elementId 的命令，使用命令类型作为 key，确保同类型命令会被覆盖（只保留最新的）
+        const specialKey = `__${command.type}__`;
+        this.pendingCommands.set(specialKey, command);
       }
-
-      this.mergeCommand(command);
     }
 
     // 启动 rAF 调度
@@ -387,6 +388,35 @@ export class CanvasBridge {
   }
 
   /**
+   * 获取命令类型的排序值
+   * 用于在同优先级时确定命令执行顺序
+   *
+   * @param commandType - 命令类型
+   * @returns 排序值，数值越小优先级越高
+   */
+  private getCommandTypeOrder(commandType: AllRenderCommand['type']): number {
+    switch (commandType) {
+      case 'DELETE_ELEMENT':
+        return 0;
+      case 'CREATE_ELEMENT':
+        return 1;
+      case 'UPDATE_ELEMENT':
+        return 2;
+      case 'UPDATE_SELECTION':
+        return 3;
+      case 'BATCH_DELETE_ELEMENTS':
+        return 4;
+      case 'BATCH_UPDATE_ELEMENTS':
+        return 5;
+      case 'UPDATE_VIEWPORT':
+        return 6;
+      default:
+        // 未知类型放在最后
+        return 999;
+    }
+  }
+
+  /**
    * 批处理执行队列中的所有命令
    * 清空队列并调用 RenderEngine 的批处理接口
    *
@@ -404,18 +434,25 @@ export class CanvasBridge {
     // 清空队列
     this.pendingCommands.clear();
 
-    // 按优先级和类型排序：DELETE > CREATE > UPDATE
+    // 按优先级和类型排序：DELETE > CREATE > UPDATE > UPDATE_SELECTION
     // 确保命令执行顺序正确
+    // 注意：CREATE_ELEMENT 必须在 UPDATE_SELECTION 之前执行，即使 UPDATE_SELECTION 优先级更高
     const sortedCommands = [...commands].sort((a, b) => {
+      // 特殊规则：CREATE_ELEMENT 必须在 UPDATE_SELECTION 之前执行
+      if (a.type === 'CREATE_ELEMENT' && b.type === 'UPDATE_SELECTION') {
+        return -1; // CREATE_ELEMENT 先执行
+      }
+      if (a.type === 'UPDATE_SELECTION' && b.type === 'CREATE_ELEMENT') {
+        return 1; // CREATE_ELEMENT 先执行
+      }
+
       // 优先级高的先执行
       if (a.priority !== b.priority) {
         return b.priority - a.priority;
       }
-      // 同优先级时，DELETE > CREATE > UPDATE
-      const typeOrder = { DELETE_ELEMENT: 0, CREATE_ELEMENT: 1, UPDATE_ELEMENT: 2 };
-      return (
-        typeOrder[a.type as keyof typeof typeOrder] - typeOrder[b.type as keyof typeof typeOrder]
-      );
+
+      // 同优先级时，按类型排序：DELETE > CREATE > UPDATE > UPDATE_SELECTION
+      return this.getCommandTypeOrder(a.type) - this.getCommandTypeOrder(b.type);
     });
 
     // 当前实现：使用现有接口逐个执行（模拟批处理）
