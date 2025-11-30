@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { useElementCategory } from '../../../../hooks/useElementCategory';
+import { calculatePanelPosition } from '../../../../utils/panelPositioning';
 import FloatingPanel from '../../layout/FloatingPanel/FloatingPanel';
 import ShapeProperties from '../Propertities/ShapeProperties/ShapeProperties';
 import TextProperties from '../Propertities/TextProperties/TextProperties';
@@ -11,6 +12,7 @@ import styles from './PropertiesPanel.module.less';
 export interface PropertiesPanelProps {
   position?: { top?: number; left?: number; right?: number; bottom?: number };
   className?: string;
+  enableDynamicPositioning?: boolean; // 是否启用动态定位
 }
 
 /**
@@ -18,8 +20,9 @@ export interface PropertiesPanelProps {
  * 根据选择的元素类型动态渲染对应的属性面板
  */
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
-  position = { right: 0, top: 80 },
+  position: staticPosition,
   className,
+  enableDynamicPositioning = true, // 默认启用动态定位
 }) => {
   // 获取选中的元素ID数组
   const selectedElementIds = useCanvasStore((state) => state.selectedElementIds);
@@ -39,6 +42,22 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const { shouldShowShapePanel, shouldShowTextPanel, shouldShowImagePanel, elementCount } =
     useElementCategory(selectedElements);
 
+  // 计算动态位置
+  const dynamicPosition = useMemo(() => {
+    if (!enableDynamicPositioning || selectedElements.length === 0) {
+      return null;
+    }
+
+    // 面板尺寸
+    const panelWidth = 280;
+    const panelHeight = 60;
+
+    return calculatePanelPosition(selectedElements, { width: panelWidth, height: panelHeight });
+  }, [selectedElements, enableDynamicPositioning]);
+
+  // 最终使用的位置：动态位置优先，回退到静态位置
+  const finalPosition = dynamicPosition || staticPosition || { right: 0, top: 80 };
+
   // 样式更新回调
   const handleStyleChange = (elementId: string, newStyle: Element['style']) => {
     console.log('PropertiesPanel: 更新元素样式', { elementId, newStyle });
@@ -53,7 +72,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const panelClassName = [styles['properties-panel'], className].filter(Boolean).join(' ');
 
   return (
-    <FloatingPanel visible={true} className={panelClassName} position={position}>
+    <FloatingPanel visible={true} className={panelClassName} position={finalPosition}>
       {shouldShowShapePanel && (
         <ShapeProperties elements={selectedElements} onChange={handleStyleChange} />
       )}
