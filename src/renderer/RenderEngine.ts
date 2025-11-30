@@ -344,11 +344,49 @@ export class RenderEngine {
     const bounds = elementGraphics.getBounds();
     const selectionLayer = this.layerManager.getSelectionLayer();
 
-    // 创建选择框图形
-    const selectionBox = new PIXI.Graphics();
-    selectionBox.lineStyle(2, 0x007bff, 1); // 蓝色边框
-    selectionBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
-    selectionLayer.addChild(selectionBox);
+    const dashedBox = new PIXI.Graphics();
+    dashedBox.lineStyle(2, 0x007bff, 1);
+    const dash = 8;
+    const gap = 6;
+    const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const ux = dx / len;
+      const uy = dy / len;
+      let pos = 0;
+      while (pos < len) {
+        const sx = x1 + ux * pos;
+        const sy = y1 + uy * pos;
+        const ex = x1 + ux * Math.min(pos + dash, len);
+        const ey = y1 + uy * Math.min(pos + dash, len);
+        dashedBox.moveTo(sx, sy);
+        dashedBox.lineTo(ex, ey);
+        pos += dash + gap;
+      }
+    };
+    drawDashed(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y);
+    drawDashed(
+      bounds.x + bounds.width,
+      bounds.y,
+      bounds.x + bounds.width,
+      bounds.y + bounds.height,
+    );
+    drawDashed(
+      bounds.x + bounds.width,
+      bounds.y + bounds.height,
+      bounds.x,
+      bounds.y + bounds.height,
+    );
+    drawDashed(bounds.x, bounds.y + bounds.height, bounds.x, bounds.y);
+    dashedBox.stroke();
+    selectionLayer.addChild(dashedBox);
+
+    const highlightBox = new PIXI.Graphics();
+    highlightBox.beginFill(0x3b82f6, 0.06);
+    highlightBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    highlightBox.endFill();
+    selectionLayer.addChild(highlightBox);
 
     // 调整手柄大小
     const handleSize = 8;
