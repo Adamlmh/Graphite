@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Slider, Button, Tooltip } from 'antd';
+import { Slider, Button, Tooltip, Popover } from 'antd';
 import {
   BoldOutlined,
   ItalicOutlined,
   UnderlineOutlined,
   StrikethroughOutlined,
+  FontSizeOutlined,
+  BgColorsOutlined,
 } from '@ant-design/icons';
 import { ColorPicker } from 'antd';
 import type { Element } from '../../../../../types/index';
@@ -132,76 +134,103 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
     updateStyle({ textDecoration: computeDecoration(decoration, target) });
   };
 
+  const fontSizeSlider = (
+    <div className={styles.sliderPopover}>
+      <Slider
+        min={10}
+        max={72}
+        value={fontSize}
+        onChange={(size) => updateStyle({ fontSize: size })}
+        className={styles.popoverSlider}
+        tooltip={{ open: false }}
+      />
+      <span className={styles.sliderValue}>{fontSize}px</span>
+    </div>
+  );
+
   return (
-    <div className={styles.container}>
-      <div className={styles.row}>
-        <span className={styles.label}>字号：</span>
-        <div className={styles.control}>
-          <Slider
-            min={10}
-            max={72}
-            value={fontSize}
-            onChange={(size) => updateStyle({ fontSize: size })}
-            className={styles.slider}
-          />
-          <span className={styles.value}>{fontSize}px</span>
-        </div>
-      </div>
+    <div className={styles.toolbar}>
+      <Popover
+        content={fontSizeSlider}
+        trigger="hover"
+        placement="top"
+        mouseEnterDelay={0.1}
+        mouseLeaveDelay={0.2}
+      >
+        <Tooltip title="字号" placement="bottom" mouseEnterDelay={0.3}>
+          <Button className={styles.toolButton} icon={<FontSizeOutlined />} />
+        </Tooltip>
+      </Popover>
 
-      <div className={styles.row}>
-        <span className={styles.label}>颜色：</span>
-        <div className={styles.control}>
-          <ColorPicker value={color} onChange={(_, hex) => updateStyle({ color: hex })} />
-        </div>
-      </div>
+      <div className={styles.divider} />
 
-      <div className={styles.row}>
-        <span className={styles.label}>背景色：</span>
-        <div className={styles.control}>
-          <ColorPicker
-            value={backgroundColor}
-            onChange={(_, hex) => updateStyle({ backgroundColor: hex })}
-          />
-        </div>
-      </div>
+      <Tooltip title="文本颜色">
+        <ColorPicker
+          value={color}
+          onChange={(_, hex) => updateStyle({ color: hex })}
+          className={styles.colorPicker}
+        >
+          <Button
+            className={styles.colorButton}
+            style={{
+              background: color || '#000000',
+            }}
+          >
+            <span className={styles.colorButtonText}>A</span>
+          </Button>
+        </ColorPicker>
+      </Tooltip>
 
-      <div className={styles.row}>
-        <span className={styles.label}>样式：</span>
-        <div className={styles.biusGroup}>
-          <Tooltip title="加粗">
-            <Button
-              type={fontWeight === 'bold' ? 'primary' : 'default'}
-              icon={<BoldOutlined />}
-              onClick={handleToggleBold}
-              className={styles.biusBtn}
-            />
-          </Tooltip>
-          <Tooltip title="斜体">
-            <Button
-              type={fontStyle === 'italic' ? 'primary' : 'default'}
-              icon={<ItalicOutlined />}
-              onClick={handleToggleItalic}
-              className={styles.biusBtn}
-            />
-          </Tooltip>
-          <Tooltip title="下划线">
-            <Button
-              type={decoration.includes('underline') ? 'primary' : 'default'}
-              icon={<UnderlineOutlined />}
-              onClick={() => handleToggleDecoration('underline')}
-              className={styles.biusBtn}
-            />
-          </Tooltip>
-          <Tooltip title="删除线">
-            <Button
-              type={decoration.includes('line-through') ? 'primary' : 'default'}
-              icon={<StrikethroughOutlined />}
-              onClick={() => handleToggleDecoration('line-through')}
-              className={styles.biusBtn}
-            />
-          </Tooltip>
-        </div>
-      </div>
+      <Tooltip title="背景色">
+        <ColorPicker
+          value={backgroundColor}
+          onChange={(_, hex) => updateStyle({ backgroundColor: hex })}
+          className={styles.colorPicker}
+        >
+          <Button
+            className={styles.colorButton}
+            style={{
+              background: backgroundColor || '#ffffff',
+            }}
+          >
+            <BgColorsOutlined className={styles.colorButtonIcon} />
+          </Button>
+        </ColorPicker>
+      </Tooltip>
+
+      <div className={styles.divider} />
+
+      <Tooltip title="加粗">
+        <Button
+          className={`${styles.toolButton} ${fontWeight === 'bold' ? styles.active : ''}`}
+          icon={<BoldOutlined />}
+          onClick={handleToggleBold}
+        />
+      </Tooltip>
+
+      <Tooltip title="斜体">
+        <Button
+          className={`${styles.toolButton} ${fontStyle === 'italic' ? styles.active : ''}`}
+          icon={<ItalicOutlined />}
+          onClick={handleToggleItalic}
+        />
+      </Tooltip>
+
+      <Tooltip title="下划线">
+        <Button
+          className={`${styles.toolButton} ${decoration.includes('underline') ? styles.active : ''}`}
+          icon={<UnderlineOutlined />}
+          onClick={() => handleToggleDecoration('underline')}
+        />
+      </Tooltip>
+
+      <Tooltip title="删除线">
+        <Button
+          className={`${styles.toolButton} ${decoration.includes('line-through') ? styles.active : ''}`}
+          icon={<StrikethroughOutlined />}
+          onClick={() => handleToggleDecoration('line-through')}
+        />
+      </Tooltip>
     </div>
   );
 };
