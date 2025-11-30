@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { useCursor } from '../../hooks/useCursor';
 import { CanvasBridge } from '../../lib/CanvasBridge/CanvasBridge';
 import { eventBridge } from '../../lib/EventBridge';
 import { setPixiApp } from '../../lib/pixiApp';
 import { RenderEngine } from '../../renderer/RenderEngine';
-import { useCanvasStore } from '../../stores/canvas-store';
-import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
 import { ImageInteraction } from '../../services/interaction/ImageInteraction';
-import { RenderPriority } from '../../types/render.types';
-import { useCursor } from '../../hooks/useCursor';
+import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
+import { useCanvasStore } from '../../stores/canvas-store';
 import './CanvasRenderer.less';
 /**
  * CanvasRenderer 组件
@@ -72,53 +71,106 @@ const CanvasRenderer: React.FC = () => {
         const imageInteraction = new ImageInteraction();
         imageInteractionRef.current = imageInteraction;
 
-        // 创建一个测试矩形元素
-        const rectElement = {
-          id: 'test-rect',
-          type: 'rect' as const,
-          zIndex: 1,
-          x: 100,
-          y: 100,
-          width: 200,
-          height: 150,
-          rotation: 0,
-          style: {
-            fill: '#ff0000',
-            fillOpacity: 1,
-            stroke: '#000000',
-            strokeWidth: 2,
-            strokeOpacity: 1,
-            borderRadius: 0,
+        // 创建多个测试矩形元素
+        const rectElement = [
+          {
+            id: 'test-rect',
+            type: 'rect' as const,
+            zIndex: 1,
+            x: 100,
+            y: 100,
+            width: 200,
+            height: 150,
+            rotation: 0,
+            style: {
+              fill: '#ff0000',
+              fillOpacity: 1,
+              stroke: '#000000',
+              strokeWidth: 2,
+              strokeOpacity: 1,
+              borderRadius: 0,
+            },
+            opacity: 1,
+            transform: {
+              scaleX: 1,
+              scaleY: 1,
+              pivotX: 0.0,
+              pivotY: 0.0,
+            },
+            version: 1,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            visibility: 'visible' as const,
           },
-          opacity: 1,
-          transform: {
-            scaleX: 1,
-            scaleY: 1,
-            pivotX: 0.0,
-            pivotY: 0.0,
+          {
+            id: 'test-rect-2',
+            type: 'rect' as const,
+            zIndex: 1,
+            x: 300,
+            y: 300,
+            width: 200,
+            height: 150,
+            rotation: 0,
+            style: {
+              fill: '#00ff00',
+              fillOpacity: 1,
+              stroke: '#000000',
+              strokeWidth: 2,
+              strokeOpacity: 1,
+              borderRadius: 0,
+            },
+            opacity: 1,
+            transform: {
+              scaleX: 1,
+              scaleY: 1,
+              pivotX: 0.0,
+              pivotY: 0.0,
+            },
+            version: 1,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            visibility: 'visible' as const,
           },
-          version: 1,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          visibility: 'visible' as const,
-        };
+          {
+            id: 'test-rect-3',
+            type: 'rect' as const,
+            zIndex: 1,
+            x: 1000,
+            y: 500,
+            width: 200,
+            height: 150,
+            rotation: 0,
+            style: {
+              fill: '#0000ff',
+              fillOpacity: 1,
+              stroke: '#000000',
+              strokeWidth: 2,
+              strokeOpacity: 1,
+              borderRadius: 0,
+            },
+            opacity: 1,
+            transform: {
+              scaleX: 1,
+              scaleY: 1,
+              pivotX: 0.0,
+              pivotY: 0.0,
+            },
+            version: 1,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            visibility: 'visible' as const,
+          },
+        ];
 
-        // 将测试元素添加到 store
-        console.log('CanvasRenderer: 添加测试元素到store', rectElement);
-        storeApi.getState().addElement(rectElement);
+        for (const rect of rectElement) {
+          // 将测试元素添加到 store
+          console.log('CanvasRenderer: 添加测试元素到store', rect);
+          storeApi.getState().addElement(rect);
 
-        // 验证元素是否被添加
-        const currentElements = storeApi.getState().elementList;
-        console.log('CanvasRenderer: 当前store中的元素列表', currentElements);
-
-        // 执行创建命令
-        await renderEngine.executeRenderCommand({
-          type: 'CREATE_ELEMENT',
-          elementId: rectElement.id,
-          elementType: rectElement.type,
-          elementData: rectElement,
-          priority: RenderPriority.CRITICAL,
-        });
+          // 验证元素是否被添加
+          const currentElements = storeApi.getState().elementList;
+          console.log('CanvasRenderer: 当前store中的元素列表', currentElements);
+        }
 
         // 再次确认元素是否还在 store 中
         console.log('CanvasRenderer: 测试矩形创建完成', {

@@ -163,7 +163,7 @@ export class CircleRenderer implements IElementRenderer {
     }
 
     // 绘制圆形
-    graphics.drawCircle(centerX, centerY, radius);
+    graphics.circle(centerX, centerY, radius);
 
     // 结束填充
     if (fill && fillOpacity > 0) {
