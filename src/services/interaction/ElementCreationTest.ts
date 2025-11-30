@@ -1,5 +1,5 @@
 // services/element-creation-service.ts
-import { ElementFactory } from '../element-factory';
+// import { ElementFactory } from '../element-factory';
 // import type { Element, ElementType } from '../../types/index';
 import { useCanvasStore } from '../../stores/canvas-store';
 
@@ -7,49 +7,37 @@ import { useCanvasStore } from '../../stores/canvas-store';
  * 测试元素创建和添加到store
  */
 export function testElementCreation(): void {
-  console.group('🧪 测试元素创建和添加到 Store');
+  // 1. 创建测试元素
+  // const testElement = ElementFactory.createElement(
+  //   'rect',
+  //   300, // x
+  //   500, // y
+  //   300, // width
+  //   550, // height
+  //   {
+  //     style: {
+  //       fill: '#3498db',
+  //       stroke: '#2980b9',
+  //       strokeWidth: 2,
+  //       fillOpacity: 1,
+  //       strokeOpacity: 1,
+  //     },
+  //   },
+  // );
 
-  try {
-    // 1. 创建测试元素
-    const testElement = ElementFactory.createElement(
-      'rect',
-      300, // x
-      500, // y
-      300, // width
-      550, // height
-      {
-        style: {
-          fill: '#3498db',
-          stroke: '#2980b9',
-          strokeWidth: 2,
-          fillOpacity: 1,
-          strokeOpacity: 1,
-        },
-      },
-    );
+  // console.log('✅ 元素创建成功:', testElement);
 
-    console.log('✅ 元素创建成功:', testElement);
+  // 2. 添加到 store
+  // useCanvasStore.getState().addElement(testElement);
 
-    // 2. 添加到 store
-    useCanvasStore.getState().addElement(testElement);
+  // 3. 验证是否添加成功
+  const storeState = useCanvasStore.getState();
+  // const addedElement = storeState.elements[testElement.id];
 
-    // 3. 验证是否添加成功
-    const storeState = useCanvasStore.getState();
-    const addedElement = storeState.elements[testElement.id];
-
-    if (addedElement) {
-      console.log('✅ 元素成功添加到 Store:', addedElement);
-      console.log('📊 Store 中元素数量:', Object.keys(storeState.elements).length);
-      console.log('🆔 添加的元素ID:', testElement.id);
-      console.log('📐 元素尺寸:', `${addedElement.width} x ${addedElement.height}`);
-    } else {
-      console.error('❌ 元素未成功添加到 Store');
-    }
-  } catch (error) {
-    console.error('❌ 测试失败:', error);
-  }
-
-  console.groupEnd();
+  // console.log('✅ 元素成功添加到 Store:', addedElement);
+  console.log('📊 Store 中元素数量:', Object.keys(storeState.elements).length);
+  // console.log('🆔 添加的元素ID:', testElement.id);
+  // console.log('📐 元素尺寸:', `${addedElement.width} x ${addedElement.height}`);
 }
 
 /**
