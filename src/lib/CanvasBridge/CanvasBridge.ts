@@ -136,6 +136,9 @@ export class CanvasBridge {
    */
   protected handleElementsChange(next: ElementsState, prev: ElementsState): void {
     const commands: AllRenderCommand[] = [];
+    const state = this.store.getState();
+    const selectedElementIds = state.selectedElementIds;
+    let shouldUpdateSelection = false;
 
     // 处理删除
     Object.keys(prev).forEach((elementId) => {
@@ -170,8 +173,22 @@ export class CanvasBridge {
           properties,
           priority: RenderPriority.NORMAL,
         });
+
+        // 如果更新的元素是被选中的，标记需要更新选择框
+        if (selectedElementIds.includes(nextElement.id)) {
+          shouldUpdateSelection = true;
+        }
       }
     });
+
+    // 如果有选中的元素被更新，需要更新选择框
+    if (shouldUpdateSelection && selectedElementIds.length > 0) {
+      commands.push({
+        type: 'UPDATE_SELECTION',
+        selectedElementIds: selectedElementIds,
+        priority: RenderPriority.HIGH,
+      });
+    }
 
     if (commands.length > 0) {
       this.enqueueCommands(commands);
@@ -227,7 +244,12 @@ export class CanvasBridge {
    * @param next - 最新的视口状态
    */
   protected handleViewportChange(next: ViewportState): void {
-    void next; // 视口的渲染联动后续接入，目前仅监听变化以便未来扩展
+    const command = {
+      type: 'UPDATE_VIEWPORT' as const,
+      viewport: next,
+      priority: RenderPriority.NORMAL,
+    };
+    this.enqueueCommands([command]);
   }
 
   /**

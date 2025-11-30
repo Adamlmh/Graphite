@@ -1,7 +1,8 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
 import { eventBus } from '../lib/eventBus';
-import type { Element, ElementType } from '../types';
+import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
+import type { Element, ElementType, ViewportState } from '../types';
 import {
   type AllRenderCommand,
   type BatchDeleteElementCommand,
@@ -16,16 +17,30 @@ import { LayerManager } from './layers/LayerManager';
 import { ElementRendererRegistry } from './renderers/ElementRendererRegistry';
 import { ResourceManager } from './resources/ResourceManager';
 import { RenderScheduler } from './scheduling/RenderScheduler';
+import { ScrollbarManager } from './ui/ScrollbarManager';
+import { ViewportController } from './viewport/ViewportController';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
  */
 export class RenderEngine {
   private pixiApp!: PIXI.Application;
+  private camera!: PIXI.Container;
   private layerManager!: LayerManager;
   private rendererRegistry!: ElementRendererRegistry;
   private resourceManager!: ResourceManager;
   private renderScheduler!: RenderScheduler;
+  private viewportController!: ViewportController;
+  private scrollbarManager!: ScrollbarManager;
+  private currentViewport!: ViewportState;
+  private defaultSnapping = {
+    enabled: false,
+    guidelines: [],
+    threshold: 4,
+    showGuidelines: false,
+    snapToElements: false,
+    snapToCanvas: false,
+  } as ViewportState['snapping'];
 
   // 元素图形映射表：维护业务元素与PIXI图形对象的关联
   private elementGraphics: Map<string, PIXI.Container> = new Map();
@@ -34,6 +49,7 @@ export class RenderEngine {
   private previewGraphics: PIXI.Container | null = null;
 
   private container: HTMLElement;
+  private viewportInteraction!: ViewportInteraction;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -69,11 +85,28 @@ export class RenderEngine {
     this.pixiApp.stage.interactive = true;
     this.pixiApp.stage.hitArea = new PIXI.Rectangle(-10000, -10000, 20000, 20000);
 
-    // 初始化其他模块
-    this.layerManager = new LayerManager(this.pixiApp.stage);
+    this.camera = new PIXI.Container();
+    this.camera.interactive = true;
+    this.pixiApp.stage.addChild(this.camera);
+
+    this.viewportController = new ViewportController(this.pixiApp, this.camera, this.container);
+    this.viewportController.setZoomLimits(0.1, 6);
+    this.scrollbarManager = new ScrollbarManager(this.pixiApp, this.viewportController);
+
+    this.layerManager = new LayerManager(this.camera);
     this.resourceManager = new ResourceManager();
     this.rendererRegistry = new ElementRendererRegistry(this.resourceManager);
     this.renderScheduler = new RenderScheduler(this.pixiApp);
+
+    this.viewportController.onViewportChange = (vp, priority) => {
+      this.currentViewport = vp;
+      this.scrollbarManager.refresh(vp);
+      this.renderScheduler.scheduleRender(priority);
+    };
+
+    // 初始化视口交互
+    this.viewportInteraction = new ViewportInteraction(this.container);
+    this.viewportInteraction.init();
   }
 
   /**
@@ -288,20 +321,20 @@ export class RenderEngine {
    */
   private updateViewport(command: UpdateViewportCommand): void {
     const { viewport } = command;
-
-    // 应用缩放变换
-    this.pixiApp.stage.scale.set(viewport.zoom, viewport.zoom);
-
-    // 应用偏移变换：将世界坐标的偏移转换为屏幕坐标的偏移
-    // 在 PixiJS 中，position 是相对于父容器的屏幕坐标
-    // 所以需要将世界坐标的偏移乘以缩放比例
-    this.pixiApp.stage.position.set(
-      -viewport.offset.x * viewport.zoom,
-      -viewport.offset.y * viewport.zoom,
-    );
-
-    // 调度渲染
-    this.renderScheduler.scheduleRender(command.priority);
+    const base = this.currentViewport || {
+      zoom: 1,
+      offset: { x: 0, y: 0 },
+      canvasSize: { width: this.container.clientWidth, height: this.container.clientHeight },
+      contentBounds: {
+        x: 0,
+        y: 0,
+        width: this.container.clientWidth,
+        height: this.container.clientHeight,
+      },
+      snapping: this.defaultSnapping,
+    };
+    const next: ViewportState = { ...base, ...viewport, snapping: base.snapping };
+    this.viewportController.setViewport(next, command.priority);
   }
 
   /**
@@ -349,7 +382,7 @@ export class RenderEngine {
       const handle = new PIXI.Graphics();
       handle.beginFill(handleColor);
       handle.lineStyle(1, handleBorderColor, 1);
-      handle.drawCircle(0, 0, handleSize / 2);
+      handle.circle(0, 0, handleSize / 2);
       handle.endFill();
       handle.position.set(pos.x, pos.y);
       handle.interactive = true;
@@ -364,7 +397,7 @@ export class RenderEngine {
     const rotationHandle = new PIXI.Graphics();
     rotationHandle.beginFill(handleColor);
     rotationHandle.lineStyle(1, handleBorderColor, 1);
-    rotationHandle.drawCircle(0, 0, 6); // 半径6，比调整手柄稍大
+    rotationHandle.circle(0, 0, 6); // 半径6，比调整手柄稍大
     rotationHandle.endFill();
     rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
     rotationHandle.interactive = true;
@@ -455,9 +488,21 @@ export class RenderEngine {
   printWorldCoordinates(): void {
     console.log('=== PIXI 渲染图形世界坐标 ===');
     this.elementGraphics.forEach((graphics, elementId) => {
-      const globalPos = graphics.getGlobalPosition();
+      // 获取相对于camera的局部坐标
+      const localPos = graphics.position;
+      // 获取camera的偏移量（世界坐标）
+      const cameraOffset = {
+        x: -this.camera.position.x / this.camera.scale.x,
+        y: -this.camera.position.y / this.camera.scale.y,
+      };
+      // 计算真正的世界坐标：局部坐标 + camera偏移
+      const worldPos = {
+        x: localPos.x + cameraOffset.x,
+        y: localPos.y + cameraOffset.y,
+      };
+
       console.log(
-        `元素 ${elementId}: 世界坐标 (${globalPos.x.toFixed(2)}, ${globalPos.y.toFixed(2)})`,
+        `元素 ${elementId}: 世界坐标 (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`,
       );
     });
     console.log('================================');

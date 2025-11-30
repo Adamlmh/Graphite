@@ -66,15 +66,18 @@ export class RectangleRenderer implements IElementRenderer {
   update(graphics: PIXI.Graphics, changes: Partial<Element>): void {
     const rectChanges = changes as Partial<RectElement>;
 
-    // 更新位置
-    if (rectChanges.x !== undefined)
-      graphics.x =
-        rectChanges.x +
-        (rectChanges.transform?.pivotX ?? 0) * (rectChanges.width ?? (graphics as any).lastWidth);
-    if (rectChanges.y !== undefined)
-      graphics.y =
-        rectChanges.y +
-        (rectChanges.transform?.pivotY ?? 0) * (rectChanges.height ?? (graphics as any).lastHeight);
+    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
+    const transform = rectChanges.transform ?? (graphics as any).lastTransform;
+    const width = rectChanges.width ?? (graphics as any).lastWidth;
+    const height = rectChanges.height ?? (graphics as any).lastHeight;
+
+    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
+    if (rectChanges.x !== undefined && transform) {
+      graphics.x = rectChanges.x + transform.pivotX * width;
+    }
+    if (rectChanges.y !== undefined && transform) {
+      graphics.y = rectChanges.y + transform.pivotY * height;
+    }
 
     // 更新透明度
     if (rectChanges.opacity !== undefined) graphics.alpha = rectChanges.opacity;
@@ -86,15 +89,35 @@ export class RectangleRenderer implements IElementRenderer {
 
     // 更新变换
     if (rectChanges.transform !== undefined) {
-      const transform = rectChanges.transform;
-      graphics.scale.set(transform.scaleX, transform.scaleY);
+      const newTransform = rectChanges.transform;
+      const oldTransform = (graphics as any).lastTransform;
+      graphics.scale.set(newTransform.scaleX, newTransform.scaleY);
 
       // 如果有尺寸变化，需要重新计算变换中心
       const width = rectChanges.width ?? (graphics as any).lastWidth;
       const height = rectChanges.height ?? (graphics as any).lastHeight;
       if (width !== undefined && height !== undefined) {
-        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+        graphics.pivot.set(newTransform.pivotX * width, newTransform.pivotY * height);
+
+        // 如果 pivot 改变了，需要重新计算位置以保持元素在世界坐标系中的位置不变
+        if (
+          oldTransform &&
+          (newTransform.pivotX !== oldTransform.pivotX ||
+            newTransform.pivotY !== oldTransform.pivotY)
+        ) {
+          // 只有在 x 和 y 没有明确更新时才自动调整位置
+          if (rectChanges.x === undefined && rectChanges.y === undefined) {
+            const oldPivotOffsetX = oldTransform.pivotX * width;
+            const newPivotOffsetX = newTransform.pivotX * width;
+            const oldPivotOffsetY = oldTransform.pivotY * height;
+            const newPivotOffsetY = newTransform.pivotY * height;
+            graphics.x = graphics.x - oldPivotOffsetX + newPivotOffsetX;
+            graphics.y = graphics.y - oldPivotOffsetY + newPivotOffsetY;
+          }
+        }
       }
+      // 更新缓存
+      (graphics as any).lastTransform = newTransform;
     }
 
     // 更新尺寸或样式需要重新绘制
@@ -125,6 +148,8 @@ export class RectangleRenderer implements IElementRenderer {
       const transform = rectChanges.transform ?? (graphics as any).lastTransform;
       if (transform) {
         graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+        // 更新缓存
+        (graphics as any).lastTransform = transform;
       }
     }
 
