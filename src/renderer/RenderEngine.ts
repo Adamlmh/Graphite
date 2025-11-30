@@ -19,6 +19,8 @@ import { ResourceManager } from './resources/ResourceManager';
 import { RenderScheduler } from './scheduling/RenderScheduler';
 import { ScrollbarManager } from './ui/ScrollbarManager';
 import { ViewportController } from './viewport/ViewportController';
+import { GeometryService } from '../lib/Coordinate/GeometryService';
+import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
@@ -32,6 +34,7 @@ export class RenderEngine {
   private renderScheduler!: RenderScheduler;
   private viewportController!: ViewportController;
   private scrollbarManager!: ScrollbarManager;
+  private geometryService!: GeometryService;
   private currentViewport!: ViewportState;
   private defaultSnapping = {
     enabled: false,
@@ -97,6 +100,7 @@ export class RenderEngine {
     this.resourceManager = new ResourceManager();
     this.rendererRegistry = new ElementRendererRegistry(this.resourceManager);
     this.renderScheduler = new RenderScheduler(this.pixiApp);
+    this.geometryService = new GeometryService();
 
     this.viewportController.onViewportChange = (vp, priority) => {
       this.currentViewport = vp;
@@ -341,7 +345,9 @@ export class RenderEngine {
    * 绘制选择框和调整手柄
    */
   private drawSelectionBox(elementGraphics: PIXI.Container, elementId: string): void {
-    const bounds = elementGraphics.getBounds();
+    // 使用 GeometryService 获取元素的世界坐标边界框
+    const elementProvider = new ElementProvider(elementId);
+    const bounds = this.geometryService.getElementBoundsWorld(elementProvider);
     const selectionLayer = this.layerManager.getSelectionLayer();
 
     // 创建选择框图形
