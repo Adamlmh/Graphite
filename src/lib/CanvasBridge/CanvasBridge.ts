@@ -227,7 +227,12 @@ export class CanvasBridge {
    * @param next - 最新的视口状态
    */
   protected handleViewportChange(next: ViewportState): void {
-    void next; // 视口的渲染联动后续接入，目前仅监听变化以便未来扩展
+    const command = {
+      type: 'UPDATE_VIEWPORT' as const,
+      viewport: next,
+      priority: RenderPriority.NORMAL,
+    };
+    this.enqueueCommands([command]);
   }
 
   /**

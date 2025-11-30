@@ -1,6 +1,7 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
 import { eventBus } from '../lib/eventBus';
+import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
 import type { Element, ElementType, ViewportState } from '../types';
 import {
   type AllRenderCommand,
@@ -48,6 +49,7 @@ export class RenderEngine {
   private previewGraphics: PIXI.Container | null = null;
 
   private container: HTMLElement;
+  private viewportInteraction!: ViewportInteraction;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -101,7 +103,10 @@ export class RenderEngine {
       this.scrollbarManager.refresh(vp);
       this.renderScheduler.scheduleRender(priority);
     };
-    this.viewportController.bindInteractions();
+
+    // 初始化视口交互
+    this.viewportInteraction = new ViewportInteraction(this.container);
+    this.viewportInteraction.init();
   }
 
   /**
@@ -483,9 +488,21 @@ export class RenderEngine {
   printWorldCoordinates(): void {
     console.log('=== PIXI 渲染图形世界坐标 ===');
     this.elementGraphics.forEach((graphics, elementId) => {
-      const globalPos = graphics.getGlobalPosition();
+      // 获取相对于camera的局部坐标
+      const localPos = graphics.position;
+      // 获取camera的偏移量（世界坐标）
+      const cameraOffset = {
+        x: -this.camera.position.x / this.camera.scale.x,
+        y: -this.camera.position.y / this.camera.scale.y,
+      };
+      // 计算真正的世界坐标：局部坐标 + camera偏移
+      const worldPos = {
+        x: localPos.x + cameraOffset.x,
+        y: localPos.y + cameraOffset.y,
+      };
+
       console.log(
-        `元素 ${elementId}: 世界坐标 (${globalPos.x.toFixed(2)}, ${globalPos.y.toFixed(2)})`,
+        `元素 ${elementId}: 世界坐标 (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`,
       );
     });
     console.log('================================');

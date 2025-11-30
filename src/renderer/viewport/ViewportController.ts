@@ -142,69 +142,8 @@ export class ViewportController {
   }
 
   bindInteractions(): void {
-    this.app.canvas.addEventListener(
-      'wheel',
-      (e) => {
-        const rect = this.app.canvas.getBoundingClientRect();
-        const cursor: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          // 以鼠标为中心缩放，符合设计类工具常见交互
-          const factor = e.deltaY < 0 ? 1.1 : 0.9;
-          this.applyZoomAround(cursor, factor);
-        } else {
-          // 普通滚轮直接平移视口
-          this.panBy(-e.deltaX, -e.deltaY, RenderPriority.NORMAL);
-        }
-      },
-      { passive: false },
-    );
-
-    this.app.stage.on('pointerdown', (e: PIXI.FederatedPointerEvent) => {
-      const isMiddle = e.button === 1;
-      if (!isMiddle) return;
-      this.isDragging = true;
-      this.lastPointerPos = { x: e.global.x, y: e.global.y };
-      this.panVelocity = { x: 0, y: 0 };
-      this.lastTime = performance.now();
-      this.stopInertia();
-    });
-    this.app.stage.on('pointerup', () => {
-      if (!this.isDragging) return;
-      this.isDragging = false;
-      // 松手启动惯性滚动，并最终回弹到边界
-      this.startInertia();
-      this.enforceBounds(true);
-    });
-    this.app.stage.on('pointermove', (e: PIXI.FederatedPointerEvent) => {
-      if (!this.isDragging) return;
-      const now = performance.now();
-      const dt = Math.max(1, now - this.lastTime);
-      const dx = e.global.x - this.lastPointerPos.x;
-      const dy = e.global.y - this.lastPointerPos.y;
-      this.lastPointerPos = { x: e.global.x, y: e.global.y };
-      this.panBy(dx, dy, RenderPriority.HIGH);
-      this.panVelocity = { x: dx / dt, y: dy / dt };
-      this.lastTime = now;
-    });
-  }
-
-  private startInertia(): void {
-    if (this.inertiaActive) return;
-    this.inertiaActive = true;
-    const step = () => {
-      const speedX = this.panVelocity.x * 16;
-      const speedY = this.panVelocity.y * 16;
-      this.panBy(speedX, speedY, RenderPriority.NORMAL);
-      this.panVelocity = { x: this.panVelocity.x * 0.9, y: this.panVelocity.y * 0.9 };
-      const speed = Math.abs(this.panVelocity.x) + Math.abs(this.panVelocity.y);
-      if (speed < 0.001) {
-        this.stopInertia();
-        this.enforceBounds(true);
-      }
-    };
-    this.app.ticker.add(step);
-    (this as Record<string, unknown>)._inertiaStep = step;
+    // 交互逻辑已移至 ViewportInteraction 服务
+    // 此方法保留以保持接口兼容性，但不再绑定事件
   }
 
   private stopInertia(): void {
