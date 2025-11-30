@@ -27,8 +27,7 @@ const ToolBar: React.FC = () => {
   // 处理工具点击
   const handleToolClick = (toolId: Tool) => {
     if (toolId === 'image') {
-      // 图片工具：触发文件选择对话框
-      console.log('ToolBar: 点击图片工具，触发上传');
+      setActiveTool('image');
       eventBus.emit('image:trigger-upload');
     } else {
       // 其他工具：正常切换
