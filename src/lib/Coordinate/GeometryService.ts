@@ -89,6 +89,22 @@ export class GeometryService {
   }
 
   /**
+   * 判断两个矩形（Bounds）是否相交（AABB 相交检测）
+   *
+   * @param a 矩形 A
+   * @param b 矩形 B
+   * @returns 如果两个矩形相交返回 true，否则返回 false
+   */
+  public rectIntersect(a: Bounds, b: Bounds): boolean {
+    return !(
+      a.x + a.width < b.x ||
+      a.x > b.x + b.width ||
+      a.y + a.height < b.y ||
+      a.y > b.y + b.height
+    );
+  }
+
+  /**
    * 判断点是否在元素内部（命中检测）
    *
    * @param worldPoint 世界坐标点
