@@ -16,3 +16,28 @@ export enum CreationEvent {
   CREATION_END = 'creation:end',
   CREATION_CANCEL = 'creation:cancel',
 }
+
+/** 移动交互状态 */
+export interface MoveState {
+  isActive: boolean;
+  startPoint: Point | null;
+  currentPoint: Point | null;
+  originalPositions: Map<string, Point>; // 元素ID -> 原始位置
+  isDragging: boolean;
+}
+
+/** 移动交互事件 */
+export enum MoveEvent {
+  MOVE_START = 'move:start',
+  MOVE_UPDATE = 'move:update',
+  MOVE_END = 'move:end',
+  MOVE_CANCEL = 'move:cancel',
+}
+
+/** 移动事件数据 */
+// export interface MoveEventData {
+//   selectedElementIds: string[];
+//   delta: Point;
+//   startPoint: Point;
+//   currentPoint: Point;
+// }
