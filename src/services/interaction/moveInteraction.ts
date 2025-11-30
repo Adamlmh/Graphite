@@ -24,7 +24,14 @@ export class MoveInteraction {
   };
 
   private canvasStore: typeof useCanvasStore;
-  private moveThreshold: number = 3; // 移动阈值，小于这个值认为是点击
+  private moveThreshold: number = 3;
+
+  // 微移步长配置
+  private readonly NUDGE_STEP = 1;
+  private readonly FAST_NUDGE_STEP = 10;
+
+  // 用于防止重复初始化的标志
+  private isInitialized: boolean = false;
 
   constructor() {
     this.canvasStore = useCanvasStore;
@@ -32,14 +39,17 @@ export class MoveInteraction {
   }
 
   /**
-   * 设置事件监听器 - 使用 eventBus
+   * 设置事件监听器
    */
   private setupEventListeners(): void {
-    // 监听 eventBus 上的画布事件
+    if (this.isInitialized) return;
+
     eventBus.on('pointerdown', this.handlePointerDown as (payload: unknown) => void);
     eventBus.on('pointermove', this.handlePointerMove as (payload: unknown) => void);
     eventBus.on('pointerup', this.handlePointerUp as (payload: unknown) => void);
     eventBus.on('pointerupoutside', this.handlePointerUp as (payload: unknown) => void);
+
+    this.isInitialized = true;
   }
 
   /**
@@ -49,27 +59,11 @@ export class MoveInteraction {
     const state = this.canvasStore.getState();
     const { selectedElementIds, elements } = state;
 
-    console.log('MoveInteraction: 验证选中元素', {
-      selectedElementIds,
-      elements: Object.keys(elements),
-      allElements: elements,
-    });
-
-    // 检查每个选中的元素是否都存在
     const validElements = selectedElementIds.filter((id) => {
-      const exists = !!elements[id];
-      if (!exists) {
-        console.warn(`MoveInteraction: 元素 ${id} 不存在于 store 中`);
-      }
-      return exists;
+      return !!elements[id];
     });
 
-    // 如果有无效的选中元素，清理它们
     if (validElements.length !== selectedElementIds.length) {
-      console.log('MoveInteraction: 清理无效的选中元素', {
-        original: selectedElementIds,
-        valid: validElements,
-      });
       this.canvasStore.getState().setSelectedElements(validElements);
     }
 
@@ -83,21 +77,11 @@ export class MoveInteraction {
     const activeTool = this.canvasStore.getState().tool.activeTool;
     const selectedElementIds = this.canvasStore.getState().selectedElementIds;
 
-    console.log('MoveInteraction: 检查条件', {
-      activeTool,
-      selectedElementIds,
-      selectedElementsCount: selectedElementIds.length,
-    });
-
-    // 只有在 hand 工具且有选中元素时才启动移动
     if (activeTool !== 'hand' || selectedElementIds.length === 0) {
-      console.log('MoveInteraction: 条件不满足，不启动移动');
       return;
     }
 
-    // 验证选中元素是否都存在
     if (!this.validateSelectedElements()) {
-      console.log('MoveInteraction: 选中的元素无效，不启动移动');
       return;
     }
 
@@ -118,12 +102,8 @@ export class MoveInteraction {
     // 检查是否超过了移动阈值
     if (this.state.startPoint && !this.state.isDragging) {
       const distance = this.calculateDistance(this.state.startPoint, point);
-      console.log('MoveInteraction: 移动距离', distance);
-
       if (distance > this.moveThreshold) {
         this.state.isDragging = true;
-        // 开始拖拽时记录原始位置
-        this.recordOriginalPositions();
       }
     }
 
@@ -145,28 +125,28 @@ export class MoveInteraction {
   };
 
   /**
-   * 开始移动
+   * 开始移动 - 简化版本
    */
   private startMove(point: Point): void {
+    // 重置所有状态
+    this.resetState();
+
     this.state.isActive = true;
-    this.state.startPoint = point;
-    this.state.currentPoint = point;
+    this.state.startPoint = { ...point };
+    this.state.currentPoint = { ...point };
     this.state.isDragging = false;
 
-    console.log('MoveInteraction: 开始移动', point);
+    // 立即记录当前位置作为原始位置
+    this.recordCurrentPositions();
 
-    // 发出移动开始事件
-    this.emitMoveEvent(MoveEvent.MOVE_START, {
-      selectedElementIds: this.canvasStore.getState().selectedElementIds,
-      startPoint: point,
-      currentPoint: point,
-      delta: { x: 0, y: 0 },
-      movedElements: [],
+    console.log('MoveInteraction: 开始移动', {
+      startPoint: this.state.startPoint,
+      selectedElements: this.canvasStore.getState().selectedElementIds,
     });
   }
 
   /**
-   * 更新移动过程
+   * 更新移动过程 - 简化版本
    */
   private updateMove(currentPoint: Point): void {
     if (!this.state.isActive || !this.state.startPoint) {
@@ -175,24 +155,19 @@ export class MoveInteraction {
 
     this.state.currentPoint = currentPoint;
 
-    // 计算移动增量
+    // 计算相对于起点的增量
     const delta = {
       x: currentPoint.x - this.state.startPoint.x,
       y: currentPoint.y - this.state.startPoint.y,
     };
 
-    console.log('MoveInteraction: 更新移动', { delta, currentPoint });
+    // 使用基于原始位置的增量更新
+    this.updateElementsFromOriginalPositions(delta);
 
-    // 更新选中元素的位置
-    this.updateSelectedElementsPosition(delta);
-
-    // 发出移动更新事件
-    this.emitMoveEvent(MoveEvent.MOVE_UPDATE, {
-      selectedElementIds: this.canvasStore.getState().selectedElementIds,
-      startPoint: this.state.startPoint,
+    console.log('MoveInteraction: 更新移动', {
       currentPoint,
       delta,
-      movedElements: this.getValidSelectedElements(),
+      originalPositions: Array.from(this.state.originalPositions.entries()),
     });
   }
 
@@ -207,39 +182,129 @@ export class MoveInteraction {
     const selectedElementIds = this.canvasStore.getState().selectedElementIds;
 
     if (this.state.isDragging) {
-      // 计算最终移动增量
       const delta = {
         x: endPoint.x - this.state.startPoint.x,
         y: endPoint.y - this.state.startPoint.y,
       };
 
-      console.log('MoveInteraction: 完成移动', { delta, isDragging: this.state.isDragging });
-
-      // 发出移动完成事件
-      this.emitMoveEvent(MoveEvent.MOVE_END, {
-        selectedElementIds,
-        startPoint: this.state.startPoint,
-        currentPoint: endPoint,
-        delta,
-        movedElements: this.getValidSelectedElements(),
-      });
+      console.log('MoveInteraction: 移动完成', { delta, selectedElementIds });
     } else {
-      // 如果没有拖拽，只是点击，发出移动取消事件
-      console.log('MoveInteraction: 取消移动（无拖拽）');
-      this.emitMoveEvent(MoveEvent.MOVE_CANCEL, {
-        selectedElementIds,
-        startPoint: this.state.startPoint,
-        currentPoint: endPoint,
-        delta: { x: 0, y: 0 },
-        movedElements: [],
-      });
+      console.log('MoveInteraction: 移动取消（点击）');
     }
 
     this.resetState();
   }
 
   /**
-   * 获取有效的选中元素（不依赖 selectedElements getter）
+   * 微移方法 - 完全重写
+   */
+  nudgeLeft(fast: boolean = false): void {
+    this.nudge({ x: -(fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP), y: 0 });
+  }
+
+  nudgeRight(fast: boolean = false): void {
+    this.nudge({ x: fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP, y: 0 });
+  }
+
+  nudgeUp(fast: boolean = false): void {
+    this.nudge({ x: 0, y: -(fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP) });
+  }
+
+  nudgeDown(fast: boolean = false): void {
+    this.nudge({ x: 0, y: fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP });
+  }
+
+  /**
+   * 统一的微移方法
+   */
+  private nudge(delta: Point): void {
+    const selectedElementIds = this.canvasStore.getState().selectedElementIds;
+
+    if (selectedElementIds.length === 0) {
+      return;
+    }
+
+    if (!this.validateSelectedElements()) {
+      return;
+    }
+
+    console.log('MoveInteraction: 开始微移', { delta, selectedElementIds });
+
+    // 对于微移，我们直接使用当前位置 + 增量
+    this.updateElementsFromCurrentPositions(delta);
+
+    console.log('MoveInteraction: 微移完成', { delta });
+  }
+
+  /**
+   * 记录当前位置
+   */
+  private recordCurrentPositions(): void {
+    const state = this.canvasStore.getState();
+    const { selectedElementIds, elements } = state;
+
+    this.state.originalPositions.clear();
+
+    selectedElementIds.forEach((id) => {
+      const element = elements[id];
+      if (element) {
+        this.state.originalPositions.set(id, {
+          x: element.x,
+          y: element.y,
+        });
+      }
+    });
+  }
+
+  /**
+   * 基于原始位置更新元素
+   */
+  private updateElementsFromOriginalPositions(delta: Point): void {
+    const updates: Array<{ id: string; updates: Partial<Element> }> = [];
+
+    this.state.originalPositions.forEach((originalPosition, id) => {
+      const newX = originalPosition.x + delta.x;
+      const newY = originalPosition.y + delta.y;
+
+      updates.push({
+        id,
+        updates: { x: newX, y: newY },
+      });
+    });
+
+    if (updates.length > 0) {
+      this.canvasStore.getState().updateElements(updates);
+    }
+  }
+
+  /**
+   * 基于当前位置更新元素（用于微移）
+   */
+  private updateElementsFromCurrentPositions(delta: Point): void {
+    const state = this.canvasStore.getState();
+    const { selectedElementIds, elements } = state;
+    const updates: Array<{ id: string; updates: Partial<Element> }> = [];
+
+    selectedElementIds.forEach((id) => {
+      const element = elements[id];
+      if (element) {
+        const newX = element.x + delta.x;
+        const newY = element.y + delta.y;
+
+        updates.push({
+          id,
+          updates: { x: newX, y: newY },
+        });
+      }
+    });
+
+    if (updates.length > 0) {
+      this.canvasStore.getState().updateElements(updates);
+    }
+  }
+
+  /**
+   * 获取有效的选中元素
    */
   private getValidSelectedElements(): Element[] {
     const state = this.canvasStore.getState();
@@ -248,86 +313,6 @@ export class MoveInteraction {
     return selectedElementIds
       .map((id) => elements[id])
       .filter((element): element is Element => element !== undefined);
-  }
-
-  /**
-   * 记录元素的原始位置
-   */
-  private recordOriginalPositions(): void {
-    const state = this.canvasStore.getState();
-    const { selectedElementIds, elements } = state;
-
-    console.log('MoveInteraction: 准备记录原始位置', {
-      selectedElementIds,
-      elementsCount: Object.keys(elements).length,
-    });
-
-    this.state.originalPositions.clear();
-
-    selectedElementIds.forEach((id) => {
-      const element = elements[id];
-      if (element) {
-        this.state.originalPositions.set(element.id, {
-          x: element.x,
-          y: element.y,
-        });
-        console.log(`MoveInteraction: 记录元素 ${element.id} 位置`, { x: element.x, y: element.y });
-      } else {
-        console.warn(`MoveInteraction: 元素 ${id} 不存在，跳过记录`);
-      }
-    });
-
-    console.log('MoveInteraction: 记录原始位置完成', this.state.originalPositions);
-  }
-
-  /**
-   * 更新选中元素的位置
-   */
-  private updateSelectedElementsPosition(delta: Point): void {
-    const state = this.canvasStore.getState();
-    const { selectedElementIds, elements } = state;
-    const updates: Array<{ id: string; updates: Partial<Element> }> = [];
-
-    console.log('MoveInteraction: 准备更新元素位置', {
-      selectedElementIds,
-      delta,
-      originalPositions: this.state.originalPositions,
-    });
-
-    selectedElementIds.forEach((id) => {
-      const element = elements[id];
-      const originalPosition = this.state.originalPositions.get(id);
-
-      if (element && originalPosition) {
-        const newX = originalPosition.x + delta.x;
-        const newY = originalPosition.y + delta.y;
-
-        updates.push({
-          id: element.id,
-          updates: {
-            x: newX,
-            y: newY,
-          },
-        });
-
-        console.log(`MoveInteraction: 更新元素 ${element.id}`, {
-          original: originalPosition,
-          new: { x: newX, y: newY },
-        });
-      } else if (!element) {
-        console.warn(`MoveInteraction: 元素 ${id} 不存在，跳过更新`);
-      } else if (!originalPosition) {
-        console.warn(`MoveInteraction: 元素 ${id} 没有原始位置记录，跳过更新`);
-      }
-    });
-
-    // 批量更新元素位置
-    if (updates.length > 0) {
-      console.log('MoveInteraction: 执行批量更新', updates);
-      this.canvasStore.getState().updateElements(updates);
-    } else {
-      console.log('MoveInteraction: 没有需要更新的元素');
-    }
   }
 
   /**
@@ -340,10 +325,11 @@ export class MoveInteraction {
   }
 
   /**
-   * 获取世界坐标点
+   * 获取世界坐标点 - 确保坐标转换正确
    */
   private getWorldPoint(event: CanvasEvent): Point {
     // 直接使用事件桥接层提供的世界坐标
+    // 确保这里返回的是正确的世界坐标
     return {
       x: event.world.x,
       y: event.world.y,
@@ -359,8 +345,6 @@ export class MoveInteraction {
     this.state.currentPoint = null;
     this.state.originalPositions.clear();
     this.state.isDragging = false;
-
-    console.log('MoveInteraction: 重置状态');
   }
 
   /**
@@ -368,19 +352,9 @@ export class MoveInteraction {
    */
   cancelMove(): void {
     if (this.state.isActive) {
-      // 恢复到原始位置
       if (this.state.isDragging) {
         this.restoreOriginalPositions();
       }
-
-      this.emitMoveEvent(MoveEvent.MOVE_CANCEL, {
-        selectedElementIds: this.canvasStore.getState().selectedElementIds,
-        startPoint: this.state.startPoint!,
-        currentPoint: this.state.currentPoint!,
-        delta: { x: 0, y: 0 },
-        movedElements: [],
-      });
-
       this.resetState();
     }
   }
@@ -410,7 +384,6 @@ export class MoveInteraction {
    * 发出移动事件
    */
   private emitMoveEvent(event: MoveEvent, data: MoveEventData): void {
-    // 使用事件总线发出移动事件
     eventBus.emit(event, data);
   }
 
@@ -436,13 +409,39 @@ export class MoveInteraction {
   }
 
   /**
+   * 诊断方法 - 检查当前状态
+   */
+  diagnose(): void {
+    console.group('MoveInteraction 诊断信息');
+    console.log('状态:', this.state);
+
+    const storeState = this.canvasStore.getState();
+    console.log('选中的元素:', storeState.selectedElementIds);
+    console.log('工具状态:', storeState.tool);
+
+    // 检查每个选中元素的位置
+    storeState.selectedElementIds.forEach((id) => {
+      const element = storeState.elements[id];
+      if (element) {
+        console.log(`元素 ${id}:`, { x: element.x, y: element.y, type: element.type });
+      }
+    });
+
+    console.groupEnd();
+  }
+
+  /**
    * 清理资源
    */
   dispose(): void {
-    // 清理事件监听
     eventBus.off('pointerdown', this.handlePointerDown as (payload: unknown) => void);
     eventBus.off('pointermove', this.handlePointerMove as (payload: unknown) => void);
     eventBus.off('pointerup', this.handlePointerUp as (payload: unknown) => void);
     eventBus.off('pointerupoutside', this.handlePointerUp as (payload: unknown) => void);
+
+    this.isInitialized = false;
   }
 }
+
+// 导出单例实例
+export const moveInteraction = new MoveInteraction();
