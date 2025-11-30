@@ -43,13 +43,16 @@ export class ImageRenderer implements IElementRenderer {
     (sprite as any).elementType = 'image';
     (sprite as any).elementId = element.id;
 
+    // 启用交互
+    sprite.interactive = true;
+
     // 设置尺寸
     sprite.width = width;
     sprite.height = height;
 
     // 设置位置和变换
-    sprite.x = x;
-    sprite.y = y;
+    sprite.x = x + transform.pivotX * width;
+    sprite.y = y + transform.pivotY * height;
     sprite.alpha = opacity;
 
     // 设置缩放
@@ -83,8 +86,14 @@ export class ImageRenderer implements IElementRenderer {
     const imageChanges = changes as Partial<ImageElement>;
 
     // 更新位置
-    if (imageChanges.x !== undefined) sprite.x = imageChanges.x;
-    if (imageChanges.y !== undefined) sprite.y = imageChanges.y;
+    if (imageChanges.x !== undefined)
+      sprite.x =
+        imageChanges.x +
+        (imageChanges.transform?.pivotX ?? 0) * (imageChanges.width ?? (sprite as any).lastWidth);
+    if (imageChanges.y !== undefined)
+      sprite.y =
+        imageChanges.y +
+        (imageChanges.transform?.pivotY ?? 0) * (imageChanges.height ?? (sprite as any).lastHeight);
 
     // 更新透明度
     if (imageChanges.opacity !== undefined) sprite.alpha = imageChanges.opacity;

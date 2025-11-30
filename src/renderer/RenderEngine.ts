@@ -10,6 +10,7 @@ import {
   type DeleteElementCommand,
   type UpdateElementCommand,
   type UpdateSelectionCommand,
+  type UpdateViewportCommand,
 } from '../types/render.types';
 import { LayerManager } from './layers/LayerManager';
 import { ElementRendererRegistry } from './renderers/ElementRendererRegistry';
@@ -110,9 +111,15 @@ export class RenderEngine {
         case 'UPDATE_SELECTION':
           this.updateSelection(command as UpdateSelectionCommand);
           break;
+        case 'UPDATE_VIEWPORT':
+          this.updateViewport(command as UpdateViewportCommand);
+          break;
         default:
           console.warn('未知渲染命令:', command);
       }
+
+      // 打印世界坐标
+      this.printWorldCoordinates();
     } catch (error) {
       console.error('执行渲染命令失败:', error);
     }
@@ -277,6 +284,27 @@ export class RenderEngine {
   }
 
   /**
+   * 更新视口状态
+   */
+  private updateViewport(command: UpdateViewportCommand): void {
+    const { viewport } = command;
+
+    // 应用缩放变换
+    this.pixiApp.stage.scale.set(viewport.zoom, viewport.zoom);
+
+    // 应用偏移变换：将世界坐标的偏移转换为屏幕坐标的偏移
+    // 在 PixiJS 中，position 是相对于父容器的屏幕坐标
+    // 所以需要将世界坐标的偏移乘以缩放比例
+    this.pixiApp.stage.position.set(
+      -viewport.offset.x * viewport.zoom,
+      -viewport.offset.y * viewport.zoom,
+    );
+
+    // 调度渲染
+    this.renderScheduler.scheduleRender(command.priority);
+  }
+
+  /**
    * 绘制选择框和调整手柄
    */
   private drawSelectionBox(elementGraphics: PIXI.Container, elementId: string): void {
@@ -419,5 +447,19 @@ export class RenderEngine {
       this.previewGraphics.destroy();
       this.previewGraphics = null;
     }
+  }
+
+  /**
+   * 打印所有元素的PIXI世界坐标
+   */
+  printWorldCoordinates(): void {
+    console.log('=== PIXI 渲染图形世界坐标 ===');
+    this.elementGraphics.forEach((graphics, elementId) => {
+      const globalPos = graphics.getGlobalPosition();
+      console.log(
+        `元素 ${elementId}: 世界坐标 (${globalPos.x.toFixed(2)}, ${globalPos.y.toFixed(2)})`,
+      );
+    });
+    console.log('================================');
   }
 }
