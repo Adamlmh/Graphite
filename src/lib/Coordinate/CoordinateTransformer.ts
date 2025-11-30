@@ -162,8 +162,8 @@ export class CoordinateTransformer {
     const offset = this.viewportProvider.getOffset();
     console.log('CoordinateTransformer: canvasToWorld', { canvasX, canvasY, zoom, offset });
     return {
-      x: (canvasX + offset.x) / zoom,
-      y: (canvasY + offset.y) / zoom,
+      x: canvasX / zoom + offset.x,
+      y: canvasY / zoom + offset.y,
     };
   }
 
@@ -178,6 +178,7 @@ export class CoordinateTransformer {
    */
   public screenToWorld(screenX: number, screenY: number): WorldPoint {
     // const canvasPoint = this.screenToCanvas(screenX, screenY);
+
     return this.canvasToWorld(screenX, screenY);
   }
 
