@@ -141,11 +141,14 @@ function worldBoundsToScreenBounds(
   const offset = viewportProvider.getOffset();
 
   // 世界坐标 → 画布坐标 → 屏幕坐标
+  // 注意：根据 CoordinateTransformer.canvasToWorld 的逆变换
+  // canvasToWorld: worldX = canvasX / zoom + offset.x
+  // 因此反向转换：canvasX = (worldX - offset.x) * zoom
   const worldToScreen = (worldX: number, worldY: number) => {
-    // 画布坐标
-    const canvasX = worldX * zoom - offset.x;
-    const canvasY = worldY * zoom - offset.y;
-    // 屏幕坐标
+    // 画布坐标：先减去 offset，再乘以 zoom
+    const canvasX = (worldX - offset.x) * zoom;
+    const canvasY = (worldY - offset.y) * zoom;
+    // 屏幕坐标：画布坐标 + 画布在屏幕上的偏移
     return {
       x: canvasX + canvasRect.left,
       y: canvasY + canvasRect.top,
