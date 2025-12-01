@@ -27,7 +27,7 @@ export class SelectionManager {
     try {
       console.log('SelectionManager: 处理点击事件', { screenPoint, elementCount: elements.length });
 
-      // 此处无需将屏幕坐标转换为世界坐标，因为传进来的就是直接相对于画布的世界坐标
+      // 将屏幕坐标转成世界坐标
       const worldPoint = this.coordinateTransformer.screenToWorld(screenPoint.x, screenPoint.y);
       console.log('SelectionManager: 坐标转换', { screenPoint, worldPoint });
 

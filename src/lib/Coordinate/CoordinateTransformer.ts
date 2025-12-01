@@ -177,9 +177,11 @@ export class CoordinateTransformer {
    * @returns 世界坐标点
    */
   public screenToWorld(screenX: number, screenY: number): WorldPoint {
-    // const canvasPoint = this.screenToCanvas(screenX, screenY);
+    // 第一步：屏幕坐标 → 画布坐标
+    const canvasPoint = this.screenToCanvas(screenX, screenY);
 
-    return this.canvasToWorld(screenX, screenY);
+    // 第二步：画布坐标 → 世界坐标
+    return this.canvasToWorld(canvasPoint.x, canvasPoint.y);
   }
 
   /**
