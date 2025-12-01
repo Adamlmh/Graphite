@@ -797,6 +797,9 @@ export class HistoryService {
       this.snapshots = this.snapshots.filter((s) => s.timestamp >= lastFullSnapshot.timestamp);
     }
 
+    // 新增：清理持久化存储中的旧记录
+    this.cleanupOldDBRecords();
+
     // 清理撤销栈
     if (this.undoStack.length > this.config.maxUndoSteps) {
       this.undoStack = this.undoStack.slice(-this.config.maxUndoSteps);
@@ -807,7 +810,14 @@ export class HistoryService {
    * 恢复到指定快照
    */
   async restoreSnapshot(snapshotId: string): Promise<void> {
+    // 首先尝试从内存加载
     const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+
+    // 如果内存中没有，尝试从持久化存储加载
+    if (!snapshot && this.isDBReady) {
+      await this.loadFromStorage;
+    }
+
     if (!snapshot) {
       throw new Error(`Snapshot ${snapshotId} not found`);
     }
