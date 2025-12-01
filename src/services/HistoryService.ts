@@ -811,11 +811,12 @@ export class HistoryService {
    */
   async restoreSnapshot(snapshotId: string): Promise<void> {
     // 首先尝试从内存加载
-    const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+    let snapshot = this.snapshots.find((s) => s.id === snapshotId);
 
     // 如果内存中没有，尝试从持久化存储加载
     if (!snapshot && this.isDBReady) {
-      await this.loadFromStorage;
+      await this.loadFromStorage();
+      snapshot = this.snapshots.find((s) => s.id === snapshotId);
     }
 
     if (!snapshot) {
