@@ -186,7 +186,7 @@ export class CanvasBridge {
       commands.push({
         type: 'UPDATE_SELECTION',
         selectedElementIds: selectedElementIds,
-        priority: RenderPriority.HIGH,
+        priority: RenderPriority.NORMAL,
       });
     }
 
@@ -460,12 +460,18 @@ export class CanvasBridge {
     // 确保命令执行顺序正确
     // 注意：CREATE_ELEMENT 必须在 UPDATE_SELECTION 之前执行，即使 UPDATE_SELECTION 优先级更高
     const sortedCommands = [...commands].sort((a, b) => {
-      // 特殊规则：CREATE_ELEMENT 必须在 UPDATE_SELECTION 之前执行
-      if (a.type === 'CREATE_ELEMENT' && b.type === 'UPDATE_SELECTION') {
-        return -1; // CREATE_ELEMENT 先执行
+      // 特殊规则：确保元素更新在选择更新之前执行
+      if (
+        (a.type === 'CREATE_ELEMENT' && b.type === 'UPDATE_SELECTION') ||
+        (a.type === 'UPDATE_ELEMENT' && b.type === 'UPDATE_SELECTION')
+      ) {
+        return -1;
       }
-      if (a.type === 'UPDATE_SELECTION' && b.type === 'CREATE_ELEMENT') {
-        return 1; // CREATE_ELEMENT 先执行
+      if (
+        (a.type === 'UPDATE_SELECTION' && b.type === 'CREATE_ELEMENT') ||
+        (a.type === 'UPDATE_SELECTION' && b.type === 'UPDATE_ELEMENT')
+      ) {
+        return 1;
       }
 
       // 优先级高的先执行
