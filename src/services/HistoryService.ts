@@ -45,7 +45,6 @@ export interface Command {
   execute(): Promise<void>;
   undo(): Promise<void>;
   redo(): Promise<void>;
-  merge?(previousCommand: Command): boolean;
   serialize(): string;
 }
 
@@ -153,6 +152,8 @@ export class HistoryService {
     this.setupPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
+    // 初始化 IndexedDB
+    this.initIndexedDB().catch(console.error);
   }
   // 自动保存相关
   private autoSaveTimeout: number | null = null;
@@ -163,6 +164,12 @@ export class HistoryService {
   private hasUnsavedChanges: boolean = false;
   private autoSaveEnabled: boolean = true;
   //private autoSaveInterval: number = 10000; // 10秒自动保存间隔
+
+  // IndexedDB 相关属性
+  private dbName = 'CanvasHistoryDB';
+  private dbVersion = 1;
+  private db: IDBDatabase | null = null;
+  private isDBReady = false;
 
   // 性能监控
   private performanceMetrics: PerformanceMetrics = {
@@ -179,7 +186,255 @@ export class HistoryService {
     maxUndoSteps: 50,
     fullSnapshotInterval: 10, // 每10个操作创建一个完整快照
     compressionEnabled: true,
+    storageBackend: 'indexeddb' as 'indexeddb' | 'localstorage', // 存储后端选择
+    maxDBRecords: 1000, // 最大存储记录数
+    autoSaveToDB: true, // 是否自动保存到数据库
   };
+
+  /**
+   * 初始化 IndexedDB
+   */
+  private async initIndexedDB(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (!window.indexedDB) {
+        console.warn('IndexedDB not supported, falling back to localStorage');
+        this.config.storageBackend = 'localstorage';
+        resolve();
+        return;
+      }
+
+      const request = indexedDB.open(this.dbName, this.dbVersion);
+
+      request.onerror = () => {
+        console.error('Failed to open IndexedDB:', request.error);
+        this.config.storageBackend = 'localstorage';
+        reject(request.error);
+      };
+
+      request.onsuccess = () => {
+        this.db = request.result;
+        this.isDBReady = true;
+        console.log('IndexedDB initialized successfully');
+        resolve();
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+
+        // 创建对象存储
+        if (!db.objectStoreNames.contains('snapshots')) {
+          const store = db.createObjectStore('snapshots', { keyPath: 'id' });
+          store.createIndex('timestamp', 'timestamp', { unique: false });
+          store.createIndex('version', 'version', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains('history')) {
+          db.createObjectStore('history', { keyPath: 'id' });
+        }
+
+        console.log('IndexedDB schema upgraded to version', this.dbVersion);
+      };
+    });
+  }
+
+  /**
+   * 保存快照到 IndexedDB
+   */
+  private async saveSnapshotToDB(snapshot: Snapshot): Promise<void> {
+    if (!this.isDBReady || this.config.storageBackend !== 'indexeddb') {
+      await this.saveSnapshotToLocalStorage(snapshot);
+      return;
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('IndexedDB not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction(['snapshots'], 'readwrite');
+      const store = transaction.objectStore('snapshots');
+
+      const dbSnapshot = {
+        id: snapshot.id,
+        timestamp: snapshot.timestamp,
+        version: snapshot.version,
+        data: snapshot.data,
+        isFullSnapshot: snapshot.isFullSnapshot,
+        metadata: snapshot.metadata,
+      };
+
+      const request = store.put(dbSnapshot);
+
+      request.onsuccess = () => {
+        // 清理旧记录
+        this.cleanupOldDBRecords();
+        resolve();
+      };
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * 保存到 localStorage（降级方案）
+   */
+  private async saveSnapshotToLocalStorage(snapshot: Snapshot): Promise<void> {
+    try {
+      const key = `canvas-snapshot-${snapshot.id}`;
+      localStorage.setItem(key, JSON.stringify(snapshot));
+
+      // 保存索引
+      const index = JSON.parse(localStorage.getItem('canvas-snapshots-index') || '[]');
+      index.push({ id: snapshot.id, timestamp: snapshot.timestamp });
+      index.sort((a: { timestamp: number }, b: { timestamp: number }) => b.timestamp - a.timestamp);
+      index.splice(this.config.maxDBRecords); // 保留最新的
+      localStorage.setItem('canvas-snapshots-index', JSON.stringify(index));
+    } catch (error) {
+      console.error('Failed to save to localStorage:', error);
+    }
+  }
+
+  /**
+   * 从持久化存储加载快照
+   */
+  async loadFromStorage(): Promise<void> {
+    if (this.config.storageBackend === 'indexeddb' && this.isDBReady) {
+      await this.loadFromIndexedDB();
+    } else {
+      await this.loadFromLocalStorage();
+    }
+  }
+
+  /**
+   * 从 IndexedDB 加载
+   */
+  private async loadFromIndexedDB(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('IndexedDB not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction(['snapshots'], 'readonly');
+      const store = transaction.objectStore('snapshots');
+      const index = store.index('timestamp');
+      // 构造空的 IDBKeyRange，明确匹配所有记录
+      const emptyRange = IDBKeyRange.lowerBound(0, true);
+      // 显式指定 openCursor 的返回类型为 IDBRequest<IDBCursorWithValue | null>
+      const request = index.openCursor(emptyRange, 'prev') as IDBRequest<IDBCursorWithValue | null>;
+
+      const snapshots: Snapshot[] = [];
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+          snapshots.push(cursor.value as Snapshot);
+          cursor.continue();
+        } else {
+          // 按时间戳排序并恢复
+          this.restoreFromSnapshots(snapshots).then(resolve).catch(reject);
+        }
+      };
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * 从 localStorage 加载（降级方案）
+   */
+  private async loadFromLocalStorage(): Promise<void> {
+    try {
+      const index = JSON.parse(localStorage.getItem('canvas-snapshots-index') || '[]');
+      const snapshots: Snapshot[] = [];
+
+      for (const item of index) {
+        const data = localStorage.getItem(`canvas-snapshot-${item.id}`);
+        if (data) {
+          snapshots.push(JSON.parse(data));
+        }
+      }
+
+      await this.restoreFromSnapshots(snapshots);
+    } catch (error) {
+      console.error('Failed to load from localStorage:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 手动保存到持久化存储
+   */
+  async saveToStorage(): Promise<void> {
+    const snapshot = await this.createSnapshot(true); // 创建完整快照
+    if (this.config.storageBackend === 'indexeddb') {
+      await this.saveSnapshotToDB(snapshot);
+    } else {
+      await this.saveSnapshotToLocalStorage(snapshot);
+    }
+  }
+
+  /**
+   * 获取存储后端信息
+   */
+  getStorageInfo(): { backend: string; ready: boolean; recordCount: number } {
+    return {
+      backend: this.config.storageBackend,
+      ready: this.isDBReady,
+      recordCount: this.snapshots.length,
+    };
+  }
+
+  /**
+   * 清理旧的数据库记录
+   */
+  private cleanupOldDBRecords(): void {
+    if (!this.db || !this.isDBReady) return;
+
+    const transaction = this.db.transaction(['snapshots'], 'readwrite');
+    const store = transaction.objectStore('snapshots');
+    const index = store.index('timestamp');
+
+    const request = index.openCursor();
+    const recordsToDelete: string[] = [];
+    let count = 0;
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        count++;
+        if (count > this.config.maxDBRecords) {
+          recordsToDelete.push(cursor.primaryKey as string);
+        }
+        cursor.continue();
+      } else {
+        // 删除旧记录
+        recordsToDelete.forEach((id) => store.delete(id));
+      }
+    };
+  }
+
+  /**
+   * 从快照数组恢复
+   */
+  private async restoreFromSnapshots(snapshots: Snapshot[]): Promise<void> {
+    if (snapshots.length === 0) return;
+
+    // 按时间戳排序
+    snapshots.sort((a, b) => a.timestamp - b.timestamp);
+
+    // 恢复到最新的快照
+    const latestSnapshot = snapshots[snapshots.length - 1];
+    await this.restoreSnapshot(latestSnapshot.id);
+
+    this.snapshots = snapshots;
+    console.log(`Loaded ${snapshots.length} snapshots from storage`);
+  }
 
   /**
    * 设置自动保存监听
@@ -503,6 +758,11 @@ export class HistoryService {
       this.snapshots.push(snapshot);
       this.lastSaveTime = Date.now();
 
+      // 保存到持久化存储
+      if (this.config.autoSaveToDB) {
+        await this.saveSnapshotToDB(snapshot);
+      }
+
       // 清理旧的快照
       this.cleanupOldSnapshots();
 
@@ -673,6 +933,14 @@ export class HistoryService {
     };
 
     return JSON.stringify(historyData, null, 2);
+  }
+
+  /**
+   * 导出所有历史数据（包括持久化存储中的）
+   */
+  async exportFullHistory(): Promise<string> {
+    await this.loadFromStorage(); // 确保加载了所有数据
+    return this.exportHistory();
   }
 
   /**
