@@ -1193,7 +1193,10 @@ export class HistoryService {
    * 撤销操作
    */
   async undo(): Promise<void> {
-    if (this.undoStack.length === 0) return;
+    if (this.undoStack.length === 0) {
+      console.log('撤销栈为空，无法执行撤销操作');
+      return;
+    }
 
     const command = this.undoStack.pop()!;
     try {
@@ -1211,7 +1214,10 @@ export class HistoryService {
    * 重做操作
    */
   async redo(): Promise<void> {
-    if (this.redoStack.length === 0) return;
+    if (this.redoStack.length === 0) {
+      console.log('重做栈为空，无法执行重做操作');
+      return;
+    }
 
     const command = this.redoStack.pop()!;
     try {
@@ -1287,5 +1293,21 @@ export class HistoryService {
       snapshotCount: this.snapshots.length,
       currentVersion: this.currentVersion,
     };
+  }
+
+  // 暴露快捷键入口
+  public async run(commandId: 'undo' | 'redo' | 'save'): Promise<void> {
+    let cmd: Command;
+    switch (commandId) {
+      case 'undo':
+        return this.undo(); // 已有方法
+      case 'redo':
+        return this.redo();
+      case 'save':
+        return this.forceSave();
+      default:
+        throw new Error(`unknown command ${commandId}`);
+    }
+    return this.executeCommand(cmd);
   }
 }

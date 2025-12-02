@@ -5,23 +5,25 @@ import { eventBus } from '../../lib/eventBus';
 import { moveInteraction } from '../interaction/moveInteraction.ts';
 import { deleteInteraction } from '../interaction/DeleteInteraction';
 import { copyPasteInteraction } from '../interaction/CopyPasteInteraction';
+import { historyService } from '../../main';
 import { testElementCreation } from '../interaction/ElementCreationTest';
 import type { HotKeyTriggerPayload } from './hotKeyTypes.ts';
 
 export function bindCanvasHotKeys() {
   const canvasStore = useCanvasStore;
   hotKeyManager.setHandler('undo', () => {
+    historyService.run('undo');
     console.log('执行撤销');
     // TODO: 实现撤销逻辑
     // eventBus.emit('command:undo');
-    testElementCreation();
+    //testElementCreation();
   });
 
-  // hotKeyManager.setHandler('redo', () => {
-  //   console.log('执行重做');
-  //   // TODO: 实现重做逻辑
-  //   eventBus.emit('command:redo');
-  // });
+  hotKeyManager.setHandler('redo', () => {
+    historyService.run('redo');
+    console.log('执行重做');
+    // TODO: 实现重做逻辑
+  });
 
   // 复制快捷键
   hotKeyManager.setHandler('copy', (payload: HotKeyTriggerPayload) => {
@@ -47,10 +49,11 @@ export function bindCanvasHotKeys() {
     copyPasteInteraction.safePasteElements(nativeEvent);
   });
 
-  // hotKeyManager.setHandler('save', () => {
-  //   console.log('执行保存');
-  //   eventBus.emit('canvas:save');
-  // });
+  hotKeyManager.setHandler('save', () => {
+    historyService.run('save');
+    console.log('执行保存');
+    // TODO: 实现保存逻辑
+  });
 
   hotKeyManager.setHandler('delete', () => {
     console.log('执行删除');

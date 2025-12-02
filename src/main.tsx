@@ -16,15 +16,12 @@ new CreateInteraction();
 new MoveInteraction();
 
 // 全局初始化 HistoryService
-const historyService = new HistoryService({
+export const historyService = new HistoryService({
   getState: () => useCanvasStore.getState(),
   setState: (partial) => {
     useCanvasStore.setState((state) => Object.assign(state, partial));
   },
 });
-
-// 全局导出 HistoryService 实例
-export const appHistoryService = historyService;
 
 // 页面加载时恢复历史状态
 async function initApp() {
