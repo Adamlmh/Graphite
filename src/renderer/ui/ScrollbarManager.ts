@@ -126,7 +126,10 @@ export class ScrollbarManager {
       const vp = (this.viewportController as any).viewport as ViewportState;
       this.dragStartOffset = { x: vp.offset.x, y: vp.offset.y };
     });
-    this.app.stage.on('pointerup', () => {
+    this.app.stage.on('pointerup', (e: PIXI.FederatedPointerEvent) => {
+      if (!this.dragging) return;
+      // 阻止事件传播，避免影响其他交互
+      e.stopPropagation();
       this.dragging = null;
       this.viewportController.enforceBounds(true);
       const vp = (this.viewportController as any).viewport as ViewportState;
@@ -134,6 +137,8 @@ export class ScrollbarManager {
     });
     this.app.stage.on('pointermove', (e: PIXI.FederatedPointerEvent) => {
       if (!this.dragging) return;
+      // 阻止事件传播，避免影响其他交互
+      e.stopPropagation();
       const vp = (this.viewportController as any).viewport as ViewportState;
       const cw = this.app.renderer.width;
       const ch = this.app.renderer.height;
