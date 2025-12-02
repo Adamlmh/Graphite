@@ -1,6 +1,6 @@
 import type { ElementType } from '../../types';
-import { ViewportProvider } from './providers/ViewportProvider';
 import { CanvasDOMProvider } from './providers/CanvasDOMProvider';
+import { ViewportProvider } from './providers/ViewportProvider';
 
 /**
  * 坐标转换模块（CoordinateTransformer）
@@ -160,9 +160,10 @@ export class CoordinateTransformer {
   public canvasToWorld(canvasX: number, canvasY: number): WorldPoint {
     const zoom = this.viewportProvider.getZoom();
     const offset = this.viewportProvider.getOffset();
+    console.log('CoordinateTransformer: canvasToWorld', { canvasX, canvasY, zoom, offset });
     return {
-      x: (canvasX - offset.x) / zoom,
-      y: (canvasY - offset.y) / zoom,
+      x: canvasX / zoom + offset.x,
+      y: canvasY / zoom + offset.y,
     };
   }
 
@@ -176,7 +177,10 @@ export class CoordinateTransformer {
    * @returns 世界坐标点
    */
   public screenToWorld(screenX: number, screenY: number): WorldPoint {
+    // 第一步：屏幕坐标 → 画布坐标
     const canvasPoint = this.screenToCanvas(screenX, screenY);
+
+    // 第二步：画布坐标 → 世界坐标
     return this.canvasToWorld(canvasPoint.x, canvasPoint.y);
   }
 

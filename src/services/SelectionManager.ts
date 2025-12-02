@@ -1,7 +1,7 @@
-import type { Element, Point } from '../types';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
+import type { Element, Point } from '../types';
 
 /**
  * 选择管理器 - 处理画布点击事件和元素选择逻辑
@@ -27,8 +27,8 @@ export class SelectionManager {
     try {
       console.log('SelectionManager: 处理点击事件', { screenPoint, elementCount: elements.length });
 
-      // 此处无需将屏幕坐标转换为世界坐标，因为传进来的就是直接相对于画布的世界坐标
-      const worldPoint = { x: screenPoint.x, y: screenPoint.y };
+      // 将屏幕坐标转成世界坐标
+      const worldPoint = this.coordinateTransformer.screenToWorld(screenPoint.x, screenPoint.y);
       console.log('SelectionManager: 坐标转换', { screenPoint, worldPoint });
 
       // 按 zIndex 从高到低排序，优先检测上层元素

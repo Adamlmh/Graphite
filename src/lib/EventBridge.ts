@@ -7,13 +7,14 @@
 import * as PIXI from 'pixi.js';
 import { getPixiApp, onPixiAppInit } from './pixiApp';
 import { eventBus } from './eventBus';
+import { CoordinateTransformer } from './Coordinate/CoordinateTransformer';
 
 /**
  * 统一的事件数据格式
  */
 export interface CanvasEvent {
   type: string;
-  /** 屏幕坐标（相对于画布） */
+  /** 屏幕坐标（相对于浏览器视口） */
   screen: { x: number; y: number };
   /** 世界坐标（考虑缩放和平移） */
   world: { x: number; y: number };
@@ -38,6 +39,7 @@ export interface CanvasEvent {
 class EventBridge {
   private app: PIXI.Application | null = null;
   private isInitialized = false;
+  private coordinateTransformer: CoordinateTransformer | null = null;
   // 保存事件处理函数引用，用于正确清理
   /**
    * @param pointerdown 鼠标按下事件
@@ -89,6 +91,9 @@ class EventBridge {
     if (!this.app) {
       return;
     }
+
+    // 初始化坐标转换器
+    this.coordinateTransformer = new CoordinateTransformer();
 
     this.setupEventListeners();
     this.isInitialized = true;
@@ -212,7 +217,7 @@ class EventBridge {
    */
   private flushWheel(): void {
     // 如果没有待处理的事件，直接返回
-    if (!this.wheelState.event) {
+    if (!this.wheelState.event || !this.coordinateTransformer) {
       return;
     }
 
@@ -220,16 +225,24 @@ class EventBridge {
     const deltaX = this.wheelState.deltaX;
     const deltaY = this.wheelState.deltaY;
 
+    // 屏幕坐标：使用原生 DOM 事件的 clientX/clientY（相对于浏览器视口的坐标）
+    // 注意：PIXI 的 event.screen 可能不是我们期望的值，使用原生事件的坐标更可靠
+    const screenX = event.clientX;
+    const screenY = event.clientY;
+
+    // 使用坐标转换器将屏幕坐标转换为世界坐标
+    const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+
     // 构造 CanvasEvent
     const canvasEvent: CanvasEvent = {
       type: 'wheel',
       screen: {
-        x: event.screen.x,
-        y: event.screen.y,
+        x: screenX,
+        y: screenY,
       },
       world: {
-        x: event.global.x,
-        y: event.global.y,
+        x: worldPoint.x,
+        y: worldPoint.y,
       },
       buttons: event.buttons,
       modifiers: {
@@ -264,17 +277,25 @@ class EventBridge {
    * 处理指针事件
    */
   private handlePointerEvent(type: string, event: PIXI.FederatedPointerEvent): void {
-    if (!this.app) return;
+    if (!this.app || !this.coordinateTransformer) return;
+
+    // 屏幕坐标：使用原生 DOM 事件的 clientX/clientY（相对于浏览器视口的坐标）
+    // 注意：PIXI 的 event.screen 可能不是我们期望的值，使用原生事件的坐标更可靠
+    const screenX = event.clientX;
+    const screenY = event.clientY;
+
+    // 使用坐标转换器将屏幕坐标转换为世界坐标
+    const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
 
     const canvasEvent: CanvasEvent = {
       type,
       screen: {
-        x: event.screen.x,
-        y: event.screen.y,
+        x: screenX,
+        y: screenY,
       },
       world: {
-        x: event.global.x,
-        y: event.global.y,
+        x: worldPoint.x,
+        y: worldPoint.y,
       },
       buttons: event.buttons,
       modifiers: {
@@ -350,6 +371,7 @@ class EventBridge {
     // 清空事件处理函数引用
     this.eventHandlers = {};
     this.app = null;
+    this.coordinateTransformer = null;
     this.isInitialized = false;
   }
 }
