@@ -1,6 +1,7 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
 import { eventBus } from '../lib/eventBus';
+import type { CanvasEvent } from '../lib/EventBridge';
 import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
 import type { Element, ElementType, ViewportState } from '../types';
 import {
@@ -425,12 +426,44 @@ export class RenderEngine {
         rotationHandle.position.set((minX + maxX) / 2, maxY + 20);
         rotationHandle.interactive = true;
         rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-          event.stopPropagation();
-          eventBus.emit('group-rotation-start', {
+          // 将 Pixi 原生事件转换为统一的 CanvasEvent 格式，方便事件系统复用
+          const canvasEvent: CanvasEvent & {
+            elementIds: string[];
+            bounds: { x: number; y: number; width: number; height: number };
+          } = {
+            type: 'pointerdown',
+            screen: {
+              x: event.screen.x,
+              y: event.screen.y,
+            },
+            world: {
+              x: event.global.x,
+              y: event.global.y,
+            },
+            buttons: event.buttons,
+            modifiers: {
+              shift: event.shiftKey,
+              ctrl: event.ctrlKey,
+              alt: event.altKey,
+              meta: event.metaKey,
+            },
+            nativeEvent: event,
+            preventDefault: () => {
+              event.preventDefault();
+            },
+            stopPropagation: () => {
+              event.stopPropagation();
+            },
+            // 旋转操作自己的扩展字段
             elementIds: selectedElementIds,
             bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-            event,
-          });
+          };
+
+          // 阻止继续向 Pixi 冒泡（保持和其他指针逻辑一致）
+          event.stopPropagation();
+
+          // 使用统一 CanvasEvent 结构发出事件
+          eventBus.emit('group-rotation-start', canvasEvent);
         });
         selectionLayer.addChild(rotationHandle);
       }
