@@ -142,12 +142,62 @@ export class ImageRenderer implements IElementRenderer {
    * 应用图片调整
    */
   private applyAdjustments(sprite: PIXI.Sprite, adjustments: ImageElement['adjustments']): void {
-    if (!adjustments) return;
+    if (!adjustments) {
+      sprite.filters = [];
+      return;
+    }
 
-    // PIXI.Sprite 的调整可以通过滤镜实现
-    // 这里提供基础框架，具体实现可以后续扩展
+    const filters: PIXI.Filter[] = [];
 
-    // 暂时记录调整参数，未来可以通过自定义滤镜实现
-    console.log('ImageRenderer: 应用图片调整', adjustments);
+    const cm = new PIXI.ColorMatrixFilter();
+
+    // 亮度：0-200（百分比），100 为原值
+    if (typeof adjustments.brightness === 'number') {
+      const value = Math.max(0, adjustments.brightness) / 100;
+      cm.brightness(value, false);
+    }
+
+    // 对比度：0-200（百分比），100 为原值
+    if (typeof adjustments.contrast === 'number') {
+      const value = Math.max(0, adjustments.contrast) / 100;
+      cm.contrast(value, false);
+    }
+
+    // 饱和度：0-200（百分比），100 为原值；0 为灰度
+    if (typeof adjustments.saturation === 'number') {
+      const raw = Math.max(0, adjustments.saturation);
+      if (raw === 0) {
+        // 强制黑白效果
+        cm.greyscale(1, false);
+      } else {
+        const value = raw / 100;
+        cm.saturate(value, false);
+      }
+    }
+
+    // 色相：-180 到 180（度）
+    if (typeof adjustments.hue === 'number') {
+      const clamped = Math.max(-180, Math.min(180, adjustments.hue));
+      cm.hue(clamped, false);
+    }
+
+    // 如果有任一颜色矩阵调整，添加滤镜
+    if (
+      typeof adjustments.brightness === 'number' ||
+      typeof adjustments.contrast === 'number' ||
+      typeof adjustments.saturation === 'number' ||
+      typeof adjustments.hue === 'number'
+    ) {
+      filters.push(cm);
+    }
+
+    // 模糊：像素半径，0-20 合理
+    if (typeof adjustments.blur === 'number' && adjustments.blur > 0) {
+      const blurRadius = Math.min(20, Math.max(0, adjustments.blur));
+      const blur = new PIXI.BlurFilter({ strength: blurRadius, quality: 4 });
+      filters.push(blur);
+    }
+
+    sprite.filters = filters;
   }
 }

@@ -1,4 +1,4 @@
-// renderer/resources/ResourceManager.tsimport * as PIXI from 'pixi.js';
+// renderer/resources/ResourceManager.ts
 import * as PIXI from 'pixi.js';
 import type { Element, ImageElement } from '../../types/index';
 import type { RenderResources } from '../index';
