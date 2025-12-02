@@ -623,6 +623,16 @@ export class RenderEngine {
         'left',
       ];
 
+      const handleCursors = [
+        'nwse-resize', // top-left: 左上角，西北-东南方向
+        'ns-resize', // top: 上边，南北方向
+        'nesw-resize', // top-right: 右上角，东北-西南方向
+        'ew-resize', // right: 右边，东西方向
+        'nwse-resize', // bottom-right: 右下角，西北-东南方向
+        'ns-resize', // bottom: 下边，南北方向
+        'nesw-resize', // bottom-left: 左下角，东北-西南方向
+        'ew-resize', // left: 左边，东西方向
+      ];
       handlePositions.forEach((pos, index) => {
         const handle = new PIXI.Graphics();
         handle.beginFill(handleColor);
@@ -632,7 +642,7 @@ export class RenderEngine {
         handle.position.set(pos.x, pos.y);
         handle.interactive = true;
         handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
-        handle.cursor = 'pointer';
+        handle.cursor = handleCursors[index];
         handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
           event.stopPropagation();
           eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
@@ -648,7 +658,7 @@ export class RenderEngine {
       rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
       rotationHandle.interactive = true;
       rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
-      rotationHandle.cursor = 'pointer';
+      rotationHandle.cursor = 'move';
       // 使用静态事件模式，确保可以接收事件
       rotationHandle.eventMode = 'static';
       rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
