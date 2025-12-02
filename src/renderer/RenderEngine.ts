@@ -333,9 +333,8 @@ export class RenderEngine {
       let maxY = -Infinity;
 
       selectedElementIds.forEach((elementId) => {
-        const g = this.elementGraphics.get(elementId);
-        if (!g) return;
-        const b = g.getBounds();
+        const provider = new ElementProvider(elementId);
+        const b = this.geometryService.getElementBoundsWorld(provider);
         minX = Math.min(minX, b.x);
         minY = Math.min(minY, b.y);
         maxX = Math.max(maxX, b.x + b.width);
