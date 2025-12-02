@@ -87,10 +87,12 @@ export class RenderEngine {
 
     // 启用交互功能
     this.pixiApp.stage.interactive = true;
+    this.pixiApp.stage.interactiveChildren = true; // 允许子元素接收事件（关键修复！）
     this.pixiApp.stage.hitArea = new PIXI.Rectangle(-10000, -10000, 20000, 20000);
 
     this.camera = new PIXI.Container();
     this.camera.interactive = true;
+    this.camera.interactiveChildren = true; // 允许子元素接收事件（关键修复！）
     this.pixiApp.stage.addChild(this.camera);
 
     this.viewportController = new ViewportController(this.pixiApp, this.camera, this.container);
@@ -369,11 +371,15 @@ export class RenderEngine {
         drawDashed(maxX, maxY, minX, maxY);
         drawDashed(minX, maxY, minX, minY);
         box.stroke();
+        box.interactive = false;
+        box.interactiveChildren = false;
 
         const fill = new PIXI.Graphics();
         fill.beginFill(0x3b82f6, 0.04);
         fill.drawRect(minX, minY, maxX - minX, maxY - minY);
         fill.endFill();
+        fill.interactive = false;
+        fill.interactiveChildren = false;
 
         selectionLayer.addChild(box);
         selectionLayer.addChild(fill);
@@ -428,7 +434,16 @@ export class RenderEngine {
         rotationHandle.endFill();
         rotationHandle.position.set((minX + maxX) / 2, maxY + 20);
         rotationHandle.interactive = true;
+        rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
+        rotationHandle.cursor = 'pointer';
+        // 使用静态事件模式，确保可以接收事件
+        rotationHandle.eventMode = 'static';
+        // 使用捕获阶段监听，确保在事件到达 stage 之前处理
+        rotationHandle.eventMode = 'static';
         rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+          // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
+          event.stopPropagation();
+
           // 将 Pixi 原生事件转换为统一的 CanvasEvent 格式，方便事件系统复用
           const canvasEvent: CanvasEvent & {
             elementIds: string[];
@@ -461,9 +476,6 @@ export class RenderEngine {
             elementIds: selectedElementIds,
             bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
           };
-
-          // 阻止继续向 Pixi 冒泡（保持和其他指针逻辑一致）
-          event.stopPropagation();
 
           // 使用统一 CanvasEvent 结构发出事件
           eventBus.emit('group-rotation-start', canvasEvent);
@@ -602,12 +614,16 @@ export class RenderEngine {
     );
     drawDashed(bounds.x, bounds.y + bounds.height, bounds.x, bounds.y);
     dashedBox.stroke();
+    dashedBox.interactive = false;
+    dashedBox.interactiveChildren = false;
     selectionLayer.addChild(dashedBox);
 
     const highlightBox = new PIXI.Graphics();
     highlightBox.beginFill(0x3b82f6, 0.06);
     highlightBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
     highlightBox.endFill();
+    highlightBox.interactive = false;
+    highlightBox.interactiveChildren = false;
     selectionLayer.addChild(highlightBox);
 
     if (withHandles) {
@@ -645,6 +661,8 @@ export class RenderEngine {
         handle.endFill();
         handle.position.set(pos.x, pos.y);
         handle.interactive = true;
+        handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
+        handle.cursor = 'pointer';
         handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
           event.stopPropagation();
           eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
@@ -659,7 +677,12 @@ export class RenderEngine {
       rotationHandle.endFill();
       rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
       rotationHandle.interactive = true;
+      rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
+      rotationHandle.cursor = 'pointer';
+      // 使用静态事件模式，确保可以接收事件
+      rotationHandle.eventMode = 'static';
       rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+        // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
         event.stopPropagation();
         eventBus.emit('rotation-start', { elementId, event });
       });

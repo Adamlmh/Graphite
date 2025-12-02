@@ -55,7 +55,7 @@ export class LayerManager {
         break;
       case 'SELECTION':
         container.interactive = false;
-        container.interactiveChildren = false;
+        container.interactiveChildren = true; // 允许选择层中的手柄（旋转柄、调整大小手柄）接收交互事件
         break;
       case 'OVERLAY':
         container.interactive = false;
