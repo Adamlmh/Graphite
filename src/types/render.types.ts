@@ -60,12 +60,7 @@ export interface UpdateSelectionCommand extends RenderCommand {
 
 export interface UpdateViewportCommand extends RenderCommand {
   type: 'UPDATE_VIEWPORT';
-  viewport: {
-    zoom: number;
-    offset: { x: number; y: number };
-    canvasSize: { width: number; height: number };
-    contentBounds: { x: number; y: number; width: number; height: number };
-  };
+  viewport: import('./index').ViewportState;
 }
 
 /** 渲染资源 */

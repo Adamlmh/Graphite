@@ -2,7 +2,7 @@
 import type { CanvasEvent } from '../../lib/EventBridge';
 import { eventBus } from '../../lib/eventBus';
 import { useCanvasStore } from '../../stores/canvas-store';
-import type { Point, Element } from '../../types/index';
+import type { Point, Element, Guideline } from '../../types/index';
 import { type MoveState, MoveEvent } from './interactionTypes';
 
 // 定义移动事件数据接口
@@ -155,18 +155,26 @@ export class MoveInteraction {
 
     this.state.currentPoint = currentPoint;
 
-    // 计算相对于起点的增量
-    const delta = {
+    const rawDelta = {
       x: currentPoint.x - this.state.startPoint.x,
       y: currentPoint.y - this.state.startPoint.y,
     };
 
-    // 使用基于原始位置的增量更新
-    this.updateElementsFromOriginalPositions(delta);
+    const { snappedDelta, guidelines } = this.computeSnapping(rawDelta);
+
+    this.updateElementsFromOriginalPositions(snappedDelta);
+
+    const vp = this.canvasStore.getState().viewport;
+    const nextSnap = {
+      ...vp.snapping,
+      guidelines,
+      showGuidelines: guidelines.length > 0,
+    };
+    this.canvasStore.getState().setViewport({ snapping: nextSnap });
 
     console.log('MoveInteraction: 更新移动', {
       currentPoint,
-      delta,
+      delta: snappedDelta,
       originalPositions: Array.from(this.state.originalPositions.entries()),
     });
   }
@@ -192,6 +200,9 @@ export class MoveInteraction {
       console.log('MoveInteraction: 移动取消（点击）');
     }
 
+    const vp = this.canvasStore.getState().viewport;
+    const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
+    this.canvasStore.getState().setViewport({ snapping: nextSnap });
     this.resetState();
   }
 
@@ -313,6 +324,215 @@ export class MoveInteraction {
     return selectedElementIds
       .map((id) => elements[id])
       .filter((element): element is Element => element !== undefined);
+  }
+
+  private computeSnapping(delta: Point): { snappedDelta: Point; guidelines: Guideline[] } {
+    const state = this.canvasStore.getState();
+    const threshold = state.viewport.snapping.threshold || 5;
+    const selectedIds = state.selectedElementIds;
+    const elements = state.elements;
+    if (selectedIds.length === 0) {
+      return { snappedDelta: delta, guidelines: [] };
+    }
+    const group = this.computeMovingGroupBounds(selectedIds, elements, delta);
+    const movingEdges = {
+      left: group.left,
+      right: group.right,
+      centerX: (group.left + group.right) / 2,
+      top: group.top,
+      bottom: group.bottom,
+      centerY: (group.top + group.bottom) / 2,
+    };
+
+    let bestDX = 0;
+    let bestDY = 0;
+    let minXDist = Infinity;
+    let minYDist = Infinity;
+    const lines: Guideline[] = [];
+    const preferCenter = true;
+
+    for (const otherId of Object.keys(elements)) {
+      if (selectedIds.includes(otherId)) continue;
+      const other = elements[otherId];
+      if (!other || other.visibility === 'hidden') continue;
+      const ox = other.x;
+      const oy = other.y;
+      const ow = other.width;
+      const oh = other.height;
+      const otherEdges = {
+        left: ox,
+        right: ox + ow,
+        centerX: ox + ow / 2,
+        top: oy,
+        bottom: oy + oh,
+        centerY: oy + oh / 2,
+      };
+
+      const candidatesX: Array<{
+        pos: number;
+        src: Guideline['source'];
+        edge: keyof typeof movingEdges;
+        strength: Guideline['strength'];
+      }> = [
+        { pos: otherEdges.left, src: 'element-edge', edge: 'left', strength: 'weak' },
+        { pos: otherEdges.centerX, src: 'element-center', edge: 'centerX', strength: 'strong' },
+        { pos: otherEdges.right, src: 'element-edge', edge: 'right', strength: 'weak' },
+      ];
+      const candidatesY: Array<{
+        pos: number;
+        src: Guideline['source'];
+        edge: keyof typeof movingEdges;
+        strength: Guideline['strength'];
+      }> = [
+        { pos: otherEdges.top, src: 'element-edge', edge: 'top', strength: 'weak' },
+        { pos: otherEdges.centerY, src: 'element-center', edge: 'centerY', strength: 'strong' },
+        { pos: otherEdges.bottom, src: 'element-edge', edge: 'bottom', strength: 'weak' },
+      ];
+
+      for (const c of candidatesX) {
+        const dist = Math.abs(movingEdges[c.edge] - c.pos);
+        const bias = preferCenter && c.src === 'element-center' ? 0.5 : 1.0;
+        if (dist <= threshold && dist * bias < minXDist) {
+          minXDist = dist * bias;
+          bestDX = c.pos - movingEdges[c.edge];
+          lines.push({
+            type: 'vertical',
+            position: c.pos,
+            source: c.src,
+            elementId: otherId,
+            targetElementId: selectedIds[0],
+            strength: c.strength,
+          });
+        }
+      }
+      for (const c of candidatesY) {
+        const dist = Math.abs(movingEdges[c.edge] - c.pos);
+        const bias = preferCenter && c.src === 'element-center' ? 0.5 : 1.0;
+        if (dist <= threshold && dist * bias < minYDist) {
+          minYDist = dist * bias;
+          bestDY = c.pos - movingEdges[c.edge];
+          lines.push({
+            type: 'horizontal',
+            position: c.pos,
+            source: c.src,
+            elementId: otherId,
+            targetElementId: selectedIds[0],
+            strength: c.strength,
+          });
+        }
+      }
+
+      // 间距辅助线（显示，不参与吸附）
+      const nearLeftGap = Math.abs(movingEdges.left - otherEdges.right) <= threshold;
+      const nearRightGap = Math.abs(movingEdges.right - otherEdges.left) <= threshold;
+      if (nearLeftGap) {
+        const mid = (movingEdges.left + otherEdges.right) / 2;
+        lines.push({
+          type: 'vertical',
+          position: mid,
+          source: 'spacing',
+          elementId: otherId,
+          targetElementId: selectedIds[0],
+          strength: 'weak',
+        });
+      }
+      if (nearRightGap) {
+        const mid = (movingEdges.right + otherEdges.left) / 2;
+        lines.push({
+          type: 'vertical',
+          position: mid,
+          source: 'spacing',
+          elementId: otherId,
+          targetElementId: selectedIds[0],
+          strength: 'weak',
+        });
+      }
+      const nearTopGap = Math.abs(movingEdges.top - otherEdges.bottom) <= threshold;
+      const nearBottomGap = Math.abs(movingEdges.bottom - otherEdges.top) <= threshold;
+      if (nearTopGap) {
+        const mid = (movingEdges.top + otherEdges.bottom) / 2;
+        lines.push({
+          type: 'horizontal',
+          position: mid,
+          source: 'spacing',
+          elementId: otherId,
+          targetElementId: selectedIds[0],
+          strength: 'weak',
+        });
+      }
+      if (nearBottomGap) {
+        const mid = (movingEdges.bottom + otherEdges.top) / 2;
+        lines.push({
+          type: 'horizontal',
+          position: mid,
+          source: 'spacing',
+          elementId: otherId,
+          targetElementId: selectedIds[0],
+          strength: 'weak',
+        });
+      }
+    }
+
+    // 画布中心吸附（使用内容边界的中心作为画布中心）
+    if (state.viewport.snapping.snapToCanvas) {
+      const cb = state.viewport.contentBounds;
+      const canvasCenterX = cb.x + cb.width / 2;
+      const canvasCenterY = cb.y + cb.height / 2;
+      const distCX = Math.abs(movingEdges.centerX - canvasCenterX);
+      if (distCX <= threshold && distCX * 0.4 < minXDist) {
+        minXDist = distCX * 0.4;
+        bestDX = canvasCenterX - movingEdges.centerX;
+        lines.push({
+          type: 'vertical',
+          position: canvasCenterX,
+          source: 'canvas-center',
+          strength: 'strong',
+        });
+      }
+      const distCY = Math.abs(movingEdges.centerY - canvasCenterY);
+      if (distCY <= threshold && distCY * 0.4 < minYDist) {
+        minYDist = distCY * 0.4;
+        bestDY = canvasCenterY - movingEdges.centerY;
+        lines.push({
+          type: 'horizontal',
+          position: canvasCenterY,
+          source: 'canvas-center',
+          strength: 'strong',
+        });
+      }
+    }
+
+    const snappedDelta = { x: delta.x + bestDX, y: delta.y + bestDY };
+    return { snappedDelta, guidelines: lines };
+  }
+
+  private computeMovingGroupBounds(
+    selectedIds: string[],
+    elements: Record<string, Element>,
+    delta: Point,
+  ): { left: number; right: number; top: number; bottom: number } {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const id of selectedIds) {
+      const el = elements[id];
+      if (!el) continue;
+      const originX = this.state.originalPositions.get(id)?.x ?? el.x;
+      const originY = this.state.originalPositions.get(id)?.y ?? el.y;
+      const left = originX + delta.x;
+      const top = originY + delta.y;
+      const right = left + el.width;
+      const bottom = top + el.height;
+      minX = Math.min(minX, left);
+      minY = Math.min(minY, top);
+      maxX = Math.max(maxX, right);
+      maxY = Math.max(maxY, bottom);
+    }
+    if (minX === Infinity) {
+      return { left: 0, right: 0, top: 0, bottom: 0 };
+    }
+    return { left: minX, right: maxX, top: minY, bottom: maxY };
   }
 
   /**
