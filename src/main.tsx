@@ -37,7 +37,7 @@ async function initApp() {
     console.warn('Failed to load history, starting fresh:', error);
   }
 }
-
+initApp();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
