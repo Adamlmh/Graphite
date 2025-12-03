@@ -87,10 +87,12 @@ export class RenderEngine {
 
     // 启用交互功能
     this.pixiApp.stage.interactive = true;
+    this.pixiApp.stage.interactiveChildren = true; // 允许子元素接收事件（关键修复！）
     this.pixiApp.stage.hitArea = new PIXI.Rectangle(-10000, -10000, 20000, 20000);
 
     this.camera = new PIXI.Container();
     this.camera.interactive = true;
+    this.camera.interactiveChildren = true; // 允许子元素接收事件（关键修复！）
     this.pixiApp.stage.addChild(this.camera);
 
     this.viewportController = new ViewportController(this.pixiApp, this.camera, this.container);
@@ -333,9 +335,8 @@ export class RenderEngine {
       let maxY = -Infinity;
 
       selectedElementIds.forEach((elementId) => {
-        const g = this.elementGraphics.get(elementId);
-        if (!g) return;
-        const b = g.getBounds();
+        const provider = new ElementProvider(elementId);
+        const b = this.geometryService.getElementBoundsWorld(provider);
         minX = Math.min(minX, b.x);
         minY = Math.min(minY, b.y);
         maxX = Math.max(maxX, b.x + b.width);
@@ -370,11 +371,15 @@ export class RenderEngine {
         drawDashed(maxX, maxY, minX, maxY);
         drawDashed(minX, maxY, minX, minY);
         box.stroke();
+        box.interactive = false;
+        box.interactiveChildren = false;
 
         const fill = new PIXI.Graphics();
         fill.beginFill(0x3b82f6, 0.04);
         fill.drawRect(minX, minY, maxX - minX, maxY - minY);
         fill.endFill();
+        fill.interactive = false;
+        fill.interactiveChildren = false;
 
         selectionLayer.addChild(box);
         selectionLayer.addChild(fill);
@@ -429,7 +434,16 @@ export class RenderEngine {
         rotationHandle.endFill();
         rotationHandle.position.set((minX + maxX) / 2, maxY + 20);
         rotationHandle.interactive = true;
+        rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
+        rotationHandle.cursor = 'pointer';
+        // 使用静态事件模式，确保可以接收事件
+        rotationHandle.eventMode = 'static';
+        // 使用捕获阶段监听，确保在事件到达 stage 之前处理
+        rotationHandle.eventMode = 'static';
         rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+          // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
+          event.stopPropagation();
+
           // 将 Pixi 原生事件转换为统一的 CanvasEvent 格式，方便事件系统复用
           const canvasEvent: CanvasEvent & {
             elementIds: string[];
@@ -463,9 +477,6 @@ export class RenderEngine {
             bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
           };
 
-          // 阻止继续向 Pixi 冒泡（保持和其他指针逻辑一致）
-          event.stopPropagation();
-
           // 使用统一 CanvasEvent 结构发出事件
           eventBus.emit('group-rotation-start', canvasEvent);
         });
@@ -494,8 +505,63 @@ export class RenderEngine {
       },
       snapping: this.defaultSnapping,
     };
-    const next: ViewportState = { ...base, ...viewport, snapping: base.snapping };
+    const nextSnapping = viewport.snapping
+      ? { ...base.snapping, ...viewport.snapping }
+      : base.snapping;
+    const next: ViewportState = { ...base, ...viewport, snapping: nextSnapping };
     this.viewportController.setViewport(next, command.priority);
+
+    const overlay = this.layerManager.getOverlayLayer();
+    overlay.removeChildren();
+    if (
+      next.snapping.showGuidelines &&
+      next.snapping.guidelines &&
+      next.snapping.guidelines.length > 0
+    ) {
+      const wb = this.viewportController.getWorkingBounds(next);
+      const colorBySource = (src: string, strength: string): number => {
+        if (src === 'canvas-center') return 0x7c3aed;
+        if (src === 'element-center') return strength === 'strong' ? 0x1d4ed8 : 0x60a5fa;
+        if (src === 'spacing') return 0xf59e0b;
+        return strength === 'strong' ? 0x22c55e : 0x86efac;
+      };
+      const dashByStrength = (strength: string): { dash: number; gap: number; width: number } => {
+        return strength === 'strong'
+          ? { dash: 10, gap: 6, width: 3 }
+          : { dash: 6, gap: 6, width: 2 };
+      };
+
+      next.snapping.guidelines.forEach((line) => {
+        const style = dashByStrength(line.strength || 'weak');
+        const color = line.color ?? colorBySource(line.source, line.strength || 'weak');
+        const g = new PIXI.Graphics();
+        g.lineStyle(style.width, color, 1);
+        const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const ux = dx / (len || 1);
+          const uy = dy / (len || 1);
+          let pos = 0;
+          while (pos < len) {
+            const sx = x1 + ux * pos;
+            const sy = y1 + uy * pos;
+            const ex = x1 + ux * Math.min(pos + style.dash, len);
+            const ey = y1 + uy * Math.min(pos + style.dash, len);
+            g.moveTo(sx, sy);
+            g.lineTo(ex, ey);
+            pos += style.dash + style.gap;
+          }
+        };
+        if (line.type === 'vertical') {
+          drawDashed(line.position, wb.y, line.position, wb.y + wb.height);
+        } else {
+          drawDashed(wb.x, line.position, wb.x + wb.width, line.position);
+        }
+        g.stroke();
+        overlay.addChild(g);
+      });
+    }
   }
 
   /**
@@ -548,12 +614,16 @@ export class RenderEngine {
     );
     drawDashed(bounds.x, bounds.y + bounds.height, bounds.x, bounds.y);
     dashedBox.stroke();
+    dashedBox.interactive = false;
+    dashedBox.interactiveChildren = false;
     selectionLayer.addChild(dashedBox);
 
     const highlightBox = new PIXI.Graphics();
     highlightBox.beginFill(0x3b82f6, 0.06);
     highlightBox.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
     highlightBox.endFill();
+    highlightBox.interactive = false;
+    highlightBox.interactiveChildren = false;
     selectionLayer.addChild(highlightBox);
 
     if (withHandles) {
@@ -591,6 +661,8 @@ export class RenderEngine {
         handle.endFill();
         handle.position.set(pos.x, pos.y);
         handle.interactive = true;
+        handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
+        handle.cursor = 'pointer';
         handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
           event.stopPropagation();
           eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
@@ -605,7 +677,12 @@ export class RenderEngine {
       rotationHandle.endFill();
       rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
       rotationHandle.interactive = true;
+      rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
+      rotationHandle.cursor = 'pointer';
+      // 使用静态事件模式，确保可以接收事件
+      rotationHandle.eventMode = 'static';
       rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+        // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
         event.stopPropagation();
         eventBus.emit('rotation-start', { elementId, event });
       });

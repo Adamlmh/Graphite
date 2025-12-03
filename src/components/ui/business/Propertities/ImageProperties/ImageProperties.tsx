@@ -10,11 +10,8 @@ import {
 } from '@ant-design/icons';
 import type { Element } from '../../../../../types/index';
 import styles from './ImageProperties.module.less';
-import {
-  useElementCategory,
-  useCommonStyle,
-  useElementStyleUpdater,
-} from '../../../../../hooks/useElementCategory';
+import { useElementCategory, useCommonStyle } from '../../../../../hooks/useElementCategory';
+import { useCanvasStore } from '../../../../../stores/canvas-store';
 
 type ImagePropertiesProps = {
   element?: Element;
@@ -37,16 +34,18 @@ type ImageFilterState = {
 };
 
 type ImageAdjustments = {
-  scale?: number;
   brightness?: number;
   contrast?: number;
   saturation?: number;
-  temperature?: number;
+  hue?: number;
+  blur?: number;
 };
 
-type ImageStylePatch = Partial<Element['style']> & {
+type ImageElementPatch = {
   adjustments?: ImageAdjustments;
-  filter?: ImageFilterState;
+  transform?: Element['transform'];
+  width?: number;
+  height?: number;
 };
 
 const FILTER_LABEL: Record<FilterType, string> = {
@@ -83,19 +82,12 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
 
   // 使用 commonStyle 的序列化版本作为依赖，避免无限循环
   const styleKey = React.useMemo(() => JSON.stringify(commonStyle), [commonStyle]);
-  const [imageStyle, setImageStyle] = useState<ImageStylePatch | undefined>(
-    commonStyle as ImageStylePatch,
-  );
+  const [imagePatch, setImagePatch] = useState<ImageElementPatch | undefined>({});
 
-  const emitStylePatch = useElementStyleUpdater(effectiveElements, elementCount, {
-    onChange,
-    onGroupStyleChange,
-    applyToChildren: true,
-  });
+  const store = useCanvasStore();
 
   React.useEffect(() => {
-    setImageStyle(commonStyle as ImageStylePatch);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setImagePatch({});
   }, [styleKey]);
 
   // 只在图像元素时显示该面板
@@ -103,19 +95,24 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
     return null;
   }
 
-  const adjustments = imageStyle?.adjustments ?? {};
-  const filter = imageStyle?.filter;
+  const adjustments = imagePatch?.adjustments ?? {};
 
-  const applyPatch = (patch: ImageStylePatch) => {
-    setImageStyle((prev) => {
-      const base = prev ?? (commonStyle as ImageStylePatch) ?? {};
-      return {
-        ...base,
-        ...patch,
-      };
-    });
+  const applyPatch = (patch: ImageElementPatch) => {
+    setImagePatch((prev) => ({ ...(prev ?? {}), ...patch }));
 
-    emitStylePatch(patch as Partial<Element['style']>);
+    if (!effectiveElements.length) return;
+
+    if (effectiveElements.length > 1) {
+      effectiveElements.forEach((el) => {
+        store.updateElement(el.id, patch);
+      });
+      return;
+    }
+
+    const [single] = effectiveElements;
+    if (single) {
+      store.updateElement(single.id, patch);
+    }
   };
 
   const updateAdjustments = (key: keyof ImageAdjustments, newValue: number) => {
@@ -128,22 +125,32 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
   };
 
   const handleFilterSelect = (type?: FilterType) => {
-    const nextFilter: ImageFilterState | undefined = type
-      ? {
-          type,
-          value: filter?.type === type ? filter.value : 50,
-        }
-      : undefined;
-
-    applyPatch({ filter: nextFilter });
+    if (!type) {
+      // 清空调整，确保无滤镜状态完全移除滤镜
+      applyPatch({ adjustments: undefined });
+      return;
+    }
+    if (type === 'grayscale') {
+      applyPatch({ adjustments: { ...adjustments, saturation: 0 } });
+      return;
+    }
+    if (type === 'sepia') {
+      // 近似 sepia：降低饱和度并偏移色相
+      applyPatch({ adjustments: { ...adjustments, saturation: 80, hue: 20 } });
+      return;
+    }
+    if (type === 'blur') {
+      applyPatch({ adjustments: { ...adjustments, blur: 5 } });
+      return;
+    }
   };
 
-  const scaleValue = typeof adjustments.scale === 'number' ? adjustments.scale : 1;
+  const scaleValue = 1; // 简化：统一等比缩放到 transform，可按需扩展
   const brightnessValue = typeof adjustments.brightness === 'number' ? adjustments.brightness : 100;
   const contrastValue = typeof adjustments.contrast === 'number' ? adjustments.contrast : 100;
   const saturationValue = typeof adjustments.saturation === 'number' ? adjustments.saturation : 100;
-  const temperatureValue =
-    typeof adjustments.temperature === 'number' ? adjustments.temperature : 6500;
+  const hueValue = typeof adjustments.hue === 'number' ? adjustments.hue : 0;
+  const blurValue = typeof adjustments.blur === 'number' ? adjustments.blur : 0;
 
   const filterContent = (
     <div className={styles.filterPanel}>
@@ -153,20 +160,12 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
           <Button
             key={type}
             size="small"
-            type={filter?.type === type ? 'primary' : 'default'}
             className={styles.filterPreset}
             onClick={() => handleFilterSelect(type)}
           >
             {FILTER_LABEL[type]}
           </Button>
         ))}
-        <Button
-          size="small"
-          className={styles.filterPreset}
-          onClick={() => handleFilterSelect(undefined)}
-        >
-          无滤镜
-        </Button>
       </div>
     </div>
   );
@@ -174,10 +173,17 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
   const scaleSlider = (
     <div className={styles.sliderPopover}>
       <Slider
-        min={10}
-        max={300}
+        min={50}
+        max={200}
         value={Math.round(scaleValue * 100)}
-        onChange={(percent) => updateAdjustments('scale', percent / 100)}
+        onChange={(percent) => {
+          const ratio = percent / 100;
+          const [single] = effectiveElements;
+          if (!single) return;
+          const w = single.width;
+          const h = single.height;
+          applyPatch({ width: Math.round(w * ratio), height: Math.round(h * ratio) });
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -227,18 +233,31 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
     </div>
   );
 
-  const temperatureSlider = (
+  const hueSlider = (
     <div className={styles.sliderPopover}>
       <Slider
-        min={2000}
-        max={9000}
-        step={100}
-        value={temperatureValue}
-        onChange={(value) => updateAdjustments('temperature', value)}
+        min={-180}
+        max={180}
+        value={hueValue}
+        onChange={(value) => updateAdjustments('hue', value)}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
-      <span className={styles.sliderValue}>{temperatureValue}K</span>
+      <span className={styles.sliderValue}>{hueValue}°</span>
+    </div>
+  );
+
+  const blurSlider = (
+    <div className={styles.sliderPopover}>
+      <Slider
+        min={0}
+        max={20}
+        value={blurValue}
+        onChange={(value) => updateAdjustments('blur', value)}
+        className={styles.popoverSlider}
+        tooltip={{ open: false }}
+      />
+      <span className={styles.sliderValue}>{blurValue}px</span>
     </div>
   );
 
@@ -295,14 +314,26 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
       </Popover>
 
       <Popover
-        content={temperatureSlider}
+        content={hueSlider}
         trigger="hover"
         placement="top"
         mouseEnterDelay={0.1}
         mouseLeaveDelay={0.2}
       >
-        <Tooltip title="色温" placement="bottom" mouseEnterDelay={0.3}>
+        <Tooltip title="色相" placement="bottom" mouseEnterDelay={0.3}>
           <Button className={styles.toolButton} icon={<FireOutlined />} />
+        </Tooltip>
+      </Popover>
+
+      <Popover
+        content={blurSlider}
+        trigger="hover"
+        placement="top"
+        mouseEnterDelay={0.1}
+        mouseLeaveDelay={0.2}
+      >
+        <Tooltip title="模糊" placement="bottom" mouseEnterDelay={0.3}>
+          <Button className={styles.toolButton} icon={<FilterOutlined />} />
         </Tooltip>
       </Popover>
 
@@ -316,11 +347,7 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({
         mouseLeaveDelay={0.2}
       >
         <Tooltip title="滤镜" placement="bottom" mouseEnterDelay={0.3}>
-          <Button
-            className={styles.toolButton}
-            type={filter ? 'primary' : 'default'}
-            icon={<FilterOutlined />}
-          />
+          <Button className={styles.toolButton} icon={<FilterOutlined />} />
         </Tooltip>
       </Popover>
     </div>
