@@ -93,6 +93,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     return null;
   }
 
+  if (!shouldShowShapePanel && !shouldShowTextPanel && !shouldShowImagePanel) {
+    return null;
+  }
   const panelClassName = [styles['properties-panel'], className].filter(Boolean).join(' ');
 
   return (
