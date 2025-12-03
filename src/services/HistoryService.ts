@@ -153,7 +153,22 @@ export class HistoryService {
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
     // 初始化 IndexedDB
-    this.initIndexedDB().catch(console.error);
+    this.initIndexedDB()
+      .then(() => {
+        // 关键：初始化完成后立刻加载
+        return this.loadFromStorage();
+      })
+      .then(() => {
+        // 加载完快照后，恢复到最新状态
+        if (this.snapshots.length > 0) {
+          const latest = this.snapshots[this.snapshots.length - 1];
+          return this.restoreSnapshot(latest.id); // 不抛错，让页面能继续用
+        }
+      })
+      .catch((e) => {
+        console.warn('[HistoryService] 未能从持久化存储恢复', e);
+        // 可以在这里给一个“新建空白画布”的默认状态
+      });
   }
   // 自动保存相关
   private autoSaveTimeout: number | null = null;
@@ -189,6 +204,7 @@ export class HistoryService {
     storageBackend: 'indexeddb' as 'indexeddb' | 'localstorage', // 存储后端选择
     maxDBRecords: 1000, // 最大存储记录数
     autoSaveToDB: true, // 是否自动保存到数据库
+    maxDBAge: 30 * 24 * 60 * 60 * 1000, // 默认保留30天
   };
 
   /**
@@ -400,21 +416,18 @@ export class HistoryService {
     const store = transaction.objectStore('snapshots');
     const index = store.index('timestamp');
 
-    const request = index.openCursor();
-    const recordsToDelete: string[] = [];
-    let count = 0;
+    // 设置默认值，比如默认保留30天
+    const maxDBAge = this.config.maxDBAge || 30 * 24 * 60 * 60 * 1000;
+    const cutoffTime = Date.now() - maxDBAge;
+
+    const range = IDBKeyRange.upperBound(cutoffTime);
+    const request = index.openCursor(range);
 
     request.onsuccess = () => {
       const cursor = request.result;
       if (cursor) {
-        count++;
-        if (count > this.config.maxDBRecords) {
-          recordsToDelete.push(cursor.primaryKey as string);
-        }
+        store.delete(cursor.primaryKey);
         cursor.continue();
-      } else {
-        // 删除旧记录
-        recordsToDelete.forEach((id) => store.delete(id));
       }
     };
   }
@@ -595,8 +608,10 @@ export class HistoryService {
       lastModified: Date.now(),
     };
 
+    console.log('Loaded persistableState:', persistableState);
     const jsonString = JSON.stringify(persistableState);
     const compressedData = this.config.compressionEnabled ? compress(jsonString) : jsonString;
+    //console.log(`Loaded compressedData: ${compressedData}`);
 
     // 更新性能指标
     const endTime = performance.now();
@@ -732,6 +747,8 @@ export class HistoryService {
    * 创建快照
    */
   async createSnapshot(isFullSnapshot: boolean = false): Promise<Snapshot> {
+    //console.log(`CutCommand: 重做剪切命令，重新剪切 ${this.elements.length} 个元素`);
+    console.log('尝试创建快照');
     if (this.saveStatus === SaveStatus.SAVING) {
       throw new Error('Another save operation is in progress');
     }
@@ -741,7 +758,6 @@ export class HistoryService {
     try {
       const currentState = this.store.getState();
       const snapshotData = this.serializeStateForPersistence(currentState);
-
       const snapshot: Snapshot = {
         id: uuidv4(),
         timestamp: Date.now(),
@@ -761,6 +777,7 @@ export class HistoryService {
       // 保存到持久化存储
       if (this.config.autoSaveToDB) {
         await this.saveSnapshotToDB(snapshot);
+        console.log('保存到持久化存储');
       }
 
       // 清理旧的快照
@@ -825,6 +842,7 @@ export class HistoryService {
 
     try {
       const stateData = this.deserializeStateFromPersistence(snapshot.data) as Partial<CanvasState>;
+      console.log('恢复历史数据：', stateData);
       this.store.setState((prevState: CanvasState) => {
         return {
           ...prevState,
