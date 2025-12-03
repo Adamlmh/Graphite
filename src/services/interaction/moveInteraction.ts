@@ -4,6 +4,8 @@ import { eventBus } from '../../lib/eventBus';
 import { useCanvasStore } from '../../stores/canvas-store';
 import type { Point, Element, Guideline } from '../../types/index';
 import { type MoveState, MoveEvent } from './interactionTypes';
+import type { HistoryService } from '../HistoryService';
+import { MoveCommand } from '../command/HistoryCommand';
 
 // 定义移动事件数据接口
 interface MoveEventData {
@@ -25,6 +27,7 @@ export class MoveInteraction {
 
   private canvasStore: typeof useCanvasStore;
   private moveThreshold: number = 3;
+  private historyService: HistoryService | null = null;
 
   // 微移步长配置
   private readonly NUDGE_STEP = 1;
@@ -33,9 +36,19 @@ export class MoveInteraction {
   // 用于防止重复初始化的标志
   private isInitialized: boolean = false;
 
-  constructor() {
+  constructor(historyService?: HistoryService) {
     this.canvasStore = useCanvasStore;
+    if (historyService) {
+      this.historyService = historyService;
+    }
     this.setupEventListeners();
+  }
+
+  /**
+   * 设置历史服务
+   */
+  setHistoryService(historyService: HistoryService): void {
+    this.historyService = historyService;
   }
 
   /**
@@ -182,7 +195,7 @@ export class MoveInteraction {
   /**
    * 完成移动
    */
-  private finishMove(endPoint: Point): void {
+  private async finishMove(endPoint: Point): Promise<void> {
     if (!this.state.isActive || !this.state.startPoint) {
       return;
     }
@@ -194,6 +207,11 @@ export class MoveInteraction {
         x: endPoint.x - this.state.startPoint.x,
         y: endPoint.y - this.state.startPoint.y,
       };
+
+      // 记录移动历史
+      if (this.historyService) {
+        await this.recordMoveToHistory(delta);
+      }
 
       console.log('MoveInteraction: 移动完成', { delta, selectedElementIds });
     } else {
@@ -207,28 +225,71 @@ export class MoveInteraction {
   }
 
   /**
+   * 记录移动操作到历史
+   */
+  private async recordMoveToHistory(delta: Point): Promise<void> {
+    if (!this.historyService) {
+      return;
+    }
+
+    try {
+      const elementMovements: Array<{
+        elementId: string;
+        oldPosition: Point;
+        newPosition: Point;
+      }> = [];
+
+      // 收集移动信息
+      this.state.originalPositions.forEach((oldPosition, elementId) => {
+        const element = this.canvasStore.getState().elements[elementId];
+        if (element) {
+          elementMovements.push({
+            elementId,
+            oldPosition,
+            newPosition: { x: element.x, y: element.y },
+          });
+        }
+      });
+
+      if (elementMovements.length > 0) {
+        const command = new MoveCommand(elementMovements, {
+          updateElement: (id: string, updates: Partial<Element>) =>
+            this.canvasStore.getState().updateElement(id, updates),
+          updateElements: (updates: Array<{ id: string; updates: Partial<Element> }>) =>
+            this.canvasStore.getState().updateElements(updates),
+        });
+
+        await this.historyService.executeCommand(command);
+        console.log('MoveInteraction: 移动操作已记录到历史记录');
+      }
+    } catch (error) {
+      console.error('MoveInteraction: 通过历史服务记录移动失败:', error);
+    }
+  }
+
+  /**
    * 微移方法 - 完全重写
    */
-  nudgeLeft(fast: boolean = false): void {
-    this.nudge({ x: -(fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP), y: 0 });
+  async nudgeLeft(fast: boolean = false): Promise<void> {
+    await this.nudge({ x: -(fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP), y: 0 }, fast);
   }
 
-  nudgeRight(fast: boolean = false): void {
-    this.nudge({ x: fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP, y: 0 });
+  async nudgeRight(fast: boolean = false): Promise<void> {
+    await this.nudge({ x: fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP, y: 0 }, fast);
   }
 
-  nudgeUp(fast: boolean = false): void {
-    this.nudge({ x: 0, y: -(fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP) });
+  async nudgeUp(fast: boolean = false): Promise<void> {
+    await this.nudge({ x: 0, y: -(fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP) }, fast);
   }
 
-  nudgeDown(fast: boolean = false): void {
-    this.nudge({ x: 0, y: fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP });
+  async nudgeDown(fast: boolean = false): Promise<void> {
+    await this.nudge({ x: 0, y: fast ? this.FAST_NUDGE_STEP : this.NUDGE_STEP }, fast);
   }
 
   /**
    * 统一的微移方法
    */
-  private nudge(delta: Point): void {
+  private async nudge(delta: Point, fast: boolean = false): Promise<void> {
     const selectedElementIds = this.canvasStore.getState().selectedElementIds;
 
     if (selectedElementIds.length === 0) {
@@ -241,10 +302,70 @@ export class MoveInteraction {
 
     console.log('MoveInteraction: 开始微移', { delta, selectedElementIds });
 
-    // 对于微移，我们直接使用当前位置 + 增量
+    // 记录微移前的位置
+    const originalPositions = new Map<string, Point>();
+    selectedElementIds.forEach((id) => {
+      const element = this.canvasStore.getState().elements[id];
+      if (element) {
+        originalPositions.set(id, { x: element.x, y: element.y });
+      }
+    });
+
+    // 执行微移
     this.updateElementsFromCurrentPositions(delta);
 
+    // 记录微移历史
+    if (this.historyService) {
+      await this.recordNudgeToHistory(originalPositions, delta, fast);
+    }
+
     console.log('MoveInteraction: 微移完成', { delta });
+  }
+
+  /**
+   * 记录微移操作到历史
+   */
+  private async recordNudgeToHistory(
+    originalPositions: Map<string, Point>,
+    delta: Point,
+    fast: boolean = false,
+  ): Promise<void> {
+    if (!this.historyService) {
+      return;
+    }
+
+    try {
+      const elementMovements: Array<{
+        elementId: string;
+        oldPosition: Point;
+        newPosition: Point;
+      }> = [];
+
+      originalPositions.forEach((oldPosition, elementId) => {
+        const element = this.canvasStore.getState().elements[elementId];
+        if (element) {
+          elementMovements.push({
+            elementId,
+            oldPosition,
+            newPosition: { x: element.x, y: element.y },
+          });
+        }
+      });
+
+      if (elementMovements.length > 0) {
+        const command = new MoveCommand(elementMovements, {
+          updateElement: (id: string, updates: Partial<Element>) =>
+            this.canvasStore.getState().updateElement(id, updates),
+          updateElements: (updates: Array<{ id: string; updates: Partial<Element> }>) =>
+            this.canvasStore.getState().updateElements(updates),
+        });
+
+        await this.historyService.executeCommand(command);
+        console.log(`MoveInteraction: ${fast ? '快速' : ''}微移操作已记录到历史记录`);
+      }
+    } catch (error) {
+      console.error('MoveInteraction: 通过历史服务记录微移失败:', error);
+    }
   }
 
   /**
@@ -662,6 +783,3 @@ export class MoveInteraction {
     this.isInitialized = false;
   }
 }
-
-// 导出单例实例
-export const moveInteraction = new MoveInteraction();

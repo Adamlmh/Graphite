@@ -14,6 +14,8 @@ import type {
 } from '../../types/index';
 import { ElementFactory } from '../element-factory';
 import { type CreationState, CreationEvent } from './interactionTypes';
+import { CreateCommand } from '../command/HistoryCommand';
+import type { HistoryService } from '../HistoryService';
 
 // 定义创建选项接口
 interface CreationOptions {
@@ -60,10 +62,21 @@ export class CreateInteraction {
   private hasMoved: boolean = false; // 标记是否发生了移动
   private moveThreshold: number = 3; // 移动阈值，小于这个值认为是点击
   private isTextTool: boolean = false; // 标记是否为文本工具
+  private historyService: HistoryService | null = null;
 
-  constructor() {
+  constructor(historyService?: HistoryService) {
     this.canvasStore = useCanvasStore;
+    if (historyService) {
+      this.historyService = historyService;
+    }
     this.setupEventListeners();
+  }
+
+  /**
+   * 设置历史服务
+   */
+  setHistoryService(historyService: HistoryService): void {
+    this.historyService = historyService;
   }
 
   /**
@@ -228,7 +241,7 @@ export class CreateInteraction {
   /**
    * 完成创建
    */
-  private finishCreation(endPoint: Point): void {
+  private async finishCreation(endPoint: Point): Promise<void> {
     if (!this.state.isActive || !this.state.startPoint) {
       return;
     }
@@ -240,8 +253,13 @@ export class CreateInteraction {
       const finalElement = this.createFinalElement(endPoint);
 
       if (finalElement) {
-        // 添加到画布
-        this.canvasStore.getState().addElement(finalElement);
+        // 如果有历史服务，使用命令模式
+        if (this.historyService) {
+          await this.createElementWithHistory(finalElement);
+        } else {
+          // 否则直接添加到画布
+          this.canvasStore.getState().addElement(finalElement);
+        }
 
         // 选中新创建的元素
         this.selectCreatedElement(finalElement);
@@ -268,6 +286,33 @@ export class CreateInteraction {
     }
 
     this.resetState();
+  }
+
+  /**
+   * 使用历史服务创建元素
+   */
+  private async createElementWithHistory(element: Element): Promise<void> {
+    if (!this.historyService) {
+      return;
+    }
+
+    try {
+      // 创建命令
+      const command = new CreateCommand(element, {
+        // getState: () => this.canvasStore.getState(),
+        addElement: (element: Element) => this.canvasStore.getState().addElement(element),
+        deleteElement: (id: string) => this.canvasStore.getState().deleteElement(id),
+      });
+
+      // 通过历史服务执行命令
+      await this.historyService.executeCommand(command);
+
+      console.log('元素创建已记录到历史记录');
+    } catch (error) {
+      console.error('通过历史服务创建元素失败:', error);
+      // 降级处理：直接添加到画布
+      this.canvasStore.getState().addElement(element);
+    }
   }
 
   /**
@@ -361,8 +406,13 @@ export class CreateInteraction {
       },
     );
 
-    // 添加到画布
-    this.canvasStore.getState().addElement(textElement);
+    // 如果有历史服务，使用命令模式
+    if (this.historyService) {
+      this.createElementWithHistory(textElement);
+    } else {
+      // 否则直接添加到画布
+      this.canvasStore.getState().addElement(textElement);
+    }
 
     // 选中新创建的文本元素
     this.selectCreatedElement(textElement);

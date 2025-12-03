@@ -1,63 +1,120 @@
 // interactions/DeleteInteraction.ts
 import { useCanvasStore } from '../../stores/canvas-store';
-// import type { CanvasState } from '../../stores/canvas-store';
-// import type { Element } from '../../types/index';
+import type { Element } from '../../types/index';
 import { eventBus } from '../../lib/eventBus';
+import { DeleteCommand, BatchDeleteCommand } from '../command/HistoryCommand';
+import type { HistoryService } from '../HistoryService';
 
 export class DeleteInteraction {
   private canvasStore: typeof useCanvasStore;
+  private historyService: HistoryService | null = null;
 
-  constructor() {
+  constructor(historyService?: HistoryService) {
     this.canvasStore = useCanvasStore;
+    if (historyService) {
+      this.historyService = historyService;
+    }
+  }
+
+  /**
+   * 设置历史服务
+   */
+  setHistoryService(historyService: HistoryService): void {
+    this.historyService = historyService;
   }
 
   /**
    * 删除选中的元素
    */
-  deleteSelectedElements(): void {
+  async deleteSelectedElements(): Promise<void> {
     const state = this.canvasStore.getState();
     const selectedElementIds = state.selectedElementIds;
 
     if (selectedElementIds.length === 0) {
-      console.log('DeleteInteraction: 没有选中的元素可删除');
       return;
     }
 
-    console.log('DeleteInteraction: 开始删除选中的元素', selectedElementIds);
+    // 获取选中的元素
+    const selectedElements = selectedElementIds
+      .map((id) => state.elements[id])
+      .filter((element): element is Element => element !== undefined);
 
-    // 保存被删除元素的信息（用于撤销操作）
-    const deletedElements = selectedElementIds.map((id) => ({
-      id,
-      element: state.elements[id],
-    }));
+    if (selectedElements.length === 0) {
+      return;
+    }
 
-    // 批量删除选中的元素
-    selectedElementIds.forEach((elementId) => {
-      this.canvasStore.getState().deleteElement(elementId);
-    });
-
-    console.log('DeleteInteraction: 成功删除', selectedElementIds.length, '个元素');
+    // 如果有历史服务，使用命令模式
+    if (this.historyService) {
+      await this.deleteElementsWithHistory(selectedElements, selectedElementIds);
+    } else {
+      // 否则直接删除
+      selectedElementIds.forEach((elementId) => {
+        this.canvasStore.getState().deleteElement(elementId);
+      });
+    }
 
     // 发出删除完成事件
     eventBus.emit('elements:deleted', {
       deletedElementIds: selectedElementIds,
-      deletedElements: deletedElements,
+      deletedElements: selectedElements,
     });
+  }
+
+  /**
+   * 使用历史服务删除元素
+   */
+  private async deleteElementsWithHistory(
+    elements: Element[],
+    elementIds: string[],
+  ): Promise<void> {
+    if (!this.historyService) {
+      return;
+    }
+
+    try {
+      // 创建删除命令
+      const command = new DeleteCommand(
+        elements,
+        elementIds, // 之前的选中状态
+        {
+          addElement: (element: Element) => this.canvasStore.getState().addElement(element),
+          deleteElement: (id: string) => this.canvasStore.getState().deleteElement(id),
+          setSelectedElements: (ids: string[]) =>
+            this.canvasStore.getState().setSelectedElements(ids),
+        },
+      );
+
+      // 通过历史服务执行命令
+      await this.historyService.executeCommand(command);
+    } catch (error) {
+      console.error('通过历史服务删除元素失败:', error);
+      // 降级处理：直接删除元素
+      elementIds.forEach((elementId) => {
+        this.canvasStore.getState().deleteElement(elementId);
+      });
+    }
   }
 
   /**
    * 删除指定元素
    */
-  deleteElement(elementId: string): void {
+  async deleteElement(elementId: string): Promise<void> {
     const element = this.canvasStore.getState().elements[elementId];
 
     if (!element) {
-      console.warn('DeleteInteraction: 要删除的元素不存在', elementId);
       return;
     }
 
-    this.canvasStore.getState().deleteElement(elementId);
-    console.log('DeleteInteraction: 删除元素', elementId, element.type);
+    // 如果有历史服务，使用命令模式
+    if (this.historyService) {
+      const state = this.canvasStore.getState();
+      const previousSelection = state.selectedElementIds;
+
+      await this.deleteElementsWithHistory([element], previousSelection);
+    } else {
+      // 否则直接删除
+      this.canvasStore.getState().deleteElement(elementId);
+    }
 
     // 发出删除完成事件
     eventBus.emit('elements:deleted', {
@@ -69,27 +126,54 @@ export class DeleteInteraction {
   /**
    * 批量删除元素
    */
-  deleteElements(elementIds: string[]): void {
+  async deleteElements(elementIds: string[]): Promise<void> {
     if (elementIds.length === 0) {
       return;
     }
 
-    console.log('DeleteInteraction: 批量删除元素', elementIds);
-
     const state = this.canvasStore.getState();
-    const deletedElements = elementIds.map((id) => ({
-      id,
-      element: state.elements[id],
-    }));
+    const elements = elementIds
+      .map((id) => state.elements[id])
+      .filter((element): element is Element => element !== undefined);
 
-    elementIds.forEach((elementId) => {
-      this.deleteElement(elementId);
-    });
+    if (elements.length === 0) {
+      return;
+    }
+
+    // 如果有历史服务，使用命令模式
+    if (this.historyService) {
+      const previousSelection = state.selectedElementIds;
+
+      try {
+        const command = new BatchDeleteCommand(elements, previousSelection, {
+          addElement: (element: Element) => this.canvasStore.getState().addElement(element),
+          deleteElement: (id: string) => this.canvasStore.getState().deleteElement(id),
+          setSelectedElements: (ids: string[]) =>
+            this.canvasStore.getState().setSelectedElements(ids),
+        });
+
+        await this.historyService.executeCommand(command);
+      } catch (error) {
+        console.error('通过历史服务批量删除元素失败:', error);
+        // 降级处理：直接删除元素
+        elementIds.forEach((elementId) => {
+          this.canvasStore.getState().deleteElement(elementId);
+        });
+      }
+    } else {
+      // 否则直接删除
+      elementIds.forEach((elementId) => {
+        this.canvasStore.getState().deleteElement(elementId);
+      });
+    }
 
     // 发出删除完成事件
     eventBus.emit('elements:deleted', {
       deletedElementIds: elementIds,
-      deletedElements: deletedElements,
+      deletedElements: elements.map((element, index) => ({
+        id: elementIds[index],
+        element,
+      })),
     });
   }
 
@@ -108,7 +192,7 @@ export class DeleteInteraction {
   }
 
   /**
-   * 获取选中的元素信息（用于调试）
+   * 获取选中的元素信息
    */
   getSelectedElementsInfo(): Array<{ id: string; type: string }> {
     const state = this.canvasStore.getState();
@@ -124,14 +208,13 @@ export class DeleteInteraction {
   /**
    * 安全删除 - 检查是否在输入框中，避免误删
    */
-  safeDeleteSelectedElements(event?: KeyboardEvent): boolean {
+  async safeDeleteSelectedElements(event?: KeyboardEvent): Promise<boolean> {
     // 如果提供了事件，检查是否在输入框中
     if (event && this.isTypingInInput(event)) {
-      console.log('DeleteInteraction: 在输入框中，不执行删除');
       return false;
     }
 
-    this.deleteSelectedElements();
+    await this.deleteSelectedElements();
     return true;
   }
 
@@ -156,4 +239,3 @@ export class DeleteInteraction {
     // 目前没有需要清理的资源
   }
 }
-export const deleteInteraction = new DeleteInteraction();

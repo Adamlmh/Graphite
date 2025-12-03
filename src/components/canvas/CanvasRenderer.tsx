@@ -9,6 +9,7 @@ import { SelectionInteraction } from '../../services/interaction/SelectionIntera
 import { useCanvasStore } from '../../stores/canvas-store';
 import './CanvasRenderer.less';
 import Minimap from './Minimap';
+import { historyService } from '../../main';
 /**
  * CanvasRenderer 组件
  */
@@ -70,7 +71,7 @@ const CanvasRenderer: React.FC = () => {
 
         // 初始化图片上传交互
         console.log('CanvasRenderer: 初始化图片上传交互系统');
-        const imageInteraction = new ImageInteraction();
+        const imageInteraction = new ImageInteraction(historyService);
         imageInteractionRef.current = imageInteraction;
 
         // 创建多个测试矩形元素
