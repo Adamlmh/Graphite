@@ -41,3 +41,41 @@ export enum MoveEvent {
 //   startPoint: Point;
 //   currentPoint: Point;
 // }
+
+export enum HandleType {
+  TOP_LEFT = 'top-left',
+  TOP = 'top',
+  TOP_RIGHT = 'top-right',
+  RIGHT = 'right',
+  BOTTOM_RIGHT = 'bottom-right',
+  BOTTOM = 'bottom',
+  BOTTOM_LEFT = 'bottom-left',
+  LEFT = 'left',
+  ROTATION = 'rotation',
+}
+
+export interface TransformState {
+  isActive: boolean;
+  elementId: string | null;
+  handleType: HandleType | null;
+  startPoint: Point | null;
+  currentPoint: Point | null;
+  startElement: Element | null;
+  startRotation: number;
+  startScaleX: number;
+  startScaleY: number;
+  startWidth: number;
+  startHeight: number;
+  startX: number;
+  startY: number;
+}
+
+export interface TransformResult {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+}

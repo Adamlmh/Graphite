@@ -1,30 +1,33 @@
-/**
- * ImageInteraction - 图片上传和插入交互类
- *
- * 功能：
- * 1. 监听图片工具选择事件
- * 2. 触发文件选择对话框
- * 3. 读取图片文件并转换为 DataURL
- * 4. 获取图片尺寸信息
- * 5. 进行图片尺寸调整
- * 6. 更新 Zustand 状态
- */
-
+// services/interaction/ImageInteraction.ts (完整修复版)
 import { eventBus } from '../../lib/eventBus';
 import { useCanvasStore } from '../../stores/canvas-store';
 import { ElementFactory } from '../element-factory';
 import { CoordinateTransformer } from '../../lib/Coordinate/CoordinateTransformer';
+import { ImageCommand } from '../command/HistoryCommand';
+import type { HistoryService } from '../HistoryService';
+import type { Element } from '../../types/index';
 
 export class ImageInteraction {
   private fileInputElement: HTMLInputElement | null = null;
   private isActive = false;
   private coordinateTransformer: CoordinateTransformer;
   private cancelCheckTimeout: number | null = null;
+  private historyService: HistoryService | null = null;
 
-  constructor() {
+  constructor(historyService?: HistoryService) {
     this.coordinateTransformer = new CoordinateTransformer();
+    if (historyService) {
+      this.historyService = historyService;
+    }
     this.initFileInput();
     this.setupEventListeners();
+  }
+
+  /**
+   * 设置历史服务
+   */
+  setHistoryService(historyService: HistoryService): void {
+    this.historyService = historyService;
   }
 
   /**
@@ -53,7 +56,6 @@ export class ImageInteraction {
    * 触发文件选择
    */
   public triggerUpload(): void {
-    console.log('ImageInteraction: 触发图片上传');
     if (this.fileInputElement) {
       this.isActive = true;
       this.fileInputElement.click();
@@ -75,7 +77,6 @@ export class ImageInteraction {
    * 处理用户取消选择
    */
   private handleCancel(): void {
-    console.log('ImageInteraction: 处理取消操作');
     this.isActive = false;
     useCanvasStore.getState().setTool('select');
   }
@@ -84,8 +85,6 @@ export class ImageInteraction {
    * 处理文件选择变化
    */
   private async handleFileChange(event: Event): Promise<void> {
-    console.log('ImageInteraction: handleFileChange 触发');
-
     // 清除取消检查定时器
     if (this.cancelCheckTimeout !== null) {
       clearTimeout(this.cancelCheckTimeout);
@@ -93,19 +92,14 @@ export class ImageInteraction {
     }
 
     const input = event.target as HTMLInputElement;
-    console.log('ImageInteraction: input.files', input.files);
     const file = input.files?.[0];
-    console.log('ImageInteraction: file', file);
 
     if (!file) {
-      console.log('ImageInteraction: 未选择文件，切换回选择工具');
       this.isActive = false;
       // 用户取消选择，切换回选择工具
       useCanvasStore.getState().setTool('select');
       return;
     }
-
-    console.log('ImageInteraction: 选择了文件', file.name, file.type, file.size);
 
     try {
       // 读取图片文件并转换为 DataURL
@@ -114,17 +108,17 @@ export class ImageInteraction {
       // 获取图片的实际尺寸
       const imageDimensions = await this.getImageDimensions(dataUrl);
 
-      console.log('ImageInteraction: 图片加载成功', imageDimensions);
-
       // 在画布中心创建图片元素
-      this.createImageElement(dataUrl, imageDimensions);
+      await this.createImageElement(dataUrl, imageDimensions);
     } catch (error) {
       console.error('ImageInteraction: 图片处理失败', error);
       // 处理失败时切换回选择工具
       useCanvasStore.getState().setTool('select');
     } finally {
       // 清空 input 值，允许重复选择同一文件
-      input.value = '';
+      if (input) {
+        input.value = '';
+      }
       this.isActive = false;
     }
   }
@@ -178,11 +172,14 @@ export class ImageInteraction {
   /**
    * 在视口中央创建图片元素
    */
-  private createImageElement(dataUrl: string, dimensions: { width: number; height: number }) {
+  private async createImageElement(
+    dataUrl: string,
+    dimensions: { width: number; height: number },
+  ): Promise<void> {
     const store = useCanvasStore.getState();
 
-    // 使用 CanvasDOMProvider 获取画布 DOM 边界
-    const rect = this.coordinateTransformer['canvasDOMProvider'].getCanvasRect();
+    // 获取画布 DOM 边界 - 使用备用方案
+    const rect = this.getCanvasRect();
 
     // 计算画布视口中心（屏幕坐标）
     const centerScreenX = rect.left + rect.width / 2;
@@ -191,7 +188,7 @@ export class ImageInteraction {
     // 转换为世界坐标
     const worldCenter = this.coordinateTransformer.screenToWorld(centerScreenX, centerScreenY);
 
-    // === 图片大小适配 ===
+    // 图片大小适配
     const maxSize = 500;
     const scale = Math.min(maxSize / dimensions.width, maxSize / dimensions.height, 1);
 
@@ -216,14 +213,69 @@ export class ImageInteraction {
     const maxZ = Math.max(0, ...Object.values(store.elements).map((el) => el.zIndex));
     imageElement.zIndex = maxZ + 1;
 
-    store.addElement(imageElement);
+    // 使用历史服务执行命令
+    if (this.historyService) {
+      await this.createImageWithHistory(imageElement);
+    } else {
+      // 降级处理：直接添加到画布
+      store.addElement(imageElement);
+    }
+
     store.setSelectedElements([imageElement.id]);
 
     // 切换回选择工具
     store.setTool('select');
 
-    console.log('ImageInteraction: 图片元素已创建', imageElement);
     eventBus.emit('image:created', { elementId: imageElement.id });
+  }
+
+  /**
+   * 获取画布边界 - 替代方案
+   */
+  private getCanvasRect(): DOMRect {
+    // 尝试从 document 中查找 canvas 元素
+    const canvasElement = document.querySelector('.canvas, .canvas-container, canvas');
+
+    if (canvasElement) {
+      return canvasElement.getBoundingClientRect();
+    }
+
+    // 如果没有找到，返回默认值
+    console.warn('ImageInteraction: 无法获取画布边界，使用默认值');
+    return {
+      left: 0,
+      top: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      right: window.innerWidth,
+      bottom: window.innerHeight,
+      x: 0,
+      y: 0,
+    } as DOMRect;
+  }
+
+  /**
+   * 使用历史服务创建图片元素
+   */
+  private async createImageWithHistory(element: Element): Promise<void> {
+    if (!this.historyService) {
+      return;
+    }
+
+    try {
+      // 创建命令
+      const command = new ImageCommand(element, {
+        addElement: (element: Element) => useCanvasStore.getState().addElement(element),
+        deleteElement: (id: string) => useCanvasStore.getState().deleteElement(id),
+      });
+
+      // 通过历史服务执行命令
+      await this.historyService.executeCommand(command);
+    } catch (error) {
+      console.error('通过历史服务创建图片元素失败:', error);
+      // 降级处理：直接添加到画布
+      useCanvasStore.getState().addElement(element);
+    }
   }
 
   /**

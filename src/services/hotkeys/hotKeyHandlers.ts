@@ -1,58 +1,38 @@
 // hotKeyHandlers.ts
 import { hotKeyManager } from './hotKeyManager';
 import { useCanvasStore } from '../../stores/canvas-store';
-import { eventBus } from '../../lib/eventBus';
-import { moveInteraction } from '../interaction/moveInteraction.ts';
-import { deleteInteraction } from '../interaction/DeleteInteraction';
-import { copyPasteInteraction } from '../interaction/CopyPasteInteraction';
+import { copyPasteInteraction, deleteInteraction, moveInteraction } from '../../main.tsx';
 import { historyService } from '../../main';
-import { testElementCreation } from '../interaction/ElementCreationTest';
-import type { HotKeyTriggerPayload } from './hotKeyTypes.ts';
 
 export function bindCanvasHotKeys() {
   const canvasStore = useCanvasStore;
   hotKeyManager.setHandler('undo', () => {
     historyService.run('undo');
     console.log('执行撤销');
-    // TODO: 实现撤销逻辑
-    // eventBus.emit('command:undo');
-    //testElementCreation();
   });
 
   hotKeyManager.setHandler('redo', () => {
     historyService.run('redo');
     console.log('执行重做');
-    // TODO: 实现重做逻辑
   });
 
   // 复制快捷键
-  hotKeyManager.setHandler('copy', (payload: HotKeyTriggerPayload) => {
-    console.log('执行复制操作');
-    // 使用安全复制，避免在输入框中误操作
-    const nativeEvent = payload.native as KeyboardEvent | undefined;
-    copyPasteInteraction.safeCopySelectedElements(nativeEvent);
+  hotKeyManager.setHandler('copy', () => {
+    copyPasteInteraction.safeCopySelectedElements();
   });
 
   // 剪切快捷键
-  hotKeyManager.setHandler('cut', (payload: HotKeyTriggerPayload) => {
-    console.log('执行剪切操作');
-    // 使用安全剪切，避免在输入框中误操作
-    const nativeEvent = payload.native as KeyboardEvent | undefined;
-    copyPasteInteraction.safeCutSelectedElements(nativeEvent);
+  hotKeyManager.setHandler('cut', async () => {
+    await copyPasteInteraction.safeCutSelectedElements();
   });
 
   // 粘贴快捷键
-  hotKeyManager.setHandler('paste', (payload: HotKeyTriggerPayload) => {
-    console.log('执行粘贴操作');
-    // 使用安全粘贴，避免在输入框中误操作
-    const nativeEvent = payload.native as KeyboardEvent | undefined;
-    copyPasteInteraction.safePasteElements(nativeEvent);
+  hotKeyManager.setHandler('paste', async () => {
+    await copyPasteInteraction.safePasteElements();
   });
-
   hotKeyManager.setHandler('save', () => {
     historyService.run('save');
     console.log('执行保存');
-    // TODO: 实现保存逻辑
   });
 
   hotKeyManager.setHandler('delete', () => {
