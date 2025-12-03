@@ -128,13 +128,13 @@ export class RectangleRenderer implements IElementRenderer {
       const lastStyle = (graphics as any).lastStyle || {};
       const style = rectChanges.style ? { ...lastStyle, ...rectChanges.style } : lastStyle;
 
-      console.log('RectangleRenderer: 重新绘制', {
-        width,
-        height,
-        oldStyle: lastStyle,
-        styleChanges: rectChanges.style,
-        mergedStyle: style,
-      });
+      // console.log('RectangleRenderer: 重新绘制', {
+      //   width,
+      //   height,
+      //   oldStyle: lastStyle,
+      //   styleChanges: rectChanges.style,
+      //   mergedStyle: style,
+      // });
 
       graphics.clear();
       this.drawRectangle(graphics, 0, 0, width, height, style);
@@ -153,7 +153,7 @@ export class RectangleRenderer implements IElementRenderer {
       }
     }
 
-    console.log(`RectangleRenderer: 更新矩形元素`, changes);
+    // console.log(`RectangleRenderer: 更新矩形元素`, changes);
   }
 
   /**
