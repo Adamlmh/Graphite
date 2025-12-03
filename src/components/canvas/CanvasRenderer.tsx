@@ -3,10 +3,13 @@ import { useCursor } from '../../hooks/useCursor';
 import { CanvasBridge } from '../../lib/CanvasBridge/CanvasBridge';
 import { eventBridge } from '../../lib/EventBridge';
 import { setPixiApp } from '../../lib/pixiApp';
+import { setRenderEngine } from '../../lib/renderEngineManager';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { ImageInteraction } from '../../services/interaction/ImageInteraction';
 import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
+import { TextEditorInteraction } from '../../services/interaction/TextEditorInteraction';
 import { useCanvasStore } from '../../stores/canvas-store';
+import TextEditorManager from '../ui/business/TextEditor/TextEditorManager';
 import './CanvasRenderer.less';
 import Minimap from './Minimap';
 /**
@@ -19,6 +22,7 @@ const CanvasRenderer: React.FC = () => {
   const bridgeRef = useRef<CanvasBridge | null>(null);
   const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
   const imageInteractionRef = useRef<ImageInteraction | null>(null);
+  const textEditorInteractionRef = useRef<TextEditorInteraction | null>(null);
 
   // 根据当前工具自动切换光标
   useCursor(containerRef);
@@ -48,6 +52,9 @@ const CanvasRenderer: React.FC = () => {
         // 保存 renderEngine 实例到 ref
         renderEngineRef.current = renderEngine;
 
+        // 注册 RenderEngine 到全局管理器
+        setRenderEngine(renderEngine);
+
         // 获取 PixiApp 并导出到全局
         const pixiApp = renderEngine.getPixiApp();
         setPixiApp(pixiApp);
@@ -72,6 +79,11 @@ const CanvasRenderer: React.FC = () => {
         console.log('CanvasRenderer: 初始化图片上传交互系统');
         const imageInteraction = new ImageInteraction();
         imageInteractionRef.current = imageInteraction;
+
+        // 初始化文本编辑交互
+        console.log('CanvasRenderer: 初始化文本编辑交互系统');
+        const textEditorInteraction = new TextEditorInteraction();
+        textEditorInteractionRef.current = textEditorInteraction;
 
         // 创建多个测试矩形元素
         const rectElement = [
@@ -198,6 +210,10 @@ const CanvasRenderer: React.FC = () => {
       imageInteractionRef.current?.destroy();
       imageInteractionRef.current = null;
 
+      // 销毁文本编辑交互
+      textEditorInteractionRef.current?.dispose();
+      textEditorInteractionRef.current = null;
+
       // 使用 renderEngineRef.current 而不是闭包变量，确保获取最新的实例
       const renderEngine = renderEngineRef.current;
 
@@ -214,6 +230,7 @@ const CanvasRenderer: React.FC = () => {
         }
 
         renderEngineRef.current = null;
+        setRenderEngine(null);
         setPixiApp(null);
       }
     };
@@ -230,6 +247,7 @@ const CanvasRenderer: React.FC = () => {
       }}
     >
       <Minimap containerRef={containerRef} />
+      <TextEditorManager /> {/* 文本编辑器管理器组件 */}
     </div>
   );
 };

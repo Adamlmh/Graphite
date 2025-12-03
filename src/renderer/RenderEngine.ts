@@ -13,6 +13,7 @@ import {
   type UpdateElementCommand,
   type UpdateSelectionCommand,
   type UpdateViewportCommand,
+  RenderPriority,
 } from '../types/render.types';
 import { LayerManager } from './layers/LayerManager';
 import { ElementRendererRegistry } from './renderers/ElementRendererRegistry';
@@ -703,6 +704,17 @@ export class RenderEngine {
   getElementBounds(elementId: string): PIXI.Rectangle {
     const graphics = this.elementGraphics.get(elementId);
     return graphics ? (graphics.getBounds() as unknown as PIXI.Rectangle) : new PIXI.Rectangle();
+  }
+
+  /**
+   * 设置元素的可见性（用于编辑模式时隐藏PIXI文本）
+   */
+  setElementVisibility(elementId: string, visible: boolean): void {
+    const graphics = this.elementGraphics.get(elementId);
+    if (graphics) {
+      graphics.alpha = visible ? 1 : 0;
+      this.renderScheduler.scheduleRender(RenderPriority.HIGH);
+    }
   }
 
   isElementVisible(elementId: string): boolean {
