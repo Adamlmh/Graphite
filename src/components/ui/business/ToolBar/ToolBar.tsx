@@ -15,7 +15,7 @@ import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { useTheme } from '../../../../hooks/useTheme';
 import { eventBus } from '../../../../lib/eventBus';
-import { HistoryService } from '../../../../services/HistoryService';
+import { historyService } from '../../../../main';
 import styles from './ToolBar.module.less';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;
@@ -29,7 +29,6 @@ const ToolBar: React.FC = () => {
   const { isDarkMode, toggleTheme } = useTheme();
 
   // 历史服务状态
-  const [historyService] = useState(() => new HistoryService(useCanvasStore));
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -48,13 +47,13 @@ const ToolBar: React.FC = () => {
     const interval = setInterval(updateHistoryState, 500);
 
     return () => clearInterval(interval);
-  }, [historyService]);
+  }, []);
 
   // 处理撤销
   const handleUndo = async () => {
     try {
       await historyService.undo();
-      message.success('撤销成功');
+      console.log('Undo successful');
     } catch (error) {
       message.error('撤销失败');
       console.error('Undo error:', error);
@@ -65,7 +64,7 @@ const ToolBar: React.FC = () => {
   const handleRedo = async () => {
     try {
       await historyService.redo();
-      message.success('重做成功');
+      console.log('Redo successful');
     } catch (error) {
       message.error('重做失败');
       console.error('Redo error:', error);
@@ -77,7 +76,7 @@ const ToolBar: React.FC = () => {
     setIsSaving(true);
     try {
       await historyService.forceSave();
-      message.success('保存成功');
+      console.log('Save successful');
     } catch (error) {
       message.error('保存失败');
       console.error('Save error:', error);
