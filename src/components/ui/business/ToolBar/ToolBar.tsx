@@ -15,7 +15,7 @@ import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { useTheme } from '../../../../hooks/useTheme';
 import { eventBus } from '../../../../lib/eventBus';
-import { historyService } from '../../../../main';
+import { historyService } from '../../../../services/instances';
 import styles from './ToolBar.module.less';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;

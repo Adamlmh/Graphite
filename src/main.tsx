@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { setupHotKeys } from './services/hotkeys/setupHotKeys';
+<<<<<<< HEAD
 import { CreateInteraction } from './services/interaction/CreateInteraction';
 import { CopyPasteInteraction } from './services/interaction/CopyPasteInteraction';
 import { DeleteInteraction } from './services/interaction/DeleteInteraction';
@@ -25,6 +26,12 @@ export const copyPasteInteraction = new CopyPasteInteraction(historyService);
 export const deleteInteraction = new DeleteInteraction(historyService);
 export const moveInteraction = new MoveInteraction(historyService);
 export const resizeInteraction = new ResizeInteraction();
+=======
+import { historyService } from './services/instances';
+
+//初始化快捷键系统
+setupHotKeys();
+>>>>>>> 58bc8d5 (fix: 修复main和app两个文件互相依赖问题)
 
 // 页面加载时恢复历史状态
 async function initApp() {
