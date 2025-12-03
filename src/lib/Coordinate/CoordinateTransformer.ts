@@ -160,7 +160,7 @@ export class CoordinateTransformer {
   public canvasToWorld(canvasX: number, canvasY: number): WorldPoint {
     const zoom = this.viewportProvider.getZoom();
     const offset = this.viewportProvider.getOffset();
-    console.log('CoordinateTransformer: canvasToWorld', { canvasX, canvasY, zoom, offset });
+    // console.log('CoordinateTransformer: canvasToWorld', { canvasX, canvasY, zoom, offset });
     return {
       x: canvasX / zoom + offset.x,
       y: canvasY / zoom + offset.y,
@@ -182,6 +182,31 @@ export class CoordinateTransformer {
 
     // 第二步：画布坐标 → 世界坐标
     return this.canvasToWorld(canvasPoint.x, canvasPoint.y);
+  }
+
+  /**
+   * 世界坐标 → 屏幕坐标
+   *
+   * 组合转换：worldToCanvas + canvasToScreen
+   *
+   * @param worldX 世界 X 坐标
+   * @param worldY 世界 Y 坐标
+   * @returns 屏幕坐标点
+   */
+  public worldToScreen(worldX: number, worldY: number): ScreenPoint {
+    const zoom = this.viewportProvider.getZoom();
+    const offset = this.viewportProvider.getOffset();
+    const canvasRect = this.canvasDOMProvider.getCanvasRect();
+
+    // 世界坐标 → 画布坐标
+    const canvasX = (worldX - offset.x) * zoom;
+    const canvasY = (worldY - offset.y) * zoom;
+
+    // 画布坐标 → 屏幕坐标
+    return {
+      x: canvasRect.left + canvasX,
+      y: canvasRect.top + canvasY,
+    };
   }
 
   /**
