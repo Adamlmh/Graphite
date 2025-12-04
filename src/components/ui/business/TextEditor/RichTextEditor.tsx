@@ -65,6 +65,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     if (editor && editorRef.current) {
       const contentEl = editorRef.current.querySelector('.ProseMirror') as HTMLElement;
       if (contentEl) {
+        // 应用所有文本样式
         contentEl.style.fontFamily = textStyle.fontFamily;
         contentEl.style.fontSize = `${textStyle.fontSize}px`;
         contentEl.style.fontWeight = textStyle.fontWeight;
@@ -72,9 +73,28 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         contentEl.style.color = textStyle.color;
         contentEl.style.textAlign = textStyle.textAlign;
         contentEl.style.lineHeight = `${textStyle.lineHeight}`;
+
+        // 应用背景色
+        if (textStyle.backgroundColor) {
+          contentEl.style.backgroundColor = textStyle.backgroundColor;
+        }
+
+        // 应用文本装饰
+        contentEl.style.textDecoration = textStyle.textDecoration || 'none';
       }
     }
   }, [editor, textStyle]);
+
+  // 监听内容变化，同步到编辑器
+  useEffect(() => {
+    if (editor && editor.getHTML() !== content) {
+      // 避免光标位置丢失，只在内容真的不同时才更新
+      const currentContent = editor.getText();
+      if (currentContent !== (content || '')) {
+        editor.commands.setContent(content || '');
+      }
+    }
+  }, [editor, content]);
 
   // 自动聚焦 - 使用 setTimeout 确保编辑器已完全挂载
   useEffect(() => {
