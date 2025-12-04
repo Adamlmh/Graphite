@@ -22,6 +22,7 @@ import { ScrollbarManager } from './ui/ScrollbarManager';
 import { ViewportController } from './viewport/ViewportController';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
+import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
@@ -443,42 +444,11 @@ export class RenderEngine {
         rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
           // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
           event.stopPropagation();
-
-          // 将 Pixi 原生事件转换为统一的 CanvasEvent 格式，方便事件系统复用
-          const canvasEvent: CanvasEvent & {
-            elementIds: string[];
-            bounds: { x: number; y: number; width: number; height: number };
-          } = {
-            type: 'pointerdown',
-            screen: {
-              x: event.screen.x,
-              y: event.screen.y,
-            },
-            world: {
-              x: event.global.x,
-              y: event.global.y,
-            },
-            buttons: event.buttons,
-            modifiers: {
-              shift: event.shiftKey,
-              ctrl: event.ctrlKey,
-              alt: event.altKey,
-              meta: event.metaKey,
-            },
-            nativeEvent: event,
-            preventDefault: () => {
-              event.preventDefault();
-            },
-            stopPropagation: () => {
-              event.stopPropagation();
-            },
-            // 旋转操作自己的扩展字段
+          eventBus.emit('group-rotation-start', {
             elementIds: selectedElementIds,
             bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-          };
-
-          // 使用统一 CanvasEvent 结构发出事件
-          eventBus.emit('group-rotation-start', canvasEvent);
+            event: event, // 直接传递原始事件
+          });
         });
         selectionLayer.addChild(rotationHandle);
       }
