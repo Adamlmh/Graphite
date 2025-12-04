@@ -101,9 +101,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         <ShapeProperties elements={selectedElements} onChange={handleStyleChange} />
       )}
 
-      {shouldShowTextPanel && (
-        <TextProperties elements={selectedElements} onChange={handleStyleChange} />
-      )}
+      {shouldShowTextPanel && <TextProperties elements={selectedElements} />}
 
       {shouldShowImagePanel && (
         <ImageProperties elements={selectedElements} onChange={handleStyleChange} />
