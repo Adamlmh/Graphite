@@ -1,3 +1,7 @@
+// 面板定位工具
+export { calculatePanelPosition } from './panelPositioning';
+export type { PanelPosition } from './panelPositioning';
+
 // 示例：工具函数 - dateUtils
 // 日期格式化工具
 // export const formatDate = (date: Date, format: string = 'YYYY-MM-DD'): string => {

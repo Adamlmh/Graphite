@@ -7,17 +7,14 @@
 import * as PIXI from 'pixi.js';
 import { getPixiApp, onPixiAppInit } from './pixiApp';
 import { eventBus } from './eventBus';
-import { useCanvasStore } from '../stores/canvas-store';
-import { GeometryService } from '../lib/Coordinate/GeometryService';
-import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
-import type { Point } from '../types';
+import { CoordinateTransformer } from './Coordinate/CoordinateTransformer';
 
 /**
  * 统一的事件数据格式
  */
 export interface CanvasEvent {
   type: string;
-  /** 屏幕坐标（相对于画布） */
+  /** 屏幕坐标（相对于浏览器视口） */
   screen: { x: number; y: number };
   /** 世界坐标（考虑缩放和平移） */
   world: { x: number; y: number };
@@ -42,7 +39,7 @@ export interface CanvasEvent {
 class EventBridge {
   private app: PIXI.Application | null = null;
   private isInitialized = false;
-  private geometryService: GeometryService;
+  private coordinateTransformer: CoordinateTransformer | null = null;
   // 保存事件处理函数引用，用于正确清理
   /**
    * @param pointerdown 鼠标按下事件
@@ -72,10 +69,6 @@ class EventBridge {
   };
   private readonly WHEEL_THROTTLE_MS = 16; // 时间节流窗口：16ms
 
-  constructor() {
-    this.geometryService = new GeometryService();
-  }
-
   /**
    * 初始化事件桥接
    * 自动获取 pixiApp 并订阅事件
@@ -98,6 +91,9 @@ class EventBridge {
     if (!this.app) {
       return;
     }
+
+    // 初始化坐标转换器
+    this.coordinateTransformer = new CoordinateTransformer();
 
     this.setupEventListeners();
     this.isInitialized = true;
@@ -221,7 +217,7 @@ class EventBridge {
    */
   private flushWheel(): void {
     // 如果没有待处理的事件，直接返回
-    if (!this.wheelState.event) {
+    if (!this.wheelState.event || !this.coordinateTransformer) {
       return;
     }
 
@@ -229,16 +225,24 @@ class EventBridge {
     const deltaX = this.wheelState.deltaX;
     const deltaY = this.wheelState.deltaY;
 
+    // 屏幕坐标：使用原生 DOM 事件的 clientX/clientY（相对于浏览器视口的坐标）
+    // 注意：PIXI 的 event.screen 可能不是我们期望的值，使用原生事件的坐标更可靠
+    const screenX = event.clientX;
+    const screenY = event.clientY;
+
+    // 使用坐标转换器将屏幕坐标转换为世界坐标
+    const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+
     // 构造 CanvasEvent
     const canvasEvent: CanvasEvent = {
       type: 'wheel',
       screen: {
-        x: event.screen.x,
-        y: event.screen.y,
+        x: screenX,
+        y: screenY,
       },
       world: {
-        x: event.global.x,
-        y: event.global.y,
+        x: worldPoint.x,
+        y: worldPoint.y,
       },
       buttons: event.buttons,
       modifiers: {
@@ -273,17 +277,40 @@ class EventBridge {
    * 处理指针事件
    */
   private handlePointerEvent(type: string, event: PIXI.FederatedPointerEvent): void {
-    if (!this.app) return;
+    if (!this.app || !this.coordinateTransformer) return;
+
+    // 检查事件目标是否是选择层的手柄（旋转手柄或调整大小手柄）
+    // 如果是，则不处理，让手柄自己处理事件
+    const target = event.target;
+    if (target && target instanceof PIXI.Graphics) {
+      // 检查是否是选择层的手柄（通过检查父容器是否是 SELECTION 层）
+      let parent = target.parent;
+      while (parent) {
+        if (parent.name === 'SELECTION') {
+          console.log('⚠️ EventBridge: 跳过选择层手柄事件', { target, type });
+          return; // 不处理选择层手柄的事件
+        }
+        parent = parent.parent;
+      }
+    }
+
+    // 屏幕坐标：使用原生 DOM 事件的 clientX/clientY（相对于浏览器视口的坐标）
+    // 注意：PIXI 的 event.screen 可能不是我们期望的值，使用原生事件的坐标更可靠
+    const screenX = event.clientX;
+    const screenY = event.clientY;
+
+    // 使用坐标转换器将屏幕坐标转换为世界坐标
+    const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
 
     const canvasEvent: CanvasEvent = {
       type,
       screen: {
-        x: event.screen.x,
-        y: event.screen.y,
+        x: screenX,
+        y: screenY,
       },
       world: {
-        x: event.global.x,
-        y: event.global.y,
+        x: worldPoint.x,
+        y: worldPoint.y,
       },
       buttons: event.buttons,
       modifiers: {
@@ -301,139 +328,8 @@ class EventBridge {
       },
     };
 
-    // 如果是点击事件，进行命中判断并更新选中状态
-    if (type === 'pointerdown') {
-      this.handleHitTest(canvasEvent);
-    }
-
     // 通过 eventBus 分发事件
     eventBus.emit(type, canvasEvent);
-  }
-
-  /**
-   * 处理命中检测和选中状态更新
-   */
-  private handleHitTest(event: CanvasEvent): void {
-    // 检查当前工具是否为选择工具
-    const store = useCanvasStore.getState();
-    const activeTool = store.tool.activeTool;
-
-    // 只在选择工具时进行命中检测
-    if (activeTool !== 'select') {
-      return;
-    }
-
-    const worldPoint: Point = {
-      x: event.world.x,
-      y: event.world.y,
-    };
-
-    console.log('[EventBridge] 命中检测，点击位置:', worldPoint);
-
-    // 查找命中的元素
-    const hitElementId = this.findHitElement(worldPoint);
-
-    console.log(
-      '[EventBridge] 命中检测结果:',
-      hitElementId ? `命中元素: ${hitElementId}` : '未命中任何元素',
-    );
-
-    if (hitElementId) {
-      // 命中元素，更新选中状态
-      const store = useCanvasStore.getState();
-      const currentSelectedIds = store.selectedElementIds;
-
-      if (event.modifiers.shift || event.modifiers.ctrl || event.modifiers.meta) {
-        // 按住 Shift/Ctrl/Cmd，添加到选中列表（如果已选中则取消选中）
-        const isAlreadySelected = currentSelectedIds.includes(hitElementId);
-        if (isAlreadySelected) {
-          // 取消选中
-          const newSelectedIds = currentSelectedIds.filter((id) => id !== hitElementId);
-          store.setSelectedElements(newSelectedIds);
-          console.log('[EventBridge] 取消选中，新的选中列表:', newSelectedIds);
-        } else {
-          // 添加到选中列表
-          store.setSelectedElements([...currentSelectedIds, hitElementId]);
-          console.log('[EventBridge] 添加到选中列表，新的选中列表:', [
-            ...currentSelectedIds,
-            hitElementId,
-          ]);
-        }
-      } else {
-        // 没有修饰键，替换选中（只选中当前元素）
-        store.setSelectedElements([hitElementId]);
-        console.log('[EventBridge] 替换选中，新的选中列表:', [hitElementId]);
-      }
-    } else {
-      // 未命中任何元素，清空选中
-      useCanvasStore.getState().clearSelection();
-      console.log('[EventBridge] 清空选中');
-    }
-  }
-
-  /**
-   * 查找点击位置命中的元素
-   * 从 zIndex 高的元素开始检查（后渲染的元素在上层）
-   *
-   * @param worldPoint 世界坐标点
-   * @returns 命中的元素ID，如果没有命中则返回 null
-   */
-  private findHitElement(worldPoint: Point): string | null {
-    const store = useCanvasStore.getState();
-    // 直接使用 Object.values(store.elements) 而不是 store.elementList
-    // 因为 elementList 是 getter，可能在某些情况下返回错误的状态
-    const elements = Object.values(store.elements);
-    const elementsRecord = store.elements;
-
-    console.log('[EventBridge] Store 中的元素数量:', elements.length);
-    console.log('[EventBridge] Store.elements 对象:', elementsRecord);
-    console.log('[EventBridge] 直接获取的元素列表:', elements);
-    console.log(
-      '[EventBridge] Store 中的元素列表:',
-      elements.map((el) => ({
-        id: el.id,
-        type: el.type,
-        x: el.x,
-        y: el.y,
-        width: el.width,
-        height: el.height,
-      })),
-    );
-
-    // 按 zIndex 从高到低排序，后渲染的元素优先命中
-    const sortedElements = [...elements].sort((a, b) => {
-      // zIndex 高的优先，如果相同则按创建时间（后创建的优先）
-      if (a.zIndex !== b.zIndex) {
-        return b.zIndex - a.zIndex;
-      }
-      return (b.createdAt || 0) - (a.createdAt || 0);
-    });
-
-    // 遍历元素，查找第一个命中的
-    for (const element of sortedElements) {
-      // 跳过不可见的元素
-      if (element.visibility !== 'visible') {
-        console.log(`[EventBridge] 跳过不可见元素: ${element.id}`);
-        continue;
-      }
-
-      // 创建元素提供者
-      const elementProvider = new ElementProvider(element.id);
-
-      // 判断点是否在元素内部
-      const isHit = this.geometryService.isPointInElement(worldPoint, elementProvider);
-      console.log(`[EventBridge] 检测元素 ${element.id}:`, {
-        elementBounds: { x: element.x, y: element.y, width: element.width, height: element.height },
-        worldPoint,
-        isHit,
-      });
-
-      if (isHit) {
-        return element.id;
-      }
-    }
-
-    return null;
   }
 
   /**
@@ -490,6 +386,7 @@ class EventBridge {
     // 清空事件处理函数引用
     this.eventHandlers = {};
     this.app = null;
+    this.coordinateTransformer = null;
     this.isInitialized = false;
   }
 }

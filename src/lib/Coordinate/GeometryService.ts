@@ -89,6 +89,22 @@ export class GeometryService {
   }
 
   /**
+   * 判断两个矩形（Bounds）是否相交（AABB 相交检测）
+   *
+   * @param a 矩形 A
+   * @param b 矩形 B
+   * @returns 如果两个矩形相交返回 true，否则返回 false
+   */
+  public rectIntersect(a: Bounds, b: Bounds): boolean {
+    return !(
+      a.x + a.width < b.x ||
+      a.x > b.x + b.width ||
+      a.y + a.height < b.y ||
+      a.y > b.y + b.height
+    );
+  }
+
+  /**
    * 判断点是否在元素内部（命中检测）
    *
    * @param worldPoint 世界坐标点
@@ -179,6 +195,7 @@ export class GeometryService {
 
   /**
    * 判断点是否在三角形内部 使用重心坐标法
+   * 使用叉积计算面积比
    *
    * @param localPoint 局部坐标点
    * @param a 三角形顶点A
@@ -191,14 +208,38 @@ export class GeometryService {
     b: LocalPoint,
     c: LocalPoint,
   ): boolean {
-    const denom = (b.y - a.y) * (c.x - a.x) - (b.x - a.x) * (c.y - a.y);
-    if (denom === 0) {
-      return false;
+    // 计算叉积（有向面积的两倍）
+    const cross = (v1x: number, v1y: number, v2x: number, v2y: number): number => {
+      return v1x * v2y - v1y * v2x;
+    };
+
+    // 向量：v0 = B - A, v1 = C - A, v2 = P - A
+    const v0x = b.x - a.x;
+    const v0y = b.y - a.y;
+    const v1x = c.x - a.x;
+    const v1y = c.y - a.y;
+    const v2x = localPoint.x - a.x;
+    const v2y = localPoint.y - a.y;
+
+    // 计算叉积
+    const denom = cross(v0x, v0y, v1x, v1y); // AB × AC
+    if (Math.abs(denom) < 1e-10) {
+      return false; // 三角形退化
     }
 
-    const u = ((localPoint.y - a.y) * (c.x - a.x) - (localPoint.x - a.x) * (c.y - a.y)) / denom;
-    const v = ((localPoint.y - a.y) * (b.x - a.x) - (localPoint.x - a.x) * (b.y - a.y)) / denom;
+    // 使用重心坐标法求解
+    // P = A + u*(B-A) + v*(C-A)
+    // 即：v2 = u*v0 + v*v1
+    // 通过叉积求解：
+    // v2 × v1 = u*(v0 × v1) => u = (v2 × v1) / (v0 × v1)
+    // v0 × v2 = v*(v0 × v1) => v = (v0 × v2) / (v0 × v1)
+    const cross_v2_v1 = cross(v2x, v2y, v1x, v1y); // AP × AC
+    const cross_v0_v2 = cross(v0x, v0y, v2x, v2y); // AB × AP
 
+    const u = cross_v2_v1 / denom;
+    const v = cross_v0_v2 / denom;
+
+    // 点在三角形内部当且仅当 u >= 0, v >= 0, u + v <= 1
     return u >= 0 && v >= 0 && u + v <= 1;
   }
 

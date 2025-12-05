@@ -17,7 +17,8 @@ export type AllRenderCommand =
   | DeleteElementCommand
   | BatchDeleteElementCommand
   | BatchUpdateElementCommand
-  | UpdateSelectionCommand;
+  | UpdateSelectionCommand
+  | UpdateViewportCommand;
 
 export interface RenderCommand {
   type: string;
@@ -55,6 +56,11 @@ export interface BatchUpdateElementCommand extends RenderCommand {
 export interface UpdateSelectionCommand extends RenderCommand {
   type: 'UPDATE_SELECTION';
   selectedElementIds: string[];
+}
+
+export interface UpdateViewportCommand extends RenderCommand {
+  type: 'UPDATE_VIEWPORT';
+  viewport: import('./index').ViewportState;
 }
 
 /** 渲染资源 */

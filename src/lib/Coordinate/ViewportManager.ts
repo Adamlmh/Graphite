@@ -1,15 +1,15 @@
 /**
- * 视口管理模块
+ * 视口管理模块（纯计算层）
  *
  * 职责：
- * 1. 应用视口变换到 PixiJS 容器（缩放和偏移）
- * 2. 计算视口边界和可见区域（用于虚拟化渲染优化）
- * 3. 判断元素是否在可视区域内
+ * 1. 计算视口对应的世界坐标边界（可见区域）
+ * 2. 判断元素是否在可视区域内
  *
- * todo 后续需要将 PixiJS 相关的逻辑移除
+ * 注意：
+ * - 不包含任何渲染层逻辑
+ * - 不依赖 PixiJS 或其它具体渲染实现
  */
 
-import type * as PIXI from 'pixi.js';
 import type { IViewportProvider, ICanvasDOMProvider } from './CoordinateTransformer';
 import { CoordinateTransformer } from './CoordinateTransformer';
 import { ViewportProvider } from './providers/ViewportProvider';
@@ -56,24 +56,6 @@ export class ViewportManager {
     this.coordinateTransformer =
       coordinateTransformer ||
       new CoordinateTransformer(this.viewportProvider, this.canvasDOMProvider);
-  }
-
-  /**
-   * 应用视口变换到 PixiJS 容器
-   *
-   * @param container PixiJS 容器对象
-   */
-  public applyToPixi(container: PIXI.Container): void {
-    const zoom = this.viewportProvider.getZoom();
-    const offset = this.viewportProvider.getOffset();
-
-    // 应用缩放：PixiJS 的 scale 是相对于容器自身的
-    container.scale.set(zoom, zoom);
-
-    // 应用偏移：将世界坐标的偏移转换为屏幕坐标的偏移
-    // 在 PixiJS 中，position 是相对于父容器的屏幕坐标
-    // 所以需要将世界坐标的偏移乘以缩放比例
-    container.position.set(-offset.x * zoom, -offset.y * zoom);
   }
 
   /**

@@ -14,6 +14,8 @@ import type {
 } from '../../types/index';
 import { ElementFactory } from '../element-factory';
 import { type CreationState, CreationEvent } from './interactionTypes';
+import { CreateCommand } from '../command/HistoryCommand';
+import type { HistoryService } from '../HistoryService';
 
 // 定义创建选项接口
 interface CreationOptions {
@@ -38,6 +40,16 @@ interface CreationEventData {
   element?: Element;
 }
 
+// 定义默认元素尺寸
+const DEFAULT_ELEMENT_SIZES: Record<ElementType, { width: number; height: number }> = {
+  rect: { width: 100, height: 80 },
+  circle: { width: 100, height: 100 },
+  triangle: { width: 100, height: 86 }, // 等边三角形高度
+  text: { width: 120, height: 40 },
+  image: { width: 150, height: 100 },
+  group: { width: 200, height: 150 },
+};
+
 export class CreateInteraction {
   private state: CreationState = {
     isActive: false,
@@ -47,10 +59,24 @@ export class CreateInteraction {
   };
 
   private canvasStore: typeof useCanvasStore;
+  private hasMoved: boolean = false; // 标记是否发生了移动
+  private moveThreshold: number = 3; // 移动阈值，小于这个值认为是点击
+  private isTextTool: boolean = false; // 标记是否为文本工具
+  private historyService: HistoryService | null = null;
 
-  constructor() {
+  constructor(historyService?: HistoryService) {
     this.canvasStore = useCanvasStore;
+    if (historyService) {
+      this.historyService = historyService;
+    }
     this.setupEventListeners();
+  }
+
+  /**
+   * 设置历史服务
+   */
+  setHistoryService(historyService: HistoryService): void {
+    this.historyService = historyService;
   }
 
   /**
@@ -88,6 +114,17 @@ export class CreateInteraction {
     }
 
     const point = this.getWorldPoint(event);
+
+    // 检查是否超过了移动阈值
+    if (this.state.startPoint && !this.hasMoved) {
+      const distance = this.calculateDistance(this.state.startPoint, point);
+      if (distance > this.moveThreshold) {
+        this.hasMoved = true;
+        // 第一次移动时创建临时元素
+        this.createTempElementOnFirstMove();
+      }
+    }
+
     this.updateCreation(point);
   };
 
@@ -108,30 +145,69 @@ export class CreateInteraction {
    */
   private startCreation(point: Point): void {
     const activeTool = this.getCurrentTool();
+    this.isTextTool = activeTool === 'text';
+
+    // 在开始创建前清空选中状态
+    this.clearSelection();
 
     this.state.isActive = true;
     this.state.startPoint = point;
     this.state.currentPoint = point;
+    this.hasMoved = false; // 重置移动状态
 
     // 更新 store 的绘制状态
     this.canvasStore.getState().setDrawingState(true, point, point);
 
-    if (activeTool === 'text') {
+    if (this.isTextTool) {
       // 文本工具直接创建
       this.createTextElement(point);
     } else {
-      // 其他工具创建临时元素用于预览
-      this.createTempElement(point);
+      // 非文本工具：不立即创建临时元素，等待第一次移动
+      // 这样可以避免默认尺寸元素的闪烁
+      console.log('CreateInteraction: 开始创建元素（等待移动）', activeTool, point);
     }
-
-    console.log('CreateInteraction: 开始创建元素', activeTool, point);
 
     // 发出创建开始事件
     this.emitCreationEvent(CreationEvent.CREATION_START, {
       tool: activeTool,
       point: point,
-      tempElement: this.state.tempElement,
+      tempElement: null, // 初始时不设置临时元素
     });
+  }
+
+  /**
+   * 第一次移动时创建临时元素
+   */
+  private createTempElementOnFirstMove(): void {
+    if (this.state.tempElement || !this.state.startPoint) {
+      return;
+    }
+
+    const activeTool = this.getCurrentTool();
+    const elementType = this.toolToElementType(activeTool);
+
+    if (!elementType) {
+      return;
+    }
+
+    // 创建初始尺寸为0的临时元素，避免默认尺寸的闪烁
+    const tempElement = ElementFactory.createElement(
+      elementType,
+      this.state.startPoint.x,
+      this.state.startPoint.y,
+      0, // 初始宽度为0
+      0, // 初始高度为0
+      this.getCreationOptions(elementType, activeTool),
+    );
+
+    this.state.tempElement = tempElement;
+
+    // 更新 store 的临时元素
+    this.canvasStore.setState((state: CanvasState) => {
+      state.tool.tempElement = tempElement;
+    });
+
+    console.log('CreateInteraction: 创建临时元素（初始尺寸为0）', elementType);
   }
 
   /**
@@ -147,77 +223,126 @@ export class CreateInteraction {
     // 更新 store 的绘制状态
     this.canvasStore.getState().setDrawingState(true, this.state.startPoint, currentPoint);
 
-    // 更新临时元素尺寸
-    const updatedElement = this.updateTempElementDimensions(currentPoint);
-    this.state.tempElement = updatedElement;
+    // 只有发生了移动且存在临时元素时才更新尺寸
+    if (this.hasMoved && this.state.tempElement) {
+      const updatedElement = this.updateTempElementDimensions(currentPoint);
+      this.state.tempElement = updatedElement;
 
-    // 发出创建更新事件
-    this.emitCreationEvent(CreationEvent.CREATION_UPDATE, {
-      tool: this.getCurrentTool(),
-      startPoint: this.state.startPoint,
-      currentPoint,
-      tempElement: updatedElement,
-    });
+      // 发出创建更新事件
+      this.emitCreationEvent(CreationEvent.CREATION_UPDATE, {
+        tool: this.getCurrentTool(),
+        startPoint: this.state.startPoint,
+        currentPoint,
+        tempElement: updatedElement,
+      });
+    }
   }
 
   /**
    * 完成创建
    */
-  private finishCreation(endPoint: Point): void {
+  private async finishCreation(endPoint: Point): Promise<void> {
     if (!this.state.isActive || !this.state.startPoint) {
       return;
     }
 
     const activeTool = this.getCurrentTool();
-    const finalElement = this.createFinalElement(endPoint);
 
-    if (finalElement) {
-      // 添加到画布
-      this.canvasStore.getState().addElement(finalElement);
+    // 对于非文本工具，检查是否需要创建元素
+    if (!this.isTextTool) {
+      const finalElement = this.createFinalElement(endPoint);
 
-      // 发出创建完成事件
-      this.emitCreationEvent(CreationEvent.CREATION_END, {
-        tool: activeTool,
-        startPoint: this.state.startPoint,
-        endPoint,
-        element: finalElement,
-      });
+      if (finalElement) {
+        // 如果有历史服务，使用命令模式
+        if (this.historyService) {
+          await this.createElementWithHistory(finalElement);
+        } else {
+          // 否则直接添加到画布
+          this.canvasStore.getState().addElement(finalElement);
+        }
+
+        // 选中新创建的元素
+        this.selectCreatedElement(finalElement);
+
+        setTimeout(() => {
+          this.switchToSelectTool();
+        }, 0);
+
+        // 发出创建完成事件
+        this.emitCreationEvent(CreationEvent.CREATION_END, {
+          tool: activeTool,
+          startPoint: this.state.startPoint,
+          endPoint,
+          element: finalElement,
+        });
+      } else {
+        // 如果最终元素无效，发出取消事件
+        this.emitCreationEvent(CreationEvent.CREATION_CANCEL, {
+          tool: activeTool,
+          startPoint: this.state.startPoint,
+          endPoint,
+          tempElement: this.state.tempElement,
+        });
+      }
     }
 
     this.resetState();
   }
 
   /**
-   * 创建临时元素（预览）
+   * 使用历史服务创建元素
    */
-  private createTempElement(point: Point): void {
-    const activeTool = this.getCurrentTool();
-    const elementType = this.toolToElementType(activeTool);
-
-    if (!elementType) {
+  private async createElementWithHistory(element: Element): Promise<void> {
+    if (!this.historyService) {
       return;
     }
 
-    // 使用 ElementFactory 创建临时元素
-    const tempElement = ElementFactory.createElement(
-      elementType,
-      point.x,
-      point.y,
-      0, // 初始宽度为0
-      0, // 初始高度为0
-      this.getCreationOptions(elementType, activeTool),
-    );
+    try {
+      // 创建命令
+      const command = new CreateCommand(element, {
+        // getState: () => this.canvasStore.getState(),
+        addElement: (element: Element) => this.canvasStore.getState().addElement(element),
+        deleteElement: (id: string) => this.canvasStore.getState().deleteElement(id),
+      });
 
-    this.state.tempElement = tempElement;
+      // 通过历史服务执行命令
+      await this.historyService.executeCommand(command);
 
-    // 更新 store 的临时元素
-    this.canvasStore.setState((state: CanvasState) => {
-      state.tool.tempElement = tempElement;
-    });
+      console.log('元素创建已记录到历史记录');
+    } catch (error) {
+      console.error('通过历史服务创建元素失败:', error);
+      // 降级处理：直接添加到画布
+      this.canvasStore.getState().addElement(element);
+    }
   }
 
   /**
-   * 更新临时元素尺寸
+   * 清空选中状态
+   */
+  private clearSelection(): void {
+    this.canvasStore.getState().clearSelection();
+    console.log('CreateInteraction: 清空选中状态');
+  }
+
+  /**
+   * 选中新创建的元素
+   */
+  private selectCreatedElement(element: Element): void {
+    this.canvasStore.getState().setSelectedElements([element.id]);
+    console.log('CreateInteraction: 选中新创建的元素', element.id);
+  }
+
+  /**
+   * 切换到选择工具
+   */
+  private switchToSelectTool(): void {
+    // 将工具状态切换为 select
+    this.canvasStore.getState().setTool('select');
+    console.log('CreateInteraction: 切换到选择工具');
+  }
+
+  /**
+   * 更新临时元素尺寸（根据移动距离）
    */
   private updateTempElementDimensions(point: Point): Element {
     if (!this.state.tempElement || !this.state.startPoint) {
@@ -282,8 +407,21 @@ export class CreateInteraction {
       },
     );
 
-    // 添加到画布
-    this.canvasStore.getState().addElement(textElement);
+    // 如果有历史服务，使用命令模式
+    if (this.historyService) {
+      this.createElementWithHistory(textElement);
+    } else {
+      // 否则直接添加到画布
+      this.canvasStore.getState().addElement(textElement);
+    }
+
+    // 选中新创建的文本元素
+    this.selectCreatedElement(textElement);
+
+    // 切换到选择工具
+    setTimeout(() => {
+      this.switchToSelectTool();
+    }, 0);
 
     // 发出创建完成事件
     this.emitCreationEvent(CreationEvent.CREATION_END, {
@@ -300,25 +438,62 @@ export class CreateInteraction {
    * 创建最终元素
    */
   private createFinalElement(point: Point): Element | null {
-    if (!this.state.tempElement || !this.state.startPoint) {
+    if (!this.state.startPoint) {
       return null;
     }
 
-    // 检查最小尺寸
-    const minSize = 5;
-    const width = Math.abs(point.x - this.state.startPoint.x);
-    const height = Math.abs(point.y - this.state.startPoint.y);
+    const activeTool = this.getCurrentTool();
+    const elementType = this.toolToElementType(activeTool);
 
-    if (width < minSize || height < minSize) {
+    if (!elementType) {
       return null;
     }
 
-    // 创建正式元素（使用新的ID）
-    const finalElement = {
-      ...this.state.tempElement,
-    };
+    let finalElement: Element;
+
+    if (this.hasMoved && this.state.tempElement) {
+      // 如果发生了移动，使用移动距离计算的大小
+      const minSize = 5;
+      const width = Math.abs(point.x - this.state.startPoint.x);
+      const height = Math.abs(point.y - this.state.startPoint.y);
+
+      if (width < minSize || height < minSize) {
+        return null;
+      }
+
+      const x = Math.min(this.state.startPoint.x, point.x);
+      const y = Math.min(this.state.startPoint.y, point.y);
+
+      finalElement = {
+        ...this.state.tempElement,
+        x,
+        y,
+        width,
+        height,
+      };
+    } else {
+      // 如果没有移动，使用默认大小创建新元素
+      const defaultSize = DEFAULT_ELEMENT_SIZES[elementType];
+      finalElement = ElementFactory.createElement(
+        elementType,
+        this.state.startPoint.x,
+        this.state.startPoint.y,
+        defaultSize.width,
+        defaultSize.height,
+        this.getCreationOptions(elementType, activeTool),
+      );
+    }
 
     return finalElement;
+  }
+
+  /**
+   * 计算两点之间的距离
+   */
+  private calculateDistance(point1: Point, point2: Point): number {
+    const dx = point2.x - point1.x;
+    const dy = point2.y - point1.y;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   /**
@@ -447,6 +622,8 @@ export class CreateInteraction {
     this.state.startPoint = null;
     this.state.currentPoint = null;
     this.state.tempElement = null;
+    this.hasMoved = false;
+    this.isTextTool = false;
 
     // 重置 store 的绘制状态
     this.canvasStore.getState().setDrawingState(false);

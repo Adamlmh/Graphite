@@ -1,4 +1,4 @@
-// renderer/resources/ResourceManager.tsimport * as PIXI from 'pixi.js';
+// renderer/resources/ResourceManager.ts
 import * as PIXI from 'pixi.js';
 import type { Element, ImageElement } from '../../types/index';
 import type { RenderResources } from '../index';
@@ -21,7 +21,12 @@ export class ResourceManager {
     // 图片元素需要加载纹理
     if (element.type === 'image') {
       const imageElement = element as ImageElement;
-      const texture = await this.getOrLoadTexture(imageElement.src);
+      const texture = await this.getOrLoadTexture(imageElement.src, {
+        displayWidth: imageElement.width,
+        displayHeight: imageElement.height,
+        naturalWidth: imageElement.naturalWidth,
+        naturalHeight: imageElement.naturalHeight,
+      });
       resources.textures.set(imageElement.src, texture);
     }
 
@@ -31,7 +36,15 @@ export class ResourceManager {
   /**
    * 获取或加载纹理
    */
-  async getOrLoadTexture(src: string): Promise<PIXI.Texture> {
+  async getOrLoadTexture(
+    src: string,
+    scaleOptions?: {
+      displayWidth: number;
+      displayHeight: number;
+      naturalWidth: number;
+      naturalHeight: number;
+    },
+  ): Promise<PIXI.Texture> {
     // 检查缓存
     const cachedTexture = this.textureCache.get(src);
     if (cachedTexture) {
@@ -45,7 +58,7 @@ export class ResourceManager {
     }
 
     // 创建新的加载任务
-    const loadPromise = this.loadTexture(src);
+    const loadPromise = this.loadTexture(src, scaleOptions);
     this.loadingPromises.set(src, loadPromise);
 
     try {
@@ -60,20 +73,77 @@ export class ResourceManager {
   /**
    * 加载纹理
    */
-  private async loadTexture(src: string): Promise<PIXI.Texture> {
+  private async loadTexture(
+    src: string,
+    scaleOptions?: {
+      displayWidth: number;
+      displayHeight: number;
+      naturalWidth: number;
+      naturalHeight: number;
+    },
+  ): Promise<PIXI.Texture> {
     return new Promise((resolve, reject) => {
-      const texture = PIXI.Texture.from(src);
+      try {
+        // 处理 DataURL
+        const img = new Image();
+        img.onload = () => {
+          try {
+            console.log('ResourceManager: 原始图片尺寸', {
+              naturalWidth: img.naturalWidth,
+              naturalHeight: img.naturalHeight,
+            });
 
-      // 等待纹理加载完成
-      if (texture.baseTexture.resource.valid) {
-        resolve(texture);
-      } else {
-        texture.baseTexture.once('update', () => {
-          if (texture.baseTexture.resource.valid) {
-            resolve(texture);
+            let texture: PIXI.Texture;
+
+            // 如果需要缩放，创建缩放后的纹理
+            if (
+              scaleOptions &&
+              (scaleOptions.displayWidth !== scaleOptions.naturalWidth ||
+                scaleOptions.displayHeight !== scaleOptions.naturalHeight)
+            ) {
+              console.log('ResourceManager: 需要缩放图片', scaleOptions);
+
+              // 创建 Canvas 进行缩放
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d')!;
+
+              canvas.width = scaleOptions.displayWidth;
+              canvas.height = scaleOptions.displayHeight;
+
+              // 在 Canvas 上绘制缩放后的图片
+              ctx.drawImage(img, 0, 0, scaleOptions.displayWidth, scaleOptions.displayHeight);
+
+              // 从缩放后的 Canvas 创建纹理
+              texture = PIXI.Texture.from(canvas);
+              console.log('ResourceManager: 缩放纹理创建成功', {
+                textureWidth: texture.width,
+                textureHeight: texture.height,
+              });
+            } else {
+              // 不需要缩放，直接从原图创建纹理
+              texture = PIXI.Texture.from(img);
+              console.log('ResourceManager: 原尺寸纹理创建成功', {
+                textureWidth: texture.width,
+                textureHeight: texture.height,
+              });
+            }
+
+            if (texture && texture.baseTexture) {
+              resolve(texture);
+            } else {
+              reject(new Error(`Failed to create texture from DataURL`));
+            }
+          } catch (error) {
+            reject(new Error(`Texture creation error: ${error}`));
           }
-        });
-        texture.baseTexture.once('error', (error) => reject(error));
+        };
+        img.onerror = () => {
+          reject(new Error(`Failed to load image from DataURL`));
+        };
+        img.src = src;
+      } catch (error) {
+        console.error('ResourceManager: 加载纹理时发生错误:', error);
+        reject(error);
       }
     });
   }
