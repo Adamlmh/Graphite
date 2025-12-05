@@ -350,8 +350,24 @@ export class HistoryService {
           snapshots.push(cursor.value as Snapshot);
           cursor.continue();
         } else {
-          // 按时间戳排序并恢复
-          this.restoreFromSnapshots(snapshots).then(resolve).catch(reject);
+          // 修复：直接处理快照，不再调用 restoreFromSnapshots（避免循环）
+          if (snapshots.length === 0) {
+            console.log('📊 IndexedDB 中无快照数据');
+            this.snapshots = [];
+            resolve();
+            return;
+          }
+
+          // 按时间戳排序
+          snapshots.sort((a, b) => a.timestamp - b.timestamp);
+
+          // 修复：添加空值检查
+          const lastFullSnapshotIndex = Math.max(snapshots.length - this.config.maxSnapshots, 0);
+
+          // 保留最新的快照
+          this.snapshots = snapshots.slice(lastFullSnapshotIndex);
+          console.log('📦 从 IndexedDB 加载的快照数量:', this.snapshots.length);
+          resolve();
         }
       };
 
@@ -436,17 +452,27 @@ export class HistoryService {
    * 从快照数组恢复
    */
   private async restoreFromSnapshots(snapshots: Snapshot[]): Promise<void> {
-    if (snapshots.length === 0) return;
+    if (snapshots.length === 0) {
+      console.log('restoreFromSnapshots: 传入快照为空');
+      return;
+    }
 
     // 按时间戳排序
     snapshots.sort((a, b) => a.timestamp - b.timestamp);
 
     // 恢复到最新的快照
     const latestSnapshot = snapshots[snapshots.length - 1];
-    await this.restoreSnapshot(latestSnapshot.id);
+    try {
+      await this.restoreSnapshot(latestSnapshot.id);
+    } catch (error) {
+      console.warn('恢复最新快照失败，使用默认状态:', error);
+    }
 
-    this.snapshots = snapshots;
-    console.log(`Loaded ${snapshots.length} snapshots from storage`);
+    // 保留最新的快照
+    const lastFullSnapshotIndex = Math.max(snapshots.length - this.config.maxSnapshots, 0);
+
+    this.snapshots = snapshots.slice(lastFullSnapshotIndex);
+    console.log('📦 最终保留的快照数量:', this.snapshots.length);
   }
 
   /**
@@ -827,34 +853,44 @@ export class HistoryService {
    * 恢复到指定快照
    */
   async restoreSnapshot(snapshotId: string): Promise<void> {
-    // 首先尝试从内存加载
-    let snapshot = this.snapshots.find((s) => s.id === snapshotId);
+    this.autoSaveEnabled = false; // 临时禁用自动保存
 
-    // 如果内存中没有，尝试从持久化存储加载
-    if (!snapshot && this.isDBReady) {
-      await this.loadFromStorage();
-      snapshot = this.snapshots.find((s) => s.id === snapshotId);
-    }
+    // 只从内存中查找快照，不再调用 loadFromStorage（避免循环）
+    const snapshot = this.snapshots.find((s) => s.id === snapshotId);
 
     if (!snapshot) {
-      throw new Error(`Snapshot ${snapshotId} not found`);
+      console.warn(`快照 ${snapshotId} 未在内存中找到`);
+      this.autoSaveEnabled = true;
+      return;
     }
 
     try {
       const stateData = this.deserializeStateFromPersistence(snapshot.data) as Partial<CanvasState>;
       console.log('恢复历史数据：', stateData);
-      this.store.setState((prevState: CanvasState) => {
-        return {
-          ...prevState,
-          ...stateData,
-        };
+
+      const currentState = this.store.getState();
+      console.log('📝 恢复前的状态:', {
+        elementsCount: Object.keys(currentState.elements || {}).length,
+        currentVersion: this.currentVersion,
       });
 
       this.currentVersion = snapshot.version;
+      this.store.setState(stateData);
+
+      // 延迟检查新状态
+      setTimeout(() => {
+        const newState = this.store.getState();
+        console.log('✅ 延迟检查新状态:', {
+          elementsCount: Object.keys(newState.elements || {}).length,
+          newVersion: snapshot.version,
+          stateKeys: Object.keys(newState),
+        });
+      }, 100);
     } catch (error) {
-      // 尝试从最近的快照恢复
-      await this.tryRecoveryFromBackup(error as Error);
-      throw error;
+      console.error('恢复快照失败:', error);
+      // 不再尝试从备份恢复（避免进一步循环）
+    } finally {
+      this.autoSaveEnabled = true;
     }
   }
 
