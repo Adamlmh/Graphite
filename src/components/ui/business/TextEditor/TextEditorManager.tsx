@@ -17,7 +17,6 @@ interface EditorState {
 const TextEditorManager: React.FC = () => {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const updateElement = useCanvasStore((state) => state.updateElement);
-  const elements = useCanvasStore((state) => state.elements); // 监听元素变化
   const coordinateTransformer = useMemo(() => new CoordinateTransformer(), []);
 
   useEffect(() => {
@@ -48,23 +47,15 @@ const TextEditorManager: React.FC = () => {
     };
   }, []);
 
-  // 获取最新的元素数据，同步外部属性变化
-  const currentElement = useMemo(() => {
+  // 根据视口变化动态计算编辑器位置
+  const editorPosition = useMemo(() => {
     if (!editorState) {
       return null;
     }
-    // 从 store 中获取最新的元素数据
-    return elements[editorState.element.id] as TextElement | undefined;
-  }, [editorState, elements]);
-
-  // 根据视口变化动态计算编辑器位置
-  const editorPosition = useMemo(() => {
-    if (!currentElement) {
-      return null;
-    }
+    const { element } = editorState;
     // 使用 CoordinateTransformer 将世界坐标转换为屏幕坐标
-    return coordinateTransformer.worldToScreen(currentElement.x, currentElement.y);
-  }, [currentElement, coordinateTransformer]);
+    return coordinateTransformer.worldToScreen(element.x, element.y);
+  }, [editorState, coordinateTransformer]);
 
   // 处理内容更新
   const handleUpdate = (content: string) => {
@@ -103,13 +94,13 @@ const TextEditorManager: React.FC = () => {
     });
   };
 
-  if (!editorState || !editorPosition || !currentElement) {
+  if (!editorState || !editorPosition) {
     return null;
   }
 
   return (
     <RichTextEditor
-      element={currentElement} // 使用最新的元素数据
+      element={editorState.element}
       position={editorPosition}
       onUpdate={handleUpdate}
       onBlur={handleBlur}

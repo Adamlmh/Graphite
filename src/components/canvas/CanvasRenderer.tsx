@@ -12,7 +12,7 @@ import { useCanvasStore } from '../../stores/canvas-store';
 import TextEditorManager from '../ui/business/TextEditor/TextEditorManager';
 import './CanvasRenderer.less';
 import Minimap from './Minimap';
-import { historyService } from '../../services/instances';
+import { historyService } from '../../main';
 /**
  * CanvasRenderer 组件
  */

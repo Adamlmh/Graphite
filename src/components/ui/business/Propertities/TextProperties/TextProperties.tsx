@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Slider, Button, Tooltip, Popover } from 'antd';
 import {
   BoldOutlined,
@@ -11,15 +11,17 @@ import {
 import { ColorPicker } from 'antd';
 import type { Element } from '../../../../../types/index';
 import styles from './TextProperties.module.less';
-import { useElementCategory } from '../../../../../hooks/useElementCategory';
-import { useCanvasStore } from '../../../../../stores/canvas-store';
+import {
+  useElementCategory,
+  useCommonStyle,
+  useElementStyleUpdater,
+} from '../../../../../hooks/useElementCategory';
 
 // 这里用 props 接收Zustand的 selectedElements
 type TextPropertiesProps = {
   element?: Element;
   elements?: Element[];
-  selectedElements?: Element[];
-  onChange?: (elementId: string, updates: Partial<Element>) => void;
+  onChange?: (elementId: string, newStyle: Element['style']) => void;
   onGroupStyleChange?: (
     elementId: string,
     newStyle: Element['style'],
@@ -27,17 +29,14 @@ type TextPropertiesProps = {
   ) => void;
 };
 
-type TextElementType = Extract<Element, { type: 'text' }>;
-
-type TextStylePatch = {
-  textStyle?: Partial<TextElementType['textStyle']>;
-  style?: Partial<Element['style']>;
+type TextElement = Extract<Element, { type: 'text' }>;
+type TextStyleState = Partial<Element['style']> & {
   fontSize?: number;
+  color?: string;
+  backgroundColor?: string;
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
   textDecoration?: string;
-  color?: string;
-  backgroundColor?: string;
 };
 const computeDecoration = (current: string | undefined, target: 'underline' | 'line-through') => {
   if (!current || current === 'none') {
@@ -64,37 +63,43 @@ const EMPTY_ELEMENTS: Element[] = [];
 const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
   element,
   elements,
-  selectedElements = EMPTY_ELEMENTS,
+  onChange,
+  onGroupStyleChange,
 }) => {
-  // 统一处理单个和多个元素的情况
-  const effectiveElements = React.useMemo(() => {
+  const effectiveElements = useMemo(() => {
     if (elements?.length) {
       return elements;
-    }
-    if (selectedElements?.length) {
-      return selectedElements;
     }
     if (element) {
       return [element];
     }
     return EMPTY_ELEMENTS;
-  }, [element, elements, selectedElements]);
+  }, [element, elements]);
 
   const { shouldShowTextPanel } = useElementCategory(effectiveElements);
 
-  const textElements = React.useMemo(
-    () => effectiveElements.filter((item): item is TextElementType => item.type === 'text'),
+  const textElements = useMemo(
+    () => effectiveElements.filter((item): item is TextElement => item.type === 'text'),
     [effectiveElements],
   );
 
-  // 使用Zustand进行状态管理
-  const store = useCanvasStore();
-  const [textPatch, setTextPatch] = useState<TextStylePatch>({});
+  const commonStyle = useCommonStyle(textElements);
+  const mergedCommonStyle = useMemo(
+    () => ({ ...(commonStyle ?? {}) }) as TextStyleState,
+    [commonStyle],
+  );
+  const [textStyle, setTextStyle] = useState<TextStyleState>(mergedCommonStyle);
+  const applyToChildren = true;
 
-  // 重置补丁状态当元素改变时
   React.useEffect(() => {
-    setTextPatch({});
-  }, [textElements.map((el) => el.id).join(',')]);
+    setTextStyle(mergedCommonStyle);
+  }, [mergedCommonStyle]);
+
+  const emitStylePatch = useElementStyleUpdater(textElements, textElements.length, {
+    onChange,
+    onGroupStyleChange,
+    applyToChildren,
+  });
 
   if (!shouldShowTextPanel) {
     return null;
@@ -104,100 +109,29 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
     return null;
   }
 
-  // 应用补丁到所有文本元素
-  const applyPatch = (patch: TextStylePatch) => {
-    setTextPatch((prev) => ({ ...prev, ...patch }));
-
-    if (!textElements.length) {
-      return;
-    }
-
-    // 批量更新所有文本元素
-    textElements.forEach((el) => {
-      const updates: Partial<TextElementType> = {};
-
-      // 更新 textStyle
-      if (
-        patch.textStyle ||
-        patch.fontSize ||
-        patch.fontWeight ||
-        patch.fontStyle ||
-        patch.textDecoration ||
-        patch.color ||
-        patch.backgroundColor
-      ) {
-        updates.textStyle = {
-          ...el.textStyle,
-          ...(patch.textStyle || {}),
-        };
-
-        // 安全地更新各个属性
-        if (patch.fontSize !== undefined) {
-          updates.textStyle.fontSize = patch.fontSize;
-        }
-        if (patch.fontWeight !== undefined) {
-          updates.textStyle.fontWeight = patch.fontWeight;
-        }
-        if (patch.fontStyle !== undefined) {
-          updates.textStyle.fontStyle = patch.fontStyle;
-        }
-        if (patch.textDecoration !== undefined) {
-          updates.textStyle.textDecoration =
-            patch.textDecoration as TextElementType['textStyle']['textDecoration'];
-        }
-        if (patch.color !== undefined) {
-          updates.textStyle.color = patch.color;
-        }
-        if (patch.backgroundColor !== undefined) {
-          updates.textStyle.backgroundColor = patch.backgroundColor;
-        }
-      }
-
-      // 更新基础样式（如果需要）
-      if (patch.style) {
-        updates.style = {
-          ...el.style,
-          ...patch.style,
-        };
-      }
-
-      if (Object.keys(updates).length > 0) {
-        store.updateElement(el.id, updates);
-      }
-    });
+  const updateStyle = (patch: Partial<TextStyleState>) => {
+    setTextStyle((prev) => ({ ...prev, ...patch }));
+    emitStylePatch(patch as Partial<Element['style']>);
   };
 
-  // 获取当前样式值（从第一个元素或补丁中获取）
-  const [firstElement] = textElements;
-  const currentTextStyle = firstElement ? firstElement.textStyle : null;
-
-  const fontSize = textPatch.fontSize ?? currentTextStyle?.fontSize ?? 16;
-  const color = textPatch.color ?? currentTextStyle?.color ?? '#222222';
+  const fontSize = typeof textStyle.fontSize === 'number' ? textStyle.fontSize : 16;
+  const color = typeof textStyle.color === 'string' ? textStyle.color : '#222222';
   const backgroundColor =
-    textPatch.backgroundColor ?? currentTextStyle?.backgroundColor ?? '#ffffff';
-  const fontWeight = (textPatch.fontWeight ?? currentTextStyle?.fontWeight ?? 'normal') as
-    | 'normal'
-    | 'bold';
-  const fontStyle = (textPatch.fontStyle ?? currentTextStyle?.fontStyle ?? 'normal') as
-    | 'normal'
-    | 'italic';
-  const decoration = textPatch.textDecoration ?? currentTextStyle?.textDecoration ?? 'none';
-
-  // 更新样式的方法
-  const updateTextStyle = (patch: Partial<TextStylePatch>) => {
-    applyPatch(patch);
-  };
+    typeof textStyle.backgroundColor === 'string' ? textStyle.backgroundColor : '#ffffff';
+  const fontWeight = textStyle.fontWeight === 'bold' ? 'bold' : 'normal';
+  const fontStyle = textStyle.fontStyle === 'italic' ? 'italic' : 'normal';
+  const decoration = textStyle.textDecoration ?? 'none';
 
   const handleToggleBold = () => {
-    updateTextStyle({ fontWeight: fontWeight === 'bold' ? 'normal' : 'bold' });
+    updateStyle({ fontWeight: fontWeight === 'bold' ? 'normal' : 'bold' });
   };
 
   const handleToggleItalic = () => {
-    updateTextStyle({ fontStyle: fontStyle === 'italic' ? 'normal' : 'italic' });
+    updateStyle({ fontStyle: fontStyle === 'italic' ? 'normal' : 'italic' });
   };
 
   const handleToggleDecoration = (target: 'underline' | 'line-through') => {
-    updateTextStyle({ textDecoration: computeDecoration(decoration, target) });
+    updateStyle({ textDecoration: computeDecoration(decoration, target) });
   };
 
   const fontSizeSlider = (
@@ -206,7 +140,7 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         min={10}
         max={72}
         value={fontSize}
-        onChange={(size) => updateTextStyle({ fontSize: size })}
+        onChange={(size) => updateStyle({ fontSize: size })}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -233,7 +167,7 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
       <Tooltip title="文本颜色">
         <ColorPicker
           value={color}
-          onChange={(_, hex) => updateTextStyle({ color: hex })}
+          onChange={(_, hex) => updateStyle({ color: hex })}
           className={styles.colorPicker}
         >
           <Button
@@ -250,7 +184,7 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
       <Tooltip title="背景色">
         <ColorPicker
           value={backgroundColor}
-          onChange={(_, hex) => updateTextStyle({ backgroundColor: hex })}
+          onChange={(_, hex) => updateStyle({ backgroundColor: hex })}
           className={styles.colorPicker}
         >
           <Button

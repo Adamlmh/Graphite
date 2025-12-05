@@ -34,12 +34,7 @@ export class SelectionInteraction {
   private isDragging = false;
   private dragStartPoint: Point | null = null;
   private dragStartWorld: Point | null = null;
-  private dragStartTime: number = 0;
   private selectHelper: SelectHelper;
-
-  // 时间和距离阈值
-  private readonly CLICK_TIME_THRESHOLD = 200; // 200ms
-  private readonly CLICK_DISTANCE_THRESHOLD = 5; // 5px
 
   constructor() {
     this.canvasStore = useCanvasStore;
@@ -55,10 +50,6 @@ export class SelectionInteraction {
     eventBus.on('pointerdown', this.handlePointerDown as (payload: unknown) => void);
     eventBus.on('pointerup', this.handlePointerUp as (payload: unknown) => void);
     eventBus.on('pointermove', this.handlePointerMove as (payload: unknown) => void);
-    eventBus.on(
-      'text-editor:double-click-handled',
-      this.handleTextDoubleClickHandled as (payload: unknown) => void,
-    );
   }
 
   /**
@@ -70,68 +61,12 @@ export class SelectionInteraction {
       return;
     }
 
-    // 检查是否可能是文本元素的双击
-    if (this.isPotentialTextDoubleClick()) {
-      // 先标记为拖拽状态，但延迟实际的拖拽逻辑
-      this.isDragging = true;
-
-      // 延迟启动拖拽，给双击检测一些时间
-      setTimeout(() => {
-        if (this.isDragging) {
-          // 如果延迟后仍在拖拽状态，开始框选逻辑
-          this.startDragSelection(event);
-        }
-      }, 100);
-    } else {
-      this.startDragSelection(event);
-    }
-  };
-
-  /**
-   * 开始拖拽选择
-   */
-  private startDragSelection(event: CanvasEvent): void {
-    if (!this.isDragging) {
-      this.isDragging = true;
-    }
-    this.dragStartTime = Date.now();
+    this.isDragging = true;
     this.dragStartPoint = { x: event.screen.x, y: event.screen.y };
     this.dragStartWorld = { x: event.world.x, y: event.world.y };
 
+    // 这里可以开始框选逻辑的准备
     console.log('SelectionInteraction: 开始拖拽', event.screen);
-  }
-
-  /**
-   * 检查是否可能是文本双击
-   */
-  private isPotentialTextDoubleClick(): boolean {
-    const state = this.canvasStore.getState();
-    const { selectedElementIds, elements } = state;
-
-    if (selectedElementIds.length !== 1) {
-      return false;
-    }
-
-    const elementId = selectedElementIds[0];
-    const element = elements[elementId];
-
-    return element && element.type === 'text';
-  }
-
-  /**
-   * 处理文本双击完成事件
-   */
-  private handleTextDoubleClickHandled = (): void => {
-    // 双击已被处理，取消当前的拖拽状态
-    this.isDragging = false;
-    this.dragStartPoint = null;
-    this.dragStartWorld = null;
-    this.dragStartTime = 0;
-
-    // 清除可能的预览
-    this.canvasStore.setState((state: CanvasState) => {
-      state.tool.tempElement = undefined;
-    });
   };
 
   /**
@@ -146,16 +81,11 @@ export class SelectionInteraction {
     if (this.dragStartWorld) {
       const start = this.dragStartWorld;
       const end = { x: event.world.x, y: event.world.y };
-      const dragDistance = Math.sqrt(Math.pow(start.x - end.x, 2) + Math.pow(start.y - end.y, 2));
-      if (dragDistance < 5) {
-        // 拖拽距离太小，不显示预览
-        console.log('SelectionInteraction: 拖拽距离太小，不显示预览');
-        return;
-      }
       const x = Math.min(start.x, end.x);
       const y = Math.min(start.y, end.y);
       const width = Math.abs(end.x - start.x);
       const height = Math.abs(end.y - start.y);
+
       const preview = ElementFactory.createRectangle(x, y, width, height, {
         fill: '#3b82f6',
         fillOpacity: 0.08,
@@ -182,22 +112,17 @@ export class SelectionInteraction {
     const wasDragging = this.isDragging;
     this.isDragging = false;
 
-    // 如果是拖拽结束，使用时间+距离组合判断
+    // 如果是拖拽结束且有明显位移，处理框选
     if (wasDragging && this.dragStartPoint) {
-      const duration = Date.now() - this.dragStartTime;
       const dragDistance = Math.sqrt(
         Math.pow(event.screen.x - this.dragStartPoint.x, 2) +
           Math.pow(event.screen.y - this.dragStartPoint.y, 2),
       );
 
-      // 组合判断：时间短且距离小 = 点击
-      const isClick =
-        duration < this.CLICK_TIME_THRESHOLD && dragDistance < this.CLICK_DISTANCE_THRESHOLD;
-
-      if (isClick) {
+      // 如果拖拽距离小于阈值，认为是点击
+      if (dragDistance < 5) {
         this.handleClick(event);
       } else {
-        // 时间长或距离大 = 拖拽框选
         if (this.dragStartWorld) {
           this.handleDragSelection(
             this.dragStartWorld,
@@ -218,7 +143,6 @@ export class SelectionInteraction {
 
     this.dragStartPoint = null;
     this.dragStartWorld = null;
-    this.dragStartTime = 0;
   };
 
   /**
@@ -295,9 +219,5 @@ export class SelectionInteraction {
     eventBus.off('pointerdown', this.handlePointerDown as (payload: unknown) => void);
     eventBus.off('pointerup', this.handlePointerUp as (payload: unknown) => void);
     eventBus.off('pointermove', this.handlePointerMove as (payload: unknown) => void);
-    eventBus.off(
-      'text-editor:double-click-handled',
-      this.handleTextDoubleClickHandled as (payload: unknown) => void,
-    );
   }
 }

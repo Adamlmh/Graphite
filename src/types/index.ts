@@ -13,7 +13,7 @@ interface Size {
 }
 
 /** 边界框，用于碰撞检测和空间计算（不存储，实时计算） */
-export interface Bounds {
+interface Bounds {
   x: number; // 左上角X坐标
   y: number; // 左上角Y坐标
   width: number; // 边界框宽度

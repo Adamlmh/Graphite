@@ -63,9 +63,6 @@ export class TextEditorInteraction {
     this.lastClickElementId = elementId;
 
     if (isDoubleClick) {
-      // 通知其他交互器双击已被处理
-      eventBus.emit('text-editor:double-click-handled', { elementId });
-
       // 触发进入编辑态
       this.enterEditMode(element as TextElement);
     }

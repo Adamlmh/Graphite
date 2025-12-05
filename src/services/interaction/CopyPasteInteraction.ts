@@ -7,7 +7,7 @@ import { eventBus } from '../../lib/eventBus';
 import type { CanvasEvent } from '../../lib/EventBridge';
 import type { HistoryService } from '../HistoryService';
 import { CutCommand, PasteCommand } from '../command/HistoryCommand';
-import { historyService } from '../../services/instances';
+import { historyService } from '../../main';
 
 export class CopyPasteInteraction {
   private canvasStore: typeof useCanvasStore;
