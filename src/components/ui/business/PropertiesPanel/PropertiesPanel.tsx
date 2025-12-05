@@ -79,9 +79,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     : staticPosition || { right: 0, top: 80 };
 
   // 样式更新回调
-  const handleStyleChange = (elementId: string, newStyle: Element['style']) => {
-    console.log('PropertiesPanel: 更新元素样式', { elementId, newStyle });
-    updateElement(elementId, { style: newStyle });
+  const handleStyleChange = (elementId: string, updates: Partial<Element>) => {
+    console.log('PropertiesPanel: 更新元素样式', { elementId, updates });
+    updateElement(elementId, updates);
   };
 
   // 监听文本编辑状态
