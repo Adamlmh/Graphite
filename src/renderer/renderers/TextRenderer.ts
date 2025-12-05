@@ -106,17 +106,34 @@ export class TextRenderer implements IElementRenderer {
 
     // 更新文本样式
     if (textChanges.textStyle !== undefined) {
-      text.style = this.createTextStyle(textChanges.textStyle);
+      const mergedTextStyle = {
+        ...(text as any).lastTextStyle,
+        ...textChanges.textStyle,
+      } as TextElement['textStyle'];
+      (text as any).lastTextStyle = mergedTextStyle;
+      text.style = this.createTextStyle(mergedTextStyle);
     }
 
     // 更新布局
     if (
       textChanges.width !== undefined ||
       textChanges.height !== undefined ||
-      textChanges.textStyle
+      textChanges.textStyle !== undefined
     ) {
-      const textElement = changes as TextElement;
-      this.applyTextLayout(text, textElement);
+      const effectiveWidth = textChanges.width ?? (text as any).lastWidth;
+      const effectiveHeight = textChanges.height ?? (text as any).lastHeight;
+      const effectiveTextStyle =
+        textChanges.textStyle ?? ((text as any).lastTextStyle as TextElement['textStyle']);
+
+      (text as any).lastWidth = effectiveWidth;
+      (text as any).lastHeight = effectiveHeight;
+
+      const synthetic: Partial<TextElement> = {
+        width: effectiveWidth,
+        height: effectiveHeight,
+        textStyle: effectiveTextStyle,
+      };
+      this.applyTextLayout(text, synthetic as TextElement);
     }
 
     console.log(`TextRenderer: 更新文本元素`, changes);

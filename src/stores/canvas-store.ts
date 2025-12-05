@@ -255,13 +255,15 @@ export const useCanvasStore = create<CanvasState>()(
         const element = state.elements[id];
         if (element) {
           Object.assign(element, updates);
+          state.elements = { ...state.elements };
         }
       }),
 
     deleteElement: (id) =>
       set((state) => {
         // 🎯 删除元素并清理选中状态
-        delete state.elements[id];
+        const { [id]: _, ...rest } = state.elements;
+        state.elements = rest;
         state.selectedElementIds = state.selectedElementIds.filter((elId: string) => elId !== id);
       }),
 
@@ -274,6 +276,7 @@ export const useCanvasStore = create<CanvasState>()(
             Object.assign(element, updates);
           }
         });
+        state.elements = { ...state.elements };
       }),
 
     setSelectedElements: (ids) =>
