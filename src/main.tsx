@@ -6,7 +6,7 @@ import { CreateInteraction } from './services/interaction/CreateInteraction';
 import { CopyPasteInteraction } from './services/interaction/CopyPasteInteraction';
 import { DeleteInteraction } from './services/interaction/DeleteInteraction';
 import { MoveInteraction } from './services/interaction/moveInteraction.ts';
-// import { ResizeInteraction } from './services/interaction/ResizeInteraction';
+import { ResizeInteraction } from './services/interaction/ResizeInteraction';
 import { useCanvasStore } from './stores/canvas-store';
 import { HistoryService } from './services/HistoryService';
 
@@ -24,6 +24,7 @@ new CreateInteraction(historyService);
 export const copyPasteInteraction = new CopyPasteInteraction(historyService);
 export const deleteInteraction = new DeleteInteraction(historyService);
 export const moveInteraction = new MoveInteraction(historyService);
+export const resizeInteraction = new ResizeInteraction();
 
 // 页面加载时恢复历史状态
 async function initApp() {
