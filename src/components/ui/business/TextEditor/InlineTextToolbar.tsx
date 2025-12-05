@@ -9,27 +9,35 @@ import {
   BgColorsOutlined,
 } from '@ant-design/icons';
 import type { Editor } from '@tiptap/react';
-import type { TextStyle } from '../../../../types';
 import styles from '../Propertities/TextProperties/TextProperties.module.less';
 
 export interface InlineTextToolbarProps {
   editor: Editor;
   visible: boolean;
   position: { x: number; y: number };
-  onStyleChange?: (style: Partial<TextStyle>) => void;
+  updateTrigger?: number; // 用于强制刷新组件的触发器
 }
 
 /**
  * 行内文本工具栏
  * 当用户选中文本片段时显示，提供局部文本样式编辑功能
+ *
+ * 数据流转逻辑：
+ * 1. Tiptap Editor 是选择状态和样式的"单一数据源" (Single Source of Truth)。
+ * 2. 当编辑器选区变化或内容更新时，父组件 (RichTextEditor) 会更新 updateTrigger。
+ * 3. 本组件通过 useMemo 依赖 updateTrigger，重新从 editor.isActive() / editor.getAttributes() 获取当前选区的样式。
+ * 4. 用户点击按钮 -> 调用 editor.chain()...run() 修改编辑器内部状态。
+ * 5. 编辑器内部状态变化 -> 触发 onUpdate/onSelectionUpdate -> 更新 updateTrigger -> 重新渲染本组件按钮高亮状态。
+ * 6. 同时 RichTextEditor 的 onUpdate 会将最终的富文本数据同步到 Zustand Store。
  */
 const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   editor,
   visible,
   position,
-  onStyleChange,
+  updateTrigger = 0,
 }) => {
   // 获取当前选区的文本样式状态
+  // 依赖 updateTrigger 确保在选区变化时更新
   const textStyles = useMemo(() => {
     if (!editor || !visible) {
       return {
@@ -39,79 +47,86 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         isStrike: false,
         textColor: '#000000',
         backgroundColor: undefined,
+        fontSize: 16,
       };
     }
+    const attrs = editor.getAttributes('textStyle');
+    // console.log('[InlineTextToolbar] Current text styles:', {
+    //   bold: editor.isActive('bold'),
+    //   italic: editor.isActive('italic'),
+    //   underline: editor.isActive('underline'),
+    //   strike: editor.isActive('strike'),
+    //   attrs,
+    // });
 
     return {
       isBold: editor.isActive('bold'),
       isItalic: editor.isActive('italic'),
       isUnderline: editor.isActive('underline'),
       isStrike: editor.isActive('strike'),
-      textColor: editor.getAttributes('textStyle').color || '#000000',
-      backgroundColor: editor.getAttributes('textStyle').backgroundColor,
-      fontSize: editor.getAttributes('textStyle').fontSize || 16,
+      textColor: attrs.color || '#000000',
+      backgroundColor: attrs.backgroundColor,
+      fontSize: parseInt(attrs.fontSize || '16', 10),
     };
-  }, [editor, visible]);
+    // updateTrigger 是必需的，用于触发重新计算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, visible, updateTrigger]);
 
-  // 应用加粗样式
+  // === 样式操作处理函数 ===
+  // 应用/取消加粗样式
   const handleToggleBold = () => {
     if (!editor) return;
+    console.log('[InlineTextToolbar] Executing toggleBold');
     editor.chain().focus().toggleBold().run();
-    onStyleChange?.({ fontWeight: textStyles.isBold ? 'normal' : 'bold' });
+    console.log('[InlineTextToolbar] toggleBold executed, active:', editor.isActive('bold'));
   };
 
-  // 应用斜体样式
+  // 应用/取消斜体样式
   const handleToggleItalic = () => {
     if (!editor) return;
+    console.log('[InlineTextToolbar] Executing toggleItalic');
     editor.chain().focus().toggleItalic().run();
-    onStyleChange?.({ fontStyle: textStyles.isItalic ? 'normal' : 'italic' });
+    console.log('[InlineTextToolbar] toggleItalic executed, active:', editor.isActive('italic'));
   };
 
-  // 应用下划线样式
+  // 应用/取消下划线样式
   const handleToggleUnderline = () => {
     if (!editor) return;
+    console.log('[InlineTextToolbar] Executing toggleUnderline');
     editor.chain().focus().toggleUnderline().run();
-    // 简化处理，使用tiptap的布尔状态
-    onStyleChange?.({
-      textDecoration: textStyles.isUnderline ? 'none' : 'underline',
-    });
+    console.log(
+      '[InlineTextToolbar] toggleUnderline executed, active:',
+      editor.isActive('underline'),
+    );
   };
 
-  // 应用删除线样式
+  // 应用/取消删除线样式
   const handleToggleStrike = () => {
     if (!editor) return;
+    console.log('[InlineTextToolbar] Executing toggleStrike');
     editor.chain().focus().toggleStrike().run();
-    // 简化处理，使用tiptap的布尔状态
-    onStyleChange?.({
-      textDecoration: textStyles.isStrike ? 'none' : 'line-through',
-    });
+    console.log('[InlineTextToolbar] toggleStrike executed, active:', editor.isActive('strike'));
   };
 
-  // 应用文本颜色
+  // 修改文本颜色
   const handleTextColorChange = (color: string) => {
     if (!editor) return;
-    // 使用更简单的updateAttributes方式
-    editor.chain().focus().updateAttributes('textStyle', { color }).run();
-    onStyleChange?.({ color });
+    console.log('[InlineTextToolbar] Changing text color to:', color);
+    editor.chain().focus().setColor(color).run();
   };
 
-  // 应用背景颜色
+  // 修改背景颜色
   const handleBackgroundColorChange = (backgroundColor: string) => {
     if (!editor) return;
-    // 使用更简单的updateAttributes方式
-    editor.chain().focus().updateAttributes('textStyle', { backgroundColor }).run();
-    onStyleChange?.({ backgroundColor });
+    console.log('[InlineTextToolbar] Changing background color to:', backgroundColor);
+    editor.chain().focus().setBackgroundColor(backgroundColor).run();
   };
 
-  // 应用字体大小
+  // 修改字号
   const handleFontSizeChange = (fontSize: number) => {
     if (!editor) return;
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('textStyle', { fontSize: `${fontSize}px` })
-      .run();
-    onStyleChange?.({ fontSize });
+    console.log('[InlineTextToolbar] Changing font size to:', fontSize);
+    editor.chain().focus().setFontSize(`${fontSize}px`).run();
   };
 
   if (!visible) {
@@ -125,15 +140,18 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         left: `${position.x}px`,
         top: `${position.y}px`,
         zIndex: 10000,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
       }}
-      className="inline-text-toolbar"
+      className="inline-text-toolbar-container"
       onMouseDown={(e) => {
-        // 阻止失焦事件
+        // 阻止失焦事件，保证点击工具栏时选区不丢失
         e.preventDefault();
       }}
     >
       <div className={styles.toolbar}>
-        {/* 字体大小 */}
+        {/* 字体大小调节 */}
         <Popover
           content={
             <div className={styles.sliderPopover}>
@@ -160,7 +178,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
 
         <div className={styles.divider} />
 
-        {/* 文本颜色 */}
+        {/* 文本颜色选择 */}
         <Tooltip title="文本颜色">
           <ColorPicker
             value={textStyles.textColor}
@@ -178,7 +196,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           </ColorPicker>
         </Tooltip>
 
-        {/* 背景颜色 */}
+        {/* 背景颜色选择 */}
         <Tooltip title="背景色">
           <ColorPicker
             value={textStyles.backgroundColor || '#ffffff'}
@@ -198,7 +216,6 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
 
         <div className={styles.divider} />
 
-        {/* 加粗 */}
         <Tooltip title="加粗">
           <Button
             className={`${styles.toolButton} ${textStyles.isBold ? styles.active : ''}`}
@@ -207,7 +224,6 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           />
         </Tooltip>
 
-        {/* 斜体 */}
         <Tooltip title="斜体">
           <Button
             className={`${styles.toolButton} ${textStyles.isItalic ? styles.active : ''}`}
@@ -216,7 +232,6 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           />
         </Tooltip>
 
-        {/* 下划线 */}
         <Tooltip title="下划线">
           <Button
             className={`${styles.toolButton} ${textStyles.isUnderline ? styles.active : ''}`}
@@ -225,7 +240,6 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           />
         </Tooltip>
 
-        {/* 删除线 */}
         <Tooltip title="删除线">
           <Button
             className={`${styles.toolButton} ${textStyles.isStrike ? styles.active : ''}`}

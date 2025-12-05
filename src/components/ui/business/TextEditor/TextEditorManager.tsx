@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { eventBus } from '../../../../lib/eventBus';
 import { useCanvasStore } from '../../../../stores/canvas-store';
-import type { TextElement } from '../../../../types';
+import type { TextElement, RichTextSpan } from '../../../../types';
 import { getRenderEngine } from '../../../../lib/renderEngineManager';
 import { CoordinateTransformer } from '../../../../lib/Coordinate/index';
 import RichTextEditor from './RichTextEditor';
@@ -77,13 +77,15 @@ const TextEditorManager: React.FC = () => {
   }, [currentElement, coordinateTransformer]);
 
   // 处理内容更新
-  const handleUpdate = (content: string) => {
+  const handleUpdate = (content: string, richText?: RichTextSpan[]) => {
     if (!editorState) {
       return;
     }
+    console.log('[TextEditorManager] Updating element:', { content, richText });
 
     updateElement(editorState.element.id, {
       content,
+      richText,
       updatedAt: Date.now(),
     });
   };
