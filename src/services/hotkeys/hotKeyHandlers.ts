@@ -1,8 +1,12 @@
 // hotKeyHandlers.ts
 import { hotKeyManager } from './hotKeyManager';
 import { useCanvasStore } from '../../stores/canvas-store';
-import { copyPasteInteraction, deleteInteraction, moveInteraction } from '../../main.tsx';
-import { historyService } from '../../main';
+import {
+  copyPasteInteraction,
+  deleteInteraction,
+  moveInteraction,
+  historyService,
+} from '../instances';
 
 export function bindCanvasHotKeys() {
   const canvasStore = useCanvasStore;

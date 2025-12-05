@@ -135,6 +135,7 @@ export class CanvasBridge {
    * 未来可以在这里插入 diff / patch / 批处理 等高级能力。
    */
   protected handleElementsChange(next: ElementsState, prev: ElementsState): void {
+    console.log('%c [ 触发变化 ]-139', 'font-size:13px; background:pink; color:#bf2c9f;');
     const commands: AllRenderCommand[] = [];
     const state = this.store.getState();
     const selectedElementIds = state.selectedElementIds;
