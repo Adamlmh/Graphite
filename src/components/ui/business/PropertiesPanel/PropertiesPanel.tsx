@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useCanvasStore } from '../../../../stores/canvas-store';
+import { eventBus } from '../../../../lib/eventBus';
 import { useElementCategory } from '../../../../hooks/useElementCategory';
 import { calculatePanelPosition } from '../../../../utils/panelPositioning';
 import FloatingPanel from '../../layout/FloatingPanel/FloatingPanel';
@@ -83,8 +84,33 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     updateElement(elementId, { style: newStyle });
   };
 
+  // 监听文本编辑状态
+  const [isTextEditing, setIsTextEditing] = useState(false);
+
+  useEffect(() => {
+    const handleTextEditorOpen = () => {
+      setIsTextEditing(true);
+    };
+
+    const handleTextEditorClose = () => {
+      setIsTextEditing(false);
+    };
+
+    eventBus.on('text-editor:open', handleTextEditorOpen);
+    eventBus.on('text-editor:close', handleTextEditorClose);
+
+    return () => {
+      eventBus.off('text-editor:open', handleTextEditorOpen);
+      eventBus.off('text-editor:close', handleTextEditorClose);
+    };
+  }, []);
+
   // 如果没有选中元素，不显示属性面板
   if (elementCount === 0) {
+    return null;
+  }
+  // 如果正在编辑文本，隐藏属性面板
+  if (isTextEditing) {
     return null;
   }
 
