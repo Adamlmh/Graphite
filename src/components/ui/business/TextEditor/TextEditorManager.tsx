@@ -48,6 +48,16 @@ const TextEditorManager: React.FC = () => {
     };
   }, []);
 
+  // 组件卸载时的清理逻辑
+  useEffect(() => {
+    return () => {
+      // 组件卸载时，如果还在编辑状态，确保触发关闭事件
+      if (editorState) {
+        eventBus.emit('text-editor:close');
+      }
+    };
+  }, [editorState]);
+
   // 获取最新的元素数据，同步外部属性变化
   const currentElement = useMemo(() => {
     if (!editorState) {
@@ -87,6 +97,7 @@ const TextEditorManager: React.FC = () => {
         renderEngine.setElementVisibility(editorState.element.id, true);
       }
     }
+    eventBus.emit('text-editor:close');
     setEditorState(null);
   };
 

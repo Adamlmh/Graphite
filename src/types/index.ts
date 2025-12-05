@@ -72,7 +72,7 @@ export interface TextStyle {
 }
 
 /** 富文本片段 - 对应【P0】局部文本样式挑战需求 */
-interface RichTextSpan {
+export interface RichTextSpan {
   start: number; // 起始位置
   end: number; // 结束位置
   style: Partial<TextStyle>; // 局部样式覆盖
