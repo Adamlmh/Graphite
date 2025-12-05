@@ -15,7 +15,7 @@ import { useCanvasStore } from '../../../../../stores/canvas-store';
 type ImagePropertiesProps = {
   element?: Element;
   elements?: Element[];
-  onChange?: (elementId: string, newStyle: Element['style']) => void;
+  onChange?: (elementId: string, updates: Partial<Element>) => void;
   onGroupStyleChange?: (
     elementId: string,
     newStyle: Element['style'],

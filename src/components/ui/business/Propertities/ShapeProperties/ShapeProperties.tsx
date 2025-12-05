@@ -12,10 +12,10 @@ import styles from './ShapeProperties.module.less';
 type ShapePropertiesProps = {
   element?: Element;
   elements?: Element[];
-  onChange?: (elementId: string, newStyle: Element['style']) => void;
+  onChange?: (elementId: string, updates: Partial<Element>) => void;
   onGroupStyleChange?: (
     elementId: string,
-    newStyle: Element['style'],
+    updates: Partial<Element>,
     applyToChildren: boolean,
   ) => void;
 };

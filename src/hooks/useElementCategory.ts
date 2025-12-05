@@ -114,12 +114,12 @@ export const useCommonStyle = (elements: Element[]) => {
 };
 
 export type StyleChangeHandlers = {
-  onChange?: (elementId: string, newStyle: Element['style']) => void;
+  onChange?: (elementId: string, updates: Partial<Element>) => void;
 
   //处理打组
   onGroupStyleChange?: (
     elementId: string,
-    newStyle: Element['style'],
+    updates: Partial<Element>,
     applyToChildren: boolean,
   ) => void;
   applyToChildren?: boolean;
@@ -152,9 +152,9 @@ export const useElementStyleUpdater = (
         elements.forEach((element) => {
           const nextStyle = mergeStyle(element);
           if (element.type === 'group' && onGroupStyleChange) {
-            onGroupStyleChange(element.id, nextStyle, applyToChildren);
+            onGroupStyleChange(element.id, { style: nextStyle }, applyToChildren);
           } else {
-            onChange(element.id, nextStyle);
+            onChange(element.id, { style: nextStyle });
           }
         });
         return;
@@ -168,7 +168,7 @@ export const useElementStyleUpdater = (
 
       const nextStyle = mergeStyle(singleElement);
 
-      onChange?.(singleElement.id, nextStyle);
+      onChange?.(singleElement.id, { style: nextStyle });
     },
     [elementCount, elements, onChange, onGroupStyleChange, applyToChildren],
   );
