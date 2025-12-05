@@ -618,3 +618,100 @@ export class MoveCommand implements Command {
     return this.elementMovements.length;
   }
 }
+
+/**
+ * 调整大小/旋转命令
+ */
+export class ResizeCommand implements Command {
+  id: string;
+  type: string = 'resize-elements';
+  timestamp: number;
+
+  private elementResizes: Array<{
+    elementId: string;
+    oldState: Partial<Element> & {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation?: number;
+    };
+    newState: Partial<Element> & {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation?: number;
+    };
+  }>;
+
+  private canvasStore: {
+    updateElement: (id: string, updates: Partial<Element>) => void;
+    updateElements: (updates: Array<{ id: string; updates: Partial<Element> }>) => void;
+  };
+
+  constructor(
+    elementResizes: Array<{
+      elementId: string;
+      oldState: Partial<Element> & {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        rotation?: number;
+      };
+      newState: Partial<Element> & {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        rotation?: number;
+      };
+    }>,
+    canvasStore: {
+      updateElement: (id: string, updates: Partial<Element>) => void;
+      updateElements: (updates: Array<{ id: string; updates: Partial<Element> }>) => void;
+    },
+  ) {
+    this.id = uuidv4();
+    this.timestamp = Date.now();
+    this.elementResizes = JSON.parse(JSON.stringify(elementResizes));
+    this.canvasStore = canvasStore;
+  }
+
+  async execute(): Promise<void> {
+    const updates = this.elementResizes.map(({ elementId, newState }) => ({
+      id: elementId,
+      updates: newState,
+    }));
+    if (updates.length > 0) {
+      this.canvasStore.updateElements(updates);
+    }
+    return Promise.resolve();
+  }
+
+  async undo(): Promise<void> {
+    const updates = this.elementResizes.map(({ elementId, oldState }) => ({
+      id: elementId,
+      updates: oldState,
+    }));
+    if (updates.length > 0) {
+      this.canvasStore.updateElements(updates);
+    }
+    return Promise.resolve();
+  }
+
+  async redo(): Promise<void> {
+    await this.execute();
+    return Promise.resolve();
+  }
+
+  serialize(): string {
+    return JSON.stringify({
+      id: this.id,
+      type: this.type,
+      timestamp: this.timestamp,
+      elementResizes: this.elementResizes,
+    });
+  }
+}
