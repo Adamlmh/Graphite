@@ -12,6 +12,8 @@ import {
 } from './interactionTypes';
 import { CoordinateTransformer } from '../../lib/Coordinate/CoordinateTransformer';
 import type { CanvasEvent } from '../../lib/EventBridge';
+import { HistoryService } from '../HistoryService';
+import { ResizeCommand } from '../command/HistoryCommand';
 
 export class ResizeInteraction {
   private state: ResizeState = {
@@ -41,6 +43,7 @@ export class ResizeInteraction {
   private geometryService: GeometryService;
   private isDisposed = false;
   private coordinateTransformer: CoordinateTransformer;
+  private historyService: HistoryService | null = null;
 
   // 键盘状态跟踪
   private keyState = {
@@ -49,11 +52,18 @@ export class ResizeInteraction {
     ctrlKey: false,
   };
 
-  constructor() {
+  constructor(historyService?: HistoryService) {
     this.canvasStore = useCanvasStore;
     this.geometryService = new GeometryService();
     this.coordinateTransformer = new CoordinateTransformer();
+    if (historyService) {
+      this.historyService = historyService;
+    }
     this.setupEventListeners();
+  }
+
+  setHistoryService(historyService: HistoryService): void {
+    this.historyService = historyService;
   }
 
   /**
@@ -946,6 +956,46 @@ export class ResizeInteraction {
       finalPoint: this.state.currentPoint,
     });
 
+    if (this.historyService && this.state.elementIds.length > 0) {
+      const storeState = this.canvasStore.getState();
+      const resizes = this.state.elementIds
+        .map((elementId) => {
+          const original = this.state.originalElements.get(elementId);
+          const current = storeState.elements[elementId];
+          if (!original || !current) return null;
+          return {
+            elementId,
+            oldState: {
+              x: original.x,
+              y: original.y,
+              width: original.width,
+              height: original.height,
+              rotation: original.rotation,
+            },
+            newState: {
+              x: current.x,
+              y: current.y,
+              width: current.width,
+              height: current.height,
+              rotation: current.rotation,
+            },
+          };
+        })
+        .filter((v): v is NonNullable<typeof v> => v !== null);
+
+      if (resizes.length > 0) {
+        const command = new ResizeCommand(resizes, {
+          updateElement: (id: string, updates: Partial<Element>) =>
+            this.canvasStore.getState().updateElement(id, updates),
+          updateElements: (updates: Array<{ id: string; updates: Partial<Element> }>) =>
+            this.canvasStore.getState().updateElements(updates),
+        });
+        this.historyService.executeCommand(command).catch((err) => {
+          console.error('ResizeInteraction: 记录历史失败', err);
+        });
+      }
+    }
+
     this.cleanup();
   }
 
@@ -957,6 +1007,46 @@ export class ResizeInteraction {
       elementIds: this.state.elementIds,
       finalRotation: this.getCurrentRotation(),
     });
+
+    if (this.historyService && this.state.elementIds.length > 0) {
+      const storeState = this.canvasStore.getState();
+      const resizes = this.state.elementIds
+        .map((elementId) => {
+          const original = this.state.originalElements.get(elementId);
+          const current = storeState.elements[elementId];
+          if (!original || !current) return null;
+          return {
+            elementId,
+            oldState: {
+              x: original.x,
+              y: original.y,
+              width: original.width,
+              height: original.height,
+              rotation: original.rotation,
+            },
+            newState: {
+              x: current.x,
+              y: current.y,
+              width: current.width,
+              height: current.height,
+              rotation: current.rotation,
+            },
+          };
+        })
+        .filter((v): v is NonNullable<typeof v> => v !== null);
+
+      if (resizes.length > 0) {
+        const command = new ResizeCommand(resizes, {
+          updateElement: (id: string, updates: Partial<Element>) =>
+            this.canvasStore.getState().updateElement(id, updates),
+          updateElements: (updates: Array<{ id: string; updates: Partial<Element> }>) =>
+            this.canvasStore.getState().updateElements(updates),
+        });
+        this.historyService.executeCommand(command).catch((err) => {
+          console.error('ResizeInteraction: 记录历史失败', err);
+        });
+      }
+    }
 
     this.cleanup();
   }
