@@ -45,47 +45,25 @@ export class GeometryService {
    * @returns 元素的世界边界框
    */
   public getElementBoundsWorld(element: IElementProvider): Bounds {
-    const position = element.getPosition();
     const size = element.getSize();
-    const rotation = element.getRotation();
-    const scale = element.getScale();
 
-    // 无旋转情况：直接计算
-    if (rotation === 0 || rotation % 360 === 0) {
-      return {
-        x: position.x,
-        y: position.y,
-        width: size.width * scale.scaleX,
-        height: size.height * scale.scaleY,
-      };
-    }
-
-    // 有旋转情况：通过四个角点计算 AABB
-    // 获取元素的局部四个角点
     const corners = [
-      { x: 0, y: 0 }, // 左上角
-      { x: size.width, y: 0 }, // 右上角
-      { x: size.width, y: size.height }, // 右下角
-      { x: 0, y: size.height }, // 左下角
+      { x: 0, y: 0 },
+      { x: size.width, y: 0 },
+      { x: size.width, y: size.height },
+      { x: 0, y: size.height },
     ];
 
-    // 将四个角点转换为世界坐标
     const worldCorners = corners.map((corner) =>
       this.coordinateTransformer.localToWorld(corner.x, corner.y, element),
     );
 
-    // 计算最小外接矩形（AABB）
     const minX = Math.min(...worldCorners.map((p) => p.x));
     const maxX = Math.max(...worldCorners.map((p) => p.x));
     const minY = Math.min(...worldCorners.map((p) => p.y));
     const maxY = Math.max(...worldCorners.map((p) => p.y));
 
-    return {
-      x: minX,
-      y: minY,
-      width: maxX - minX,
-      height: maxY - minY,
-    };
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
   /**
