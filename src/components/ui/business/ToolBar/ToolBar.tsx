@@ -9,7 +9,6 @@ import {
   MoonOutlined,
   UndoOutlined,
   RedoOutlined,
-  SaveOutlined,
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
@@ -31,7 +30,6 @@ const ToolBar: React.FC = () => {
   // 历史服务状态
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   // 监听历史状态变化
   useEffect(() => {
@@ -68,20 +66,6 @@ const ToolBar: React.FC = () => {
     } catch (error) {
       message.error('重做失败');
       console.error('Redo error:', error);
-    }
-  };
-
-  // 处理保存
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await historyService.forceSave();
-      console.log('Save successful');
-    } catch (error) {
-      message.error('保存失败');
-      console.error('Save error:', error);
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -127,16 +111,6 @@ const ToolBar: React.FC = () => {
             icon={<RedoOutlined />}
             onClick={handleRedo}
             disabled={!canRedo}
-          />
-        </Tooltip>
-        <div className={styles.divider} />
-        <Tooltip title="保存 (Ctrl+S)" placement="bottom">
-          <Button
-            type="text"
-            className={styles.toolButton}
-            icon={<SaveOutlined />}
-            onClick={handleSave}
-            loading={isSaving}
           />
         </Tooltip>
       </div>
