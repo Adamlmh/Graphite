@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // renderer/renderers/TextRenderer.ts
 import * as PIXI from 'pixi.js';
+import { CanvasTextMetrics } from 'pixi.js';
 import type { Element, TextElement } from '../../types/index';
 import type { IElementRenderer, RenderResources } from '../../types/render.types';
 import { ResourceManager } from '../resources/ResourceManager';
@@ -19,121 +20,151 @@ export class TextRenderer implements IElementRenderer {
   /**
    * 渲染文本元素
    */
-  render(element: Element, resources: RenderResources): PIXI.Text {
+  render(element: Element, resources: RenderResources): PIXI.Container {
     console.log(`TextRenderer: resources received`, resources);
     const textElement = element as TextElement;
     const { x, y, width, height, opacity, content, textStyle, transform, rotation } = textElement;
 
-    // 创建PIXI文本对象
+    // 创建容器
+    const container = new PIXI.Container();
+
+    // 设置元素类型标识
+    (container as any).elementType = 'text';
+    (container as any).elementId = element.id;
+
+    // 设置容器变换
+    container.x = x + transform.pivotX * width;
+    container.y = y + transform.pivotY * height;
+    container.alpha = opacity;
+    container.scale.set(transform.scaleX, transform.scaleY);
+    container.pivot.set(transform.pivotX * width, transform.pivotY * height);
+    container.rotation = rotation * (Math.PI / 180);
+
+    // 1. 创建背景层
+    const background = new PIXI.Graphics();
+    container.addChild(background);
+
+    // 2. 创建文本层
     const pixiText = new PIXI.Text(content, this.createTextStyle(textStyle));
+    container.addChild(pixiText);
 
-    // 设置元素类型标识（用于后续查询）
-    (pixiText as any).elementType = 'text';
-    (pixiText as any).elementId = element.id;
+    // 3. 创建装饰层（下划线/删除线）
+    const decorations = new PIXI.Graphics();
+    container.addChild(decorations);
 
-    // 设置位置和变换
-    pixiText.x = x + transform.pivotX * width;
-    pixiText.y = y + transform.pivotY * height;
-    pixiText.alpha = opacity;
+    // 挂载引用以便后续更新
+    (container as any).textNode = pixiText;
+    (container as any).backgroundNode = background;
+    (container as any).decorationNode = decorations;
 
-    // 设置缩放
-    pixiText.scale.set(transform.scaleX, transform.scaleY);
-
-    // 设置变换中心
-    pixiText.pivot.set(transform.pivotX * width, transform.pivotY * height);
-
-    // 设置旋转
-    pixiText.rotation = rotation * (Math.PI / 180);
-
-    // 设置文本对齐和布局
+    // 应用布局和绘制
     this.applyTextLayout(pixiText, textElement);
+    this.drawBackground(background, textElement);
+    this.drawDecorations(decorations, pixiText, textElement);
 
-    // 缓存当前尺寸、样式和变换
-    (pixiText as any).lastWidth = width;
-    (pixiText as any).lastHeight = height;
-    (pixiText as any).lastTextStyle = textStyle;
-    (pixiText as any).lastTransform = transform;
+    // 缓存状态
+    (container as any).lastX = x;
+    (container as any).lastY = y;
+    (container as any).lastWidth = width;
+    (container as any).lastHeight = height;
+    (container as any).lastTextStyle = textStyle;
+    (container as any).lastTransform = transform;
 
     console.log(`TextRenderer: 创建文本元素 ${element.id}`, { x, y, content });
 
-    return pixiText;
+    return container;
   }
 
   /**
    * 更新文本元素
    */
-  update(text: PIXI.Text, changes: Partial<Element>): void {
+  update(container: PIXI.Container, changes: Partial<Element>): void {
     const textChanges = changes as Partial<TextElement>;
+    const textNode = (container as any).textNode as PIXI.Text;
+    const backgroundNode = (container as any).backgroundNode as PIXI.Graphics;
+    const decorationNode = (container as any).decorationNode as PIXI.Graphics;
 
-    // 获取当前的 transform（优先使用 changes 中的，否则使用缓存的）
-    const transform = textChanges.transform ?? (text as any).lastTransform;
-    const width = textChanges.width ?? (text as any).lastWidth;
-    const height = textChanges.height ?? (text as any).lastHeight;
+    // 获取缓存值
+    const lastTransform = (container as any).lastTransform;
+    const lastWidth = (container as any).lastWidth;
+    const lastHeight = (container as any).lastHeight;
+    const lastTextStyle = (container as any).lastTextStyle;
+    const lastX = (container as any).lastX;
+    const lastY = (container as any).lastY;
 
-    // 更新位置（使用正确的 transform.pivotX 和 pivotY）
-    if (textChanges.x !== undefined && transform) {
-      text.x = textChanges.x + transform.pivotX * width;
-    }
-    if (textChanges.y !== undefined && transform) {
-      text.y = textChanges.y + transform.pivotY * height;
-    }
+    // 计算有效值
+    const transform = textChanges.transform ?? lastTransform;
+    const width = textChanges.width ?? lastWidth;
+    const height = textChanges.height ?? lastHeight;
+    const textStyle = textChanges.textStyle
+      ? { ...lastTextStyle, ...textChanges.textStyle }
+      : lastTextStyle;
+    const newX = textChanges.x ?? lastX;
+    const newY = textChanges.y ?? lastY;
 
-    // 更新透明度
-    if (textChanges.opacity !== undefined) text.alpha = textChanges.opacity;
-
-    // 更新旋转
-    if (textChanges.rotation !== undefined) {
-      text.rotation = textChanges.rotation * (Math.PI / 180);
-    }
-
-    // 更新变换
-    if (textChanges.transform !== undefined) {
-      const transform = textChanges.transform;
-      text.scale.set(transform.scaleX, transform.scaleY);
-
-      // 如果有尺寸变化，需要重新计算变换中心
-      const width = textChanges.width ?? (text as any).lastWidth;
-      const height = textChanges.height ?? (text as any).lastHeight;
-      if (width !== undefined && height !== undefined) {
-        text.pivot.set(transform.pivotX * width, transform.pivotY * height);
-      }
-    }
-
-    // 更新内容
-    if (textChanges.content !== undefined) {
-      text.text = textChanges.content;
-    }
-
-    // 更新文本样式
-    if (textChanges.textStyle !== undefined) {
-      const mergedTextStyle = {
-        ...(text as any).lastTextStyle,
-        ...textChanges.textStyle,
-      } as TextElement['textStyle'];
-      (text as any).lastTextStyle = mergedTextStyle;
-      text.style = this.createTextStyle(mergedTextStyle);
-    }
-
-    // 更新布局
+    // 更新容器变换
     if (
+      textChanges.x !== undefined ||
+      textChanges.y !== undefined ||
       textChanges.width !== undefined ||
       textChanges.height !== undefined ||
-      textChanges.textStyle !== undefined
+      textChanges.transform !== undefined
     ) {
-      const effectiveWidth = textChanges.width ?? (text as any).lastWidth;
-      const effectiveHeight = textChanges.height ?? (text as any).lastHeight;
-      const effectiveTextStyle =
-        textChanges.textStyle ?? ((text as any).lastTextStyle as TextElement['textStyle']);
+      container.x = newX + transform.pivotX * width;
+      container.y = newY + transform.pivotY * height;
+      container.scale.set(transform.scaleX, transform.scaleY);
+      container.pivot.set(transform.pivotX * width, transform.pivotY * height);
 
-      (text as any).lastWidth = effectiveWidth;
-      (text as any).lastHeight = effectiveHeight;
+      // 更新缓存
+      (container as any).lastX = newX;
+      (container as any).lastY = newY;
+      (container as any).lastWidth = width;
+      (container as any).lastHeight = height;
+      (container as any).lastTransform = transform;
+    }
 
-      const synthetic: Partial<TextElement> = {
-        width: effectiveWidth,
-        height: effectiveHeight,
-        textStyle: effectiveTextStyle,
-      };
-      this.applyTextLayout(text, synthetic as TextElement);
+    if (textChanges.opacity !== undefined) {
+      container.alpha = textChanges.opacity;
+    }
+
+    if (textChanges.rotation !== undefined) {
+      container.rotation = textChanges.rotation * (Math.PI / 180);
+    }
+
+    // 更新文本内容
+    let contentChanged = false;
+    if (textChanges.content !== undefined) {
+      textNode.text = textChanges.content;
+      contentChanged = true;
+    }
+
+    // 更新样式
+    let styleChanged = false;
+    if (textChanges.textStyle !== undefined) {
+      (container as any).lastTextStyle = textStyle;
+      textNode.style = this.createTextStyle(textStyle);
+      styleChanged = true;
+    }
+
+    // 如果内容、样式或尺寸变化，需要重新布局和重绘
+    if (
+      contentChanged ||
+      styleChanged ||
+      textChanges.width !== undefined ||
+      textChanges.height !== undefined
+    ) {
+      const syntheticElement = {
+        width,
+        height,
+        textStyle,
+        content: textNode.text,
+      } as TextElement;
+
+      this.applyTextLayout(textNode, syntheticElement);
+      this.drawBackground(backgroundNode, syntheticElement);
+
+      // textNode.updateText(true); // 移除，使用 measureText 计算
+      this.drawDecorations(decorationNode, textNode, syntheticElement);
     }
 
     console.log(`TextRenderer: 更新文本元素`, changes);
@@ -143,19 +174,9 @@ export class TextRenderer implements IElementRenderer {
    * 创建PIXI文本样式
    */
   private createTextStyle(textStyle: TextElement['textStyle']): PIXI.TextStyle {
-    const {
-      fontFamily,
-      fontSize,
-      fontWeight,
-      fontStyle,
-      textDecoration,
-      textAlign,
-      lineHeight,
-      color,
-      backgroundColor,
-    } = textStyle;
+    const { fontFamily, fontSize, fontWeight, fontStyle, textAlign, lineHeight, color } = textStyle;
 
-    const style = new PIXI.TextStyle({
+    return new PIXI.TextStyle({
       fontFamily,
       fontSize,
       fontWeight: fontWeight === 'bold' ? 'bold' : 'normal',
@@ -163,53 +184,103 @@ export class TextRenderer implements IElementRenderer {
       fill: this.parseColor(color),
       align: textAlign,
       lineHeight: fontSize * lineHeight,
+      wordWrap: true,
     });
-
-    // 处理文本装饰（下划线和删除线）
-    if (textDecoration.includes('underline')) {
-      // PIXI.TextStyle 不直接支持下划线，需要手动处理或使用其他方式
-      // 这里暂时忽略，未来可以通过自定义绘制实现
-    }
-    if (textDecoration.includes('line-through')) {
-      // 类似处理
-    }
-
-    // 设置背景色（如果有）
-    if (backgroundColor) {
-      // PIXI.Text 不直接支持背景色，需要包装在容器中
-      // 这里暂时忽略，未来可以通过Graphics背景实现
-    }
-
-    return style;
   }
 
   /**
    * 应用文本布局
    */
   private applyTextLayout(text: PIXI.Text, textElement: TextElement): void {
-    const { width, height, textStyle } = textElement;
+    const { width, textStyle } = textElement;
 
-    // 设置文本最大宽度（用于自动换行）
     text.style.wordWrap = true;
     text.style.wordWrapWidth = width;
 
-    // 根据对齐方式调整位置
+    // 重置位置
+    text.x = 0;
+    text.y = 0;
+
     switch (textStyle.textAlign) {
       case 'center':
         text.anchor.set(0.5, 0);
-        text.x += width / 2;
+        text.x = width / 2;
         break;
       case 'right':
         text.anchor.set(1, 0);
-        text.x += width;
+        text.x = width;
         break;
       default: // left
         text.anchor.set(0, 0);
+        text.x = 0;
         break;
     }
+  }
 
-    // 垂直居中（如果需要）
-    // 这里可以根据需求添加垂直对齐逻辑
+  private drawBackground(graphics: PIXI.Graphics, textElement: TextElement): void {
+    const { width, height, textStyle } = textElement;
+    graphics.clear();
+
+    if (textStyle.backgroundColor) {
+      const color = this.parseColor(textStyle.backgroundColor);
+      graphics.beginFill(color);
+      graphics.drawRect(0, 0, width, height);
+      graphics.endFill();
+    }
+  }
+
+  private drawDecorations(
+    graphics: PIXI.Graphics,
+    text: PIXI.Text,
+    textElement: TextElement,
+  ): void {
+    graphics.clear();
+    const { textStyle } = textElement;
+    const { textDecoration, color } = textStyle;
+
+    if (!textDecoration || textDecoration === 'none') return;
+
+    const metrics = CanvasTextMetrics.measureText(
+      text.text,
+      text.style,
+      undefined,
+      text.style.wordWrap,
+    );
+    const lineColor = this.parseColor(color);
+    const lineWidth = Math.max(1, textStyle.fontSize / 15); // 线条粗细
+
+    const isUnderline = textDecoration.includes('underline');
+    const isLineThrough = textDecoration.includes('line-through');
+
+    // 使用 rect + fill 替代 lineStyle，兼容性更好且更清晰
+    for (let i = 0; i < metrics.lines.length; i++) {
+      const lineWidthPx = metrics.lineWidths[i];
+      const lineHeight = metrics.lineHeight;
+
+      const lineTop = i * lineHeight;
+      const baseline = lineTop + lineHeight * 0.85; // 下划线位置
+      const middle = lineTop + lineHeight * 0.55; // 删除线位置
+
+      let lineX = 0;
+      // 根据对齐方式计算线条起始 X 坐标
+      if (textStyle.textAlign === 'center') {
+        lineX = (textElement.width - lineWidthPx) / 2;
+      } else if (textStyle.textAlign === 'right') {
+        lineX = textElement.width - lineWidthPx;
+      } else {
+        lineX = 0;
+      }
+
+      if (isUnderline) {
+        graphics.rect(lineX, baseline, lineWidthPx, lineWidth);
+      }
+
+      if (isLineThrough) {
+        graphics.rect(lineX, middle, lineWidthPx, lineWidth);
+      }
+    }
+
+    graphics.fill(lineColor);
   }
 
   /**
