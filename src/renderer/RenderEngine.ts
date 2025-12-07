@@ -22,7 +22,6 @@ import { RenderScheduler } from './scheduling/RenderScheduler';
 import { ScrollbarManager } from './ui/ScrollbarManager';
 import { ViewportController } from './viewport/ViewportController';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
-import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { useCanvasStore } from '../stores/canvas-store';
 /**
@@ -358,12 +357,27 @@ export class RenderEngine {
       let maxY = -Infinity;
 
       selectedElementIds.forEach((elementId) => {
-        const provider = new ElementProvider(elementId);
-        const b = this.geometryService.getElementBoundsWorld(provider);
-        minX = Math.min(minX, b.x);
-        minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.width);
-        maxY = Math.max(maxY, b.y + b.height);
+        // 如果元素正在编辑，跳过计算
+        if (elementId === this.editingElementId) {
+          return;
+        }
+
+        const graphics = this.elementGraphics.get(elementId);
+        if (!graphics) return;
+
+        // 使用与单选时相同的方法计算边界框：getBounds() + camera.toLocal()
+        // 这样可以确保多选和单选的边界框计算方式完全一致
+        const pixiBounds = graphics.getBounds() as unknown as PIXI.Rectangle;
+        const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
+        const br = this.camera.toLocal(
+          new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
+        );
+        const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
       });
 
       if (minX !== Infinity) {
