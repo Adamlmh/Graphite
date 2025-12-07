@@ -386,7 +386,7 @@ export class CreateInteraction {
       120, // 默认宽度
       40, // 默认高度
       {
-        content: '文本内容',
+        content: '请双击输入文本',
         textStyle: {
           fontFamily: 'Arial, sans-serif',
           fontSize: 16,
