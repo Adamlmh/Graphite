@@ -13,8 +13,6 @@ import TextEditorManager from '../ui/business/TextEditor/TextEditorManager';
 import './CanvasRenderer.less';
 import Minimap from './Minimap';
 import { historyService } from '../../services/instances';
-import { ElementFactory } from '../../services/element-factory';
-import { groupElements } from '../../services/group-service';
 /**
  * CanvasRenderer 组件
  */

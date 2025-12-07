@@ -27,28 +27,63 @@ export class SelectionManager {
    */
   public handleClick(screenPoint: Point, elements: Element[]): Element | null {
     try {
-      console.log('SelectionManager: 处理点击事件', { screenPoint, elementCount: elements.length });
+      console.log('[GROUP_DEBUG] [SelectionManager.handleClick] 处理点击事件', {
+        screenPoint,
+        elementCount: elements.length,
+      });
 
       // 将屏幕坐标转成世界坐标
       const worldPoint = this.coordinateTransformer.screenToWorld(screenPoint.x, screenPoint.y);
-      console.log('SelectionManager: 坐标转换', { screenPoint, worldPoint });
+      console.log('[GROUP_DEBUG] [SelectionManager.handleClick] 坐标转换', {
+        screenPoint,
+        worldPoint,
+        coordinateTransformer: {
+          screenToWorld: {
+            input: screenPoint,
+            output: worldPoint,
+          },
+        },
+      });
 
       // 先检测 group（优先命中整体）
-      console.log('SelectionManager: 开始检测 group');
+      console.log('[GROUP_DEBUG] [SelectionManager.handleClick] 开始检测组合元素');
       const hitGroupId = hitTestGroups(worldPoint, elements);
-      console.log('SelectionManager: group 检测结果', { hitGroupId });
+      console.log('[GROUP_DEBUG] [SelectionManager.handleClick] 组合元素检测结果', {
+        hitGroupId,
+        clickInfo: {
+          screenPoint,
+          worldPoint,
+        },
+      });
       if (hitGroupId) {
         const group = elements.find((e) => e.id === hitGroupId);
         if (group) {
-          console.log('SelectionManager: 命中 group', {
+          console.log('[GROUP_DEBUG] [SelectionManager.handleClick] ✅ 命中组合元素', {
             groupId: hitGroupId,
-            worldPoint,
-            screenPoint,
+            groupInfo: {
+              id: group.id,
+              type: group.type,
+              x: group.x,
+              y: group.y,
+              width: group.width,
+              height: group.height,
+              zIndex: group.zIndex,
+              children: isGroupElement(group) ? group.children : [],
+            },
+            clickInfo: {
+              screenPoint,
+              worldPoint,
+            },
             hitType: 'group',
           });
           return group;
         } else {
-          console.warn('SelectionManager: 找到 group ID 但找不到对应的 group 元素', hitGroupId);
+          console.warn(
+            '[GROUP_DEBUG] [SelectionManager.handleClick] ⚠️ 找到组合元素 ID 但找不到对应的元素',
+            {
+              hitGroupId,
+            },
+          );
         }
       }
 

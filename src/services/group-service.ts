@@ -250,14 +250,23 @@ export function hitTestGroups(worldPoint: Point, elements: Element[]): string | 
   // 获取所有 group 元素
   const groups = elements.filter((el): el is GroupElement => isGroupElement(el));
 
-  console.log('[hitTestGroups] 开始检测 group', {
-    worldPoint,
+  console.log('[GROUP_DEBUG] [hitTestGroups] 开始检测组合元素', {
+    clickWorldPoint: worldPoint,
     groupsCount: groups.length,
     groupIds: groups.map((g) => g.id),
+    allGroupsInfo: groups.map((g) => ({
+      id: g.id,
+      x: g.x,
+      y: g.y,
+      width: g.width,
+      height: g.height,
+      zIndex: g.zIndex,
+      children: g.children,
+    })),
   });
 
   if (groups.length === 0) {
-    console.log('[hitTestGroups] 没有 group 元素');
+    console.log('[GROUP_DEBUG] [hitTestGroups] 没有组合元素');
     return null;
   }
 
@@ -268,19 +277,29 @@ export function hitTestGroups(worldPoint: Point, elements: Element[]): string | 
   for (const group of sortedGroups) {
     // 跳过隐藏的 group
     if (group.visibility === 'hidden') {
-      console.log(`[hitTestGroups] 跳过隐藏的 group: ${group.id}`);
+      console.log(`[GROUP_DEBUG] [hitTestGroups] 跳过隐藏的组合元素: ${group.id}`);
       continue;
     }
 
     // 计算 group 的边界
     const bounds = computeGroupBounds(group.id);
-    console.log(`[hitTestGroups] 检测 group ${group.id}`, {
-      bounds,
-      worldPoint,
+    console.log(`[GROUP_DEBUG] [hitTestGroups] 检测组合元素`, {
+      groupId: group.id,
+      groupInfo: {
+        id: group.id,
+        x: group.x,
+        y: group.y,
+        width: group.width,
+        height: group.height,
+        zIndex: group.zIndex,
+        children: group.children,
+      },
+      computedBounds: bounds,
+      clickWorldPoint: worldPoint,
     });
 
     if (!bounds) {
-      console.log(`[hitTestGroups] group ${group.id} 没有边界`);
+      console.log(`[GROUP_DEBUG] [hitTestGroups] 组合元素 ${group.id} 没有边界`);
       continue;
     }
 
@@ -291,20 +310,48 @@ export function hitTestGroups(worldPoint: Point, elements: Element[]): string | 
       worldPoint.y >= bounds.y &&
       worldPoint.y <= bounds.y + bounds.height;
 
-    console.log(`[hitTestGroups] group ${group.id} 命中检测`, {
-      isInside,
+    console.log(`[GROUP_DEBUG] [hitTestGroups] 组合元素命中检测结果`, {
+      groupId: group.id,
+      isHit: isInside,
+      clickWorldPoint: worldPoint,
       bounds,
-      worldPoint,
-      checkX: `${worldPoint.x} >= ${bounds.x} && ${worldPoint.x} <= ${bounds.x + bounds.width}`,
-      checkY: `${worldPoint.y} >= ${bounds.y} && ${worldPoint.y} <= ${bounds.y + bounds.height}`,
+      hitCheck: {
+        x: {
+          point: worldPoint.x,
+          min: bounds.x,
+          max: bounds.x + bounds.width,
+          check: `${worldPoint.x} >= ${bounds.x} && ${worldPoint.x} <= ${bounds.x + bounds.width}`,
+          result: worldPoint.x >= bounds.x && worldPoint.x <= bounds.x + bounds.width,
+        },
+        y: {
+          point: worldPoint.y,
+          min: bounds.y,
+          max: bounds.y + bounds.height,
+          check: `${worldPoint.y} >= ${bounds.y} && ${worldPoint.y} <= ${bounds.y + bounds.height}`,
+          result: worldPoint.y >= bounds.y && worldPoint.y <= bounds.y + bounds.height,
+        },
+      },
     });
 
     if (isInside) {
-      console.log(`[hitTestGroups] 命中 group: ${group.id}`);
+      console.log(`[GROUP_DEBUG] [hitTestGroups] ✅ 命中组合元素`, {
+        groupId: group.id,
+        groupInfo: {
+          id: group.id,
+          x: group.x,
+          y: group.y,
+          width: group.width,
+          height: group.height,
+          zIndex: group.zIndex,
+          children: group.children,
+        },
+        bounds,
+        clickWorldPoint: worldPoint,
+      });
       return group.id;
     }
   }
 
-  console.log('[hitTestGroups] 没有命中任何 group');
+  console.log('[GROUP_DEBUG] [hitTestGroups] ❌ 没有命中任何组合元素');
   return null;
 }

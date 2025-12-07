@@ -359,8 +359,20 @@ export class RenderEngine {
         // 如果是 group，尝试使用 graphics 对象的 bounds（与普通元素一致）
         if (element && isGroupElement(element)) {
           const graphics = this.elementGraphics.get(elementId);
-          console.log(`[RenderEngine.updateSelection] group 元素 ${elementId}`, {
+          console.log(`[GROUP_DEBUG] [RenderEngine.updateSelection] 渲染组合元素选中框`, {
+            elementId,
+            elementInfo: {
+              id: element.id,
+              type: element.type,
+              x: element.x,
+              y: element.y,
+              width: element.width,
+              height: element.height,
+              zIndex: element.zIndex,
+              children: isGroupElement(element) ? element.children : [],
+            },
             hasGraphics: !!graphics,
+            graphicsPosition: graphics ? { x: graphics.x, y: graphics.y } : null,
           });
 
           if (graphics) {
@@ -369,18 +381,15 @@ export class RenderEngine {
             const groupBounds = computeGroupBounds(elementId);
 
             if (groupBounds) {
-              // 使用 groupBounds 的世界坐标，但通过 graphics 的 transform 来转换
-              // 这样可以确保选中框与 group 的位置对齐
-              const tl = this.camera.toLocal(new PIXI.Point(groupBounds.x, groupBounds.y));
-              const br = this.camera.toLocal(
-                new PIXI.Point(
-                  groupBounds.x + groupBounds.width,
-                  groupBounds.y + groupBounds.height,
-                ),
+              // 直接使用 groupBounds，不进行坐标转换（与第425行保持一致）
+              console.log(
+                `[GROUP_DEBUG] [RenderEngine.updateSelection] 有 graphics 对象，使用 bounds`,
+                {
+                  elementId,
+                  bounds: groupBounds,
+                },
               );
-              const cameraBounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
-
-              this.drawSelectionBoxForGroup(cameraBounds, elementId, true);
+              this.drawSelectionBoxForGroup(groupBounds, elementId, true);
             } else {
               // 如果没有 groupBounds，使用 graphics 的 bounds（降级方案）
               this.drawSelectionBox(graphics, elementId, true);
@@ -389,6 +398,13 @@ export class RenderEngine {
             // 如果没有 graphics 对象，使用 computeGroupBounds
             const bounds = computeGroupBounds(elementId);
             if (bounds) {
+              console.log(
+                `[GROUP_DEBUG] [RenderEngine.updateSelection] 无 graphics 对象，使用 bounds`,
+                {
+                  elementId,
+                  bounds,
+                },
+              );
               this.drawSelectionBoxForGroup(bounds, elementId, true);
             }
           }
@@ -596,9 +612,36 @@ export class RenderEngine {
     elementId: string,
     withHandles: boolean = true,
   ): void {
-    console.log(`[drawSelectionBoxForGroup] 开始绘制 group ${elementId} 的选中框`, {
+    const state = useCanvasStore.getState();
+    const element = state.elements[elementId];
+    const groupBounds = computeGroupBounds(elementId);
+
+    console.log(`[GROUP_DEBUG] [drawSelectionBoxForGroup] 开始绘制组合元素选中框`, {
+      elementId,
+      elementInfo: element
+        ? {
+            id: element.id,
+            type: element.type,
+            x: element.x,
+            y: element.y,
+            width: element.width,
+            height: element.height,
+            zIndex: element.zIndex,
+            children: isGroupElement(element) ? element.children : [],
+          }
+        : null,
+      worldBounds: groupBounds,
       cameraBounds,
       withHandles,
+      selectionBoxInfo: {
+        topLeft: { x: cameraBounds.x, y: cameraBounds.y },
+        bottomRight: {
+          x: cameraBounds.x + cameraBounds.width,
+          y: cameraBounds.y + cameraBounds.height,
+        },
+        width: cameraBounds.width,
+        height: cameraBounds.height,
+      },
     });
 
     const selectionLayer = this.layerManager.getSelectionLayer();
