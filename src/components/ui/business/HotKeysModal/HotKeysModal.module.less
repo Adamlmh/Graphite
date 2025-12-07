@@ -1,0 +1,241 @@
+.hotKeysModal {
+  :global(.ant-modal-content) {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--border-normal);
+    border-radius: 12px;
+  }
+
+  :global(.ant-modal-header) {
+    background-color: transparent;
+    border-bottom: 1px solid var(--border-normal);
+    padding: 16px 24px;
+  }
+
+  :global(.ant-modal-title) {
+    color: var(--text-primary);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  :global(.ant-modal-close) {
+    color: var(--text-secondary);
+  }
+
+  :global(.ant-modal-close:hover) {
+    color: var(--text-primary);
+  }
+
+  :global(.ant-modal-body) {
+    padding: 24px;
+    max-height: 75vh;
+    overflow-y: auto;
+  }
+}
+
+.modalTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.tabs {
+  :global(.ant-tabs-nav) {
+    margin-bottom: 16px;
+  }
+
+  :global(.ant-tabs-tab) {
+    color: var(--text-secondary);
+  }
+
+  :global(.ant-tabs-tab-active) {
+    color: var(--primary-color);
+  }
+}
+
+.filterBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 200px;
+  max-width: 400px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--btn-bg-normal);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  user-select: none;
+
+  &:hover {
+    background-color: var(--btn-bg-hover);
+  }
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.expandIcon {
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.hotKeysList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.hotKeyItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--btn-bg-normal);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  gap: 16px;
+
+  &:hover {
+    background-color: var(--btn-bg-hover);
+    transform: translateX(2px);
+  }
+}
+
+.itemLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.description {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customTag,
+.systemTag {
+  margin-left: 4px;
+}
+
+.usageInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.usageText {
+  font-size: 12px;
+}
+
+.itemRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.keys {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-normal);
+  border-radius: 4px;
+  white-space: nowrap;
+  font-family:
+    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+}
+
+.actionButton {
+  padding: 4px 8px;
+  height: auto;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.helpContent {
+  padding: 8px 0;
+
+  h3 {
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 16px 0 12px 0;
+  }
+
+  ul,
+  ol {
+    padding-left: 24px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+
+    li {
+      margin-bottom: 8px;
+    }
+  }
+}

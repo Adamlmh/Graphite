@@ -1,0 +1,28 @@
+.helpButton {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--btn-bg-normal) !important;
+  border: 1px solid var(--border-normal) !important;
+  border-radius: 8px;
+  color: var(--text-primary) !important;
+  z-index: 100;
+  transition: all 0.12s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  &:hover {
+    background-color: var(--btn-bg-hover) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  :global(.anticon) {
+    font-size: 20px;
+  }
+}
