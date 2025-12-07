@@ -9,13 +9,14 @@ import InlineTextToolbar from './InlineTextToolbar';
 import { FontSize, BackgroundColor } from './extensions';
 import { buildTiptapContent, parseTiptapContent } from '../../../../utils/tiptapConverter';
 import { calculateToolbarPosition } from '../../../../utils/toolbarPositioning';
+import { eventBus } from '../../../../lib/eventBus';
 import './RichTextEditor.less';
 
 export interface RichTextEditorProps {
   element: TextElement;
   position: { x: number; y: number }; // 屏幕坐标
   onUpdate: (content: string, richText?: RichTextSpan[]) => void;
-  onBlur: () => void;
+  onBlur: (e: React.FocusEvent) => void;
   onStyleChange?: (style: Partial<TextElement['textStyle']>) => void; // 用于局部文本样式处理
 }
 
@@ -76,10 +77,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
             visible: true,
             position: toolbarPosition,
           });
+          eventBus.emit('text-editor:selection-change', { hasSelection: true });
         }
       } else {
         console.log('[RichTextEditor] Hiding toolbar'); // 调试信息
         setSelection({ visible: false, position: { x: 0, y: 0 } });
+        eventBus.emit('text-editor:selection-change', { hasSelection: false });
       }
     }, 50); // 延迟50ms确保DOM更新
   }, []);
@@ -128,12 +131,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
       handleSelectionUpdate(editor);
       setUpdateTrigger((prev) => prev + 1);
     },
-    onBlur: () => {
+    onBlur: ({ event }) => {
       // 延迟隐藏，给用户时间点击工具栏
       setTimeout(() => {
         setSelection({ visible: false, position: { x: 0, y: 0 } });
+        eventBus.emit('text-editor:selection-change', { hasSelection: false });
       }, 150);
-      onBlur();
+      onBlur(event as unknown as React.FocusEvent);
     },
     autofocus: 'end',
   });

@@ -1,7 +1,7 @@
 import React from 'react';
 import styles from './FloatingPanel.module.less';
 
-export interface FloatingPanelProps {
+export interface FloatingPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   visible?: boolean;
   children?: React.ReactNode;
   className?: string;
@@ -15,6 +15,7 @@ const FloatingPanel: React.FC<FloatingPanelProps> = ({
   className,
   style,
   position,
+  ...rest
 }) => {
   if (!visible) {
     return null;
@@ -32,7 +33,7 @@ const FloatingPanel: React.FC<FloatingPanelProps> = ({
   const panelClass = [styles.panel, className].filter(Boolean).join(' ');
 
   return (
-    <div className={panelClass} style={panelStyle}>
+    <div className={panelClass} style={panelStyle} {...rest}>
       {children}
     </div>
   );

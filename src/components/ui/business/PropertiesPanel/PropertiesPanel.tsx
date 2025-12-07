@@ -86,6 +86,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   // 监听文本编辑状态
   const [isTextEditing, setIsTextEditing] = useState(false);
+  // 监听文本局部选择状态
+  const [isTextSelectionActive, setIsTextSelectionActive] = useState(false);
 
   useEffect(() => {
     const handleTextEditorOpen = () => {
@@ -94,14 +96,22 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
     const handleTextEditorClose = () => {
       setIsTextEditing(false);
+      setIsTextSelectionActive(false); // 关闭编辑器时重置选择状态
+    };
+
+    const handleSelectionChange = (payload: unknown) => {
+      const { hasSelection } = payload as { hasSelection: boolean };
+      setIsTextSelectionActive(hasSelection);
     };
 
     eventBus.on('text-editor:open', handleTextEditorOpen);
     eventBus.on('text-editor:close', handleTextEditorClose);
+    eventBus.on('text-editor:selection-change', handleSelectionChange);
 
     return () => {
       eventBus.off('text-editor:open', handleTextEditorOpen);
       eventBus.off('text-editor:close', handleTextEditorClose);
+      eventBus.off('text-editor:selection-change', handleSelectionChange);
     };
   }, []);
 
@@ -109,8 +119,14 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   if (elementCount === 0) {
     return null;
   }
-  // 如果正在编辑文本，隐藏属性面板
-  if (isTextEditing) {
+
+  // 如果是文本元素，且不在编辑状态，隐藏面板
+  if (shouldShowTextPanel && !isTextEditing) {
+    return null;
+  }
+
+  // 如果局部文本选择激活（显示了InlineToolbar），隐藏全局属性面板
+  if (isTextSelectionActive) {
     return null;
   }
 
@@ -125,7 +141,12 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const panelClassName = [styles['properties-panel'], className].filter(Boolean).join(' ');
 
   return (
-    <FloatingPanel visible={true} className={panelClassName} position={finalPosition!}>
+    <FloatingPanel
+      id="properties-panel-container"
+      visible={true}
+      className={panelClassName}
+      position={finalPosition!}
+    >
       {shouldShowShapePanel && (
         <ShapeProperties elements={selectedElements} onChange={handleStyleChange} />
       )}
