@@ -52,6 +52,17 @@ export class CanvasBridge {
     if (this.isRunning) return;
 
     this.subscribeToStore();
+
+    // 初始化时主动触发一次选中状态更新，确保选中框被绘制
+    // 这解决了从历史状态恢复时选中框不显示的问题
+    const initialState = this.store.getState();
+    if (initialState.selectedElementIds.length > 0) {
+      console.log('[CanvasBridge.start] 初始化时触发选中状态更新', {
+        selectedElementIds: initialState.selectedElementIds,
+      });
+      this.handleSelectionChange(initialState.selectedElementIds, []);
+    }
+
     this.isRunning = true;
   }
 
@@ -278,8 +289,20 @@ export class CanvasBridge {
    * @param prev - 之前的选中元素ID数组
    */
   protected handleSelectionChange(next: string[], prev: string[]): void {
+    const isEqual = this.arraysEqual(next, prev);
+    console.log('[CanvasBridge.handleSelectionChange] 选中状态变化', {
+      next: [...next], // 展开数组以便查看内容
+      prev: [...prev], // 展开数组以便查看内容
+      nextLength: next.length,
+      prevLength: prev.length,
+      arraysEqual: isEqual,
+      nextIds: next.join(','),
+      prevIds: prev.join(','),
+    });
+
     // 如果选中状态没有变化，直接返回
-    if (this.arraysEqual(next, prev)) {
+    if (isEqual) {
+      console.log('[CanvasBridge.handleSelectionChange] 选中状态没有变化，跳过');
       return;
     }
 
@@ -289,6 +312,8 @@ export class CanvasBridge {
       selectedElementIds: next,
       priority: RenderPriority.HIGH, // 选中状态变化需要高优先级渲染
     };
+
+    console.log('[CanvasBridge.handleSelectionChange] 生成 UPDATE_SELECTION 命令', command);
 
     // 将命令加入队列，而不是立即执行
     // 这样优先级排序才能生效，确保 CREATE_ELEMENT 在 UPDATE_SELECTION 之前执行

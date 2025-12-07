@@ -13,6 +13,8 @@ import TextEditorManager from '../ui/business/TextEditor/TextEditorManager';
 import './CanvasRenderer.less';
 import Minimap from './Minimap';
 import { historyService } from '../../services/instances';
+import { ElementFactory } from '../../services/element-factory';
+import { groupElements } from '../../services/group-service';
 /**
  * CanvasRenderer 组件
  */
@@ -85,6 +87,26 @@ const CanvasRenderer: React.FC = () => {
         console.log('CanvasRenderer: 初始化文本编辑交互系统');
         const textEditorInteraction = new TextEditorInteraction();
         textEditorInteractionRef.current = textEditorInteraction;
+
+        // 创建测试组合（用于验证命中与移动逻辑）
+        console.log('CanvasRenderer: 创建测试组合');
+        const rect1 = ElementFactory.createRectangle(100, 100, 150, 100, {
+          fill: '#ff6b6b',
+          fillOpacity: 0.8,
+        });
+        const rect2 = ElementFactory.createRectangle(200, 150, 150, 100, {
+          fill: '#4ecdc4',
+          fillOpacity: 0.8,
+        });
+
+        useCanvasStore.getState().addElement(rect1);
+        useCanvasStore.getState().addElement(rect2);
+
+        const testGroup = groupElements([rect1.id, rect2.id]);
+        console.log('CanvasRenderer: 测试组合创建成功', {
+          groupId: testGroup.id,
+          children: testGroup.children,
+        });
       } catch (error) {
         console.error('Failed to initialize RenderEngine:', error);
       }

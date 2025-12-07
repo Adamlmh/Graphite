@@ -6,6 +6,8 @@ import type { Point, Element, Guideline } from '../../types/index';
 import { type MoveState, MoveEvent } from './interactionTypes';
 import type { HistoryService } from '../HistoryService';
 import { MoveCommand } from '../command/HistoryCommand';
+import { isGroupElement } from '../../types/index';
+import { moveGroup } from '../group-service';
 
 // 定义移动事件数据接口
 interface MoveEventData {
@@ -392,9 +394,22 @@ export class MoveInteraction {
    * 基于原始位置更新元素
    */
   private updateElementsFromOriginalPositions(delta: Point): void {
+    const state = this.canvasStore.getState();
     const updates: Array<{ id: string; updates: Partial<Element> }> = [];
 
     this.state.originalPositions.forEach((originalPosition, id) => {
+      const element = state.elements[id];
+      if (!element) {
+        return;
+      }
+
+      // 如果选中的是 group，使用 moveGroup 方法
+      if (isGroupElement(element)) {
+        moveGroup(id, delta.x, delta.y);
+        return;
+      }
+
+      // 普通元素直接更新位置
       const newX = originalPosition.x + delta.x;
       const newY = originalPosition.y + delta.y;
 
@@ -419,15 +434,24 @@ export class MoveInteraction {
 
     selectedElementIds.forEach((id) => {
       const element = elements[id];
-      if (element) {
-        const newX = element.x + delta.x;
-        const newY = element.y + delta.y;
-
-        updates.push({
-          id,
-          updates: { x: newX, y: newY },
-        });
+      if (!element) {
+        return;
       }
+
+      // 如果选中的是 group，使用 moveGroup 方法
+      if (isGroupElement(element)) {
+        moveGroup(id, delta.x, delta.y);
+        return;
+      }
+
+      // 普通元素直接更新位置
+      const newX = element.x + delta.x;
+      const newY = element.y + delta.y;
+
+      updates.push({
+        id,
+        updates: { x: newX, y: newY },
+      });
     });
 
     if (updates.length > 0) {

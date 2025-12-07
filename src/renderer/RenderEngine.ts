@@ -25,6 +25,8 @@ import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { useCanvasStore } from '../stores/canvas-store';
+import { isGroupElement } from '../types/index';
+import { computeGroupBounds } from '../services/group-service';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
@@ -324,28 +326,78 @@ export class RenderEngine {
     // 清除选择层
     this.layerManager.getSelectionLayer().removeChildren();
 
+    // 检查是否有 group 元素被选中
+    const state = useCanvasStore.getState();
+
     if (selectedElementIds.length <= 1) {
       selectedElementIds.forEach((elementId) => {
-        // 如果元素正在编辑，不绘制选中框
-        if (elementId === this.editingElementId) {
-          return;
-        }
+        const element = state.elements[elementId];
+        console.log(`[RenderEngine.updateSelection] 处理元素 ${elementId}`, {
+          elementExists: !!element,
+          isGroup: element ? isGroupElement(element) : false,
+        });
 
-        const graphics = this.elementGraphics.get(elementId);
-        if (graphics) {
-          this.drawSelectionBox(graphics, elementId, true);
+        // 如果是 group，尝试使用 graphics 对象的 bounds（与普通元素一致）
+        if (element && isGroupElement(element)) {
+          const graphics = this.elementGraphics.get(elementId);
+          console.log(`[RenderEngine.updateSelection] group 元素 ${elementId}`, {
+            hasGraphics: !!graphics,
+          });
+
+          if (graphics) {
+            // 如果 group 有 graphics 对象，使用与普通元素相同的方式绘制选中框
+            // 但是需要重新计算 bounds（因为 group 的 bounds 应该基于子元素）
+            const pixiBounds = graphics.getBounds() as unknown as PIXI.Rectangle;
+            const groupBounds = computeGroupBounds(elementId);
+
+            if (groupBounds) {
+              // 使用 groupBounds 的世界坐标，但通过 graphics 的 transform 来转换
+              // 这样可以确保选中框与 group 的位置对齐
+              const tl = this.camera.toLocal(new PIXI.Point(groupBounds.x, groupBounds.y));
+              const br = this.camera.toLocal(
+                new PIXI.Point(
+                  groupBounds.x + groupBounds.width,
+                  groupBounds.y + groupBounds.height,
+                ),
+              );
+              const cameraBounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+
+              this.drawSelectionBoxForGroup(cameraBounds, elementId, true);
+            } else {
+              // 如果没有 groupBounds，使用 graphics 的 bounds（降级方案）
+              this.drawSelectionBox(graphics, elementId, true);
+            }
+          } else {
+            // 如果没有 graphics 对象，使用 computeGroupBounds
+            const bounds = computeGroupBounds(elementId);
+            if (bounds) {
+              this.drawSelectionBoxForGroup(bounds, elementId, true);
+            }
+          }
+        } else {
+          // 普通元素使用原有的逻辑
+          const graphics = this.elementGraphics.get(elementId);
+          if (graphics) {
+            this.drawSelectionBox(graphics, elementId, true);
+          }
         }
       });
     } else {
       selectedElementIds.forEach((elementId) => {
-        // 如果元素正在编辑，不绘制选中框
-        if (elementId === this.editingElementId) {
-          return;
-        }
+        const element = state.elements[elementId];
 
-        const graphics = this.elementGraphics.get(elementId);
-        if (graphics) {
-          this.drawSelectionBox(graphics, elementId, false);
+        // 如果是 group，使用 computeGroupBounds 计算边界
+        if (element && isGroupElement(element)) {
+          const bounds = computeGroupBounds(elementId);
+          if (bounds) {
+            this.drawSelectionBoxForGroup(bounds, elementId, false);
+          }
+        } else {
+          // 普通元素使用原有的逻辑
+          const graphics = this.elementGraphics.get(elementId);
+          if (graphics) {
+            this.drawSelectionBox(graphics, elementId, false);
+          }
         }
       });
     }
@@ -358,8 +410,25 @@ export class RenderEngine {
       let maxY = -Infinity;
 
       selectedElementIds.forEach((elementId) => {
-        const provider = new ElementProvider(elementId);
-        const b = this.geometryService.getElementBoundsWorld(provider);
+        const element = state.elements[elementId];
+        let b: { x: number; y: number; width: number; height: number };
+
+        // 如果是 group，使用 computeGroupBounds 计算边界
+        if (element && isGroupElement(element)) {
+          const groupBounds = computeGroupBounds(elementId);
+          if (groupBounds) {
+            b = groupBounds;
+          } else {
+            // 如果计算失败，使用元素本身的边界
+            const provider = new ElementProvider(elementId);
+            b = this.geometryService.getElementBoundsWorld(provider);
+          }
+        } else {
+          // 普通元素使用原有的逻辑
+          const provider = new ElementProvider(elementId);
+          b = this.geometryService.getElementBoundsWorld(provider);
+        }
+
         minX = Math.min(minX, b.x);
         minY = Math.min(minY, b.y);
         maxX = Math.max(maxX, b.x + b.width);
@@ -495,6 +564,169 @@ export class RenderEngine {
 
     // 调度渲染
     this.renderScheduler.scheduleRender(command.priority);
+  }
+
+  /**
+   * 为 group 元素绘制选中框
+   *
+   * @param cameraBounds group 的边界框（camera 坐标，已经转换过的）
+   * @param elementId group 元素ID
+   * @param withHandles 是否显示调整手柄
+   */
+  private drawSelectionBoxForGroup(
+    cameraBounds: { x: number; y: number; width: number; height: number },
+    elementId: string,
+    withHandles: boolean = true,
+  ): void {
+    console.log(`[drawSelectionBoxForGroup] 开始绘制 group ${elementId} 的选中框`, {
+      cameraBounds,
+      withHandles,
+    });
+
+    const selectionLayer = this.layerManager.getSelectionLayer();
+    console.log(`[drawSelectionBoxForGroup] selectionLayer:`, selectionLayer);
+
+    // 绘制虚线边框（使用转换后的坐标）
+    const dashedBox = new PIXI.Graphics();
+    dashedBox.lineStyle(2, 0x007bff, 1);
+    const dash = 8;
+    const gap = 6;
+    const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len === 0) return;
+      const ux = dx / len;
+      const uy = dy / len;
+      let pos = 0;
+      while (pos < len) {
+        const sx = x1 + ux * pos;
+        const sy = y1 + uy * pos;
+        const ex = x1 + ux * Math.min(pos + dash, len);
+        const ey = y1 + uy * Math.min(pos + dash, len);
+        dashedBox.moveTo(sx, sy);
+        dashedBox.lineTo(ex, ey);
+        pos += dash + gap;
+      }
+    };
+    // 绘制虚线边框（使用 cameraBounds，已经是 camera 坐标）
+    const x1 = cameraBounds.x;
+    const y1 = cameraBounds.y;
+    const x2 = cameraBounds.x + cameraBounds.width;
+    const y2 = cameraBounds.y + cameraBounds.height;
+
+    console.log(`[drawSelectionBoxForGroup] 绘制虚线边框`, {
+      x1,
+      y1,
+      x2,
+      y2,
+      width: cameraBounds.width,
+      height: cameraBounds.height,
+    });
+
+    drawDashed(x1, y1, x2, y1);
+    drawDashed(x2, y1, x2, y2);
+    drawDashed(x2, y2, x1, y2);
+    drawDashed(x1, y2, x1, y1);
+    dashedBox.stroke();
+    dashedBox.interactive = false;
+    dashedBox.interactiveChildren = false;
+    selectionLayer.addChild(dashedBox);
+    console.log(
+      `[drawSelectionBoxForGroup] 添加虚线边框到 selectionLayer，children count:`,
+      selectionLayer.children.length,
+      `dashedBox bounds:`,
+      dashedBox.getBounds(),
+    );
+
+    // 绘制高亮填充（使用转换后的坐标）
+    const highlightBox = new PIXI.Graphics();
+    highlightBox.beginFill(0x3b82f6, 0.06);
+    highlightBox.drawRect(cameraBounds.x, cameraBounds.y, cameraBounds.width, cameraBounds.height);
+    highlightBox.endFill();
+    highlightBox.interactive = false;
+    highlightBox.interactiveChildren = false;
+    selectionLayer.addChild(highlightBox);
+    console.log(
+      `[drawSelectionBoxForGroup] 添加高亮填充到 selectionLayer，children count:`,
+      selectionLayer.children.length,
+      `highlightBox bounds:`,
+      highlightBox.getBounds(),
+      `selectionLayer position:`,
+      selectionLayer.position,
+      `selectionLayer visible:`,
+      selectionLayer.visible,
+    );
+
+    // 如果需要显示调整手柄
+    if (withHandles) {
+      const handleSize = 8;
+      const handleColor = 0xffffff;
+      const handleBorderColor = 0x007bff;
+
+      const handlePositions = [
+        { x: cameraBounds.x, y: cameraBounds.y },
+        { x: cameraBounds.x + cameraBounds.width / 2, y: cameraBounds.y },
+        { x: cameraBounds.x + cameraBounds.width, y: cameraBounds.y },
+        { x: cameraBounds.x + cameraBounds.width, y: cameraBounds.y + cameraBounds.height / 2 },
+        { x: cameraBounds.x + cameraBounds.width, y: cameraBounds.y + cameraBounds.height },
+        { x: cameraBounds.x + cameraBounds.width / 2, y: cameraBounds.y + cameraBounds.height },
+        { x: cameraBounds.x, y: cameraBounds.y + cameraBounds.height },
+        { x: cameraBounds.x, y: cameraBounds.y + cameraBounds.height / 2 },
+      ];
+
+      const handleTypes = [
+        'top-left',
+        'top',
+        'top-right',
+        'right',
+        'bottom-right',
+        'bottom',
+        'bottom-left',
+        'left',
+      ];
+
+      const handleCursors = [
+        'nwse-resize', // top-left
+        'ns-resize', // top
+        'nesw-resize', // top-right
+        'ew-resize', // right
+        'nwse-resize', // bottom-right
+        'ns-resize', // bottom
+        'nesw-resize', // bottom-left
+        'ew-resize', // left
+      ];
+
+      handlePositions.forEach((pos, index) => {
+        const handle = new PIXI.Graphics();
+        handle.beginFill(handleColor);
+        handle.lineStyle(1, handleBorderColor, 1);
+        handle.circle(0, 0, handleSize / 2);
+        handle.endFill();
+        handle.position.set(pos.x, pos.y);
+        handle.interactive = true;
+        handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
+        handle.cursor = handleCursors[index];
+        handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+          event.stopPropagation();
+          const screenX = event.clientX;
+          const screenY = event.clientY;
+          const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+          eventBus.emit('resize-start', {
+            elementId,
+            handleType: handleTypes[index],
+            worldPoint,
+            screenX,
+            screenY,
+            nativeEvent: event,
+          });
+        });
+        selectionLayer.addChild(handle);
+      });
+
+      // 旋转手柄（group 不支持旋转，但为了保持一致性可以添加）
+      // 暂时不添加旋转手柄，因为 MVP 不支持 group 的旋转
+    }
   }
 
   /**

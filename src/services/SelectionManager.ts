@@ -2,6 +2,8 @@ import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import type { Element, Point } from '../types';
+import { isGroupElement } from '../types';
+import { hitTestGroups, computeGroupBounds } from './group-service';
 
 /**
  * 选择管理器 - 处理画布点击事件和元素选择逻辑
@@ -31,6 +33,25 @@ export class SelectionManager {
       const worldPoint = this.coordinateTransformer.screenToWorld(screenPoint.x, screenPoint.y);
       console.log('SelectionManager: 坐标转换', { screenPoint, worldPoint });
 
+      // 先检测 group（优先命中整体）
+      console.log('SelectionManager: 开始检测 group');
+      const hitGroupId = hitTestGroups(worldPoint, elements);
+      console.log('SelectionManager: group 检测结果', { hitGroupId });
+      if (hitGroupId) {
+        const group = elements.find((e) => e.id === hitGroupId);
+        if (group) {
+          console.log('SelectionManager: 命中 group', {
+            groupId: hitGroupId,
+            worldPoint,
+            screenPoint,
+            hitType: 'group',
+          });
+          return group;
+        } else {
+          console.warn('SelectionManager: 找到 group ID 但找不到对应的 group 元素', hitGroupId);
+        }
+      }
+
       // 按 zIndex 从高到低排序，优先检测上层元素
       const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
       console.log(
@@ -38,10 +59,15 @@ export class SelectionManager {
         sortedElements.map((e) => ({ id: e.id, x: e.x, y: e.y, width: e.width, height: e.height })),
       );
 
-      // 遍历所有元素，找到第一个被点击的元素
+      // 遍历所有元素，找到第一个被点击的元素（跳过 group 和 group 的子元素，因为已经检测过了）
       for (const element of sortedElements) {
-        // 跳过隐藏的元素
-        if (element.visibility === 'hidden') {
+        // 跳过隐藏的元素、group（group 已经在上面检测过了）和 group 的子元素
+        // 使用 != null 可以同时检查 null 和 undefined
+        if (
+          element.visibility === 'hidden' ||
+          isGroupElement(element) ||
+          element.parentId != null
+        ) {
           continue;
         }
 
@@ -60,7 +86,12 @@ export class SelectionManager {
         });
 
         if (isHit) {
-          console.log('SelectionManager: 找到被点击的元素', element.id);
+          console.log('SelectionManager: 找到被点击的元素', {
+            elementId: element.id,
+            worldPoint,
+            screenPoint,
+            hitType: 'element',
+          });
           return element;
         }
       }
