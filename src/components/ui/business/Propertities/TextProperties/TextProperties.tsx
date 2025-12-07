@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Slider, Button, Tooltip, Popover } from 'antd';
+import { Slider, Button, Tooltip, Popover, Select } from 'antd';
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -38,7 +38,23 @@ type TextStylePatch = {
   textDecoration?: string;
   color?: string;
   backgroundColor?: string;
+  fontFamily?: string;
 };
+
+// 常用字体列表
+const FONT_FAMILIES = [
+  { label: '默认字体', value: 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif' },
+  { label: '宋体', value: 'SimSun, STSong, serif' },
+  { label: '黑体', value: 'SimHei, STHeiti, sans-serif' },
+  { label: '微软雅黑', value: 'Microsoft YaHei, sans-serif' },
+  { label: '楷体', value: 'KaiTi, STKaiti, serif' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Times New Roman', value: 'Times New Roman, serif' },
+  { label: 'Courier New', value: 'Courier New, monospace' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+];
+
 const computeDecoration = (current: string | undefined, target: 'underline' | 'line-through') => {
   if (!current || current === 'none') {
     return target;
@@ -124,7 +140,8 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         patch.fontStyle ||
         patch.textDecoration ||
         patch.color ||
-        patch.backgroundColor
+        patch.backgroundColor ||
+        patch.fontFamily
       ) {
         updates.textStyle = {
           ...el.textStyle,
@@ -150,6 +167,9 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         }
         if (patch.backgroundColor !== undefined) {
           updates.textStyle.backgroundColor = patch.backgroundColor;
+        }
+        if (patch.fontFamily !== undefined) {
+          updates.textStyle.fontFamily = patch.fontFamily;
         }
       }
 
@@ -182,6 +202,10 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
     | 'normal'
     | 'italic';
   const decoration = textPatch.textDecoration ?? currentTextStyle?.textDecoration ?? 'none';
+  const fontFamily =
+    textPatch.fontFamily ??
+    currentTextStyle?.fontFamily ??
+    'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif';
 
   // 更新样式的方法
   const updateTextStyle = (patch: Partial<TextStylePatch>) => {
@@ -216,6 +240,18 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
 
   return (
     <div className={styles.toolbar}>
+      {/* 字体选择 */}
+      <Select
+        value={fontFamily}
+        onChange={(value) => updateTextStyle({ fontFamily: value })}
+        style={{ width: 140 }}
+        size="small"
+        options={FONT_FAMILIES}
+        className={styles.fontSelect}
+        popupMatchSelectWidth={false}
+        placement="bottomLeft"
+      />
+
       <Popover
         content={fontSizeSlider}
         trigger="hover"

@@ -12,6 +12,7 @@ export interface TiptapNode {
       color?: string;
       backgroundColor?: string;
       fontSize?: string;
+      fontFamily?: string;
     };
   }>;
   content?: TiptapNode[];
@@ -85,6 +86,9 @@ export const buildTiptapContent = (text: string, richTextSpans?: RichTextSpan[])
     }
     if (style.fontSize) {
       textStyleAttrs.fontSize = `${style.fontSize}px`;
+    }
+    if (style.fontFamily) {
+      textStyleAttrs.fontFamily = style.fontFamily;
     }
 
     if (Object.keys(textStyleAttrs).length > 0) {
@@ -171,6 +175,9 @@ export const parseTiptapContent = (
             }
             if (mark.attrs.fontSize) {
               style.fontSize = parseInt(mark.attrs.fontSize);
+            }
+            if (mark.attrs.fontFamily) {
+              style.fontFamily = mark.attrs.fontFamily;
             }
           }
         });

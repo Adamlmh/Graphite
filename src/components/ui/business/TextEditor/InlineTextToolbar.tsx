@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Button, Tooltip, ColorPicker, Slider, Popover } from 'antd';
+import { Button, Tooltip, ColorPicker, Slider, Popover, Select } from 'antd';
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -17,6 +17,20 @@ export interface InlineTextToolbarProps {
   position: { x: number; y: number };
   updateTrigger?: number; // 用于强制刷新组件的触发器
 }
+
+// 常用字体列表
+const FONT_FAMILIES = [
+  { label: '默认字体', value: 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif' },
+  { label: '宋体', value: 'SimSun, STSong, serif' },
+  { label: '黑体', value: 'SimHei, STHeiti, sans-serif' },
+  { label: '微软雅黑', value: 'Microsoft YaHei, sans-serif' },
+  { label: '楷体', value: 'KaiTi, STKaiti, serif' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Times New Roman', value: 'Times New Roman, serif' },
+  { label: 'Courier New', value: 'Courier New, monospace' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+];
 
 /**
  * 行内文本工具栏
@@ -48,6 +62,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         textColor: '#000000',
         backgroundColor: undefined,
         fontSize: 16,
+        fontFamily: 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif',
       };
     }
     const attrs = editor.getAttributes('textStyle');
@@ -67,8 +82,9 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
       textColor: attrs.color || '#000000',
       backgroundColor: attrs.backgroundColor,
       fontSize: parseInt(attrs.fontSize || '16', 10),
+      fontFamily: attrs.fontFamily || 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif',
     };
-    // updateTrigger 是必需的，用于触发重新计算
+    // updateTrigger 是必需的,用于触发重新计算
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, visible, updateTrigger]);
 
@@ -129,6 +145,13 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
     editor.chain().focus().setFontSize(`${fontSize}px`).run();
   };
 
+  // 修改字体
+  const handleFontFamilyChange = (fontFamily: string) => {
+    if (!editor) return;
+    console.log('[InlineTextToolbar] Changing font family to:', fontFamily);
+    editor.chain().focus().setFontFamily(fontFamily).run();
+  };
+
   if (!visible) {
     return null;
   }
@@ -145,16 +168,40 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         alignItems: 'flex-start',
       }}
       className="inline-text-toolbar-container"
+      data-toolbar="inline-text"
       onMouseDown={(e) => {
         // 阻止失焦事件，保证点击工具栏时选区不丢失
         e.preventDefault();
       }}
     >
       <div className={styles.toolbar}>
+        {/* 字体选择 */}
+        <Select
+          value={textStyles.fontFamily}
+          onChange={handleFontFamilyChange}
+          style={{ width: 140 }}
+          size="small"
+          options={FONT_FAMILIES}
+          className={styles.fontSelect}
+          popupMatchSelectWidth={false}
+          placement="bottomLeft"
+          getPopupContainer={() => document.body}
+          dropdownStyle={{ zIndex: 10001 }}
+          onDropdownVisibleChange={(open) => {
+            console.log('[InlineTextToolbar] Font select dropdown visible:', open);
+          }}
+        />
+
         {/* 字体大小调节 */}
         <Popover
           content={
-            <div className={styles.sliderPopover}>
+            <div
+              className={styles.sliderPopover}
+              onMouseDown={(e) => {
+                // 防止 Popover 内容触发编辑器失焦
+                e.stopPropagation();
+              }}
+            >
               <Slider
                 min={10}
                 max={72}
@@ -167,9 +214,14 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             </div>
           }
           trigger="hover"
-          placement="top"
+          placement="bottom"
           mouseEnterDelay={0.1}
           mouseLeaveDelay={0.2}
+          getPopupContainer={() => document.body}
+          overlayStyle={{ zIndex: 10001 }}
+          onOpenChange={(visible) => {
+            console.log('[InlineTextToolbar] Font size popover visible:', visible);
+          }}
         >
           <Tooltip title="字号" placement="bottom" mouseEnterDelay={0.3}>
             <Button className={styles.toolButton} icon={<FontSizeOutlined />} />
@@ -184,6 +236,8 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             value={textStyles.textColor}
             onChange={(_, hex) => handleTextColorChange(hex)}
             className={styles.colorPicker}
+            getPopupContainer={() => document.body}
+            panelRender={(panel) => <div style={{ zIndex: 10001 }}>{panel}</div>}
           >
             <Button
               className={styles.colorButton}
@@ -202,6 +256,8 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             value={textStyles.backgroundColor || '#ffffff'}
             onChange={(_, hex) => handleBackgroundColorChange(hex)}
             className={styles.colorPicker}
+            getPopupContainer={() => document.body}
+            panelRender={(panel) => <div style={{ zIndex: 10001 }}>{panel}</div>}
           >
             <Button
               className={styles.colorButton}

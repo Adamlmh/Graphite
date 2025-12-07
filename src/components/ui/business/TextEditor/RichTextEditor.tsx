@@ -6,7 +6,7 @@ import { Color } from '@tiptap/extension-color';
 import { Underline } from '@tiptap/extension-underline';
 import type { TextElement, RichTextSpan } from '../../../../types';
 import InlineTextToolbar from './InlineTextToolbar';
-import { FontSize, BackgroundColor } from './extensions';
+import { FontSize, BackgroundColor, FontFamily } from './extensions';
 import { buildTiptapContent, parseTiptapContent } from '../../../../utils/tiptapConverter';
 import { calculateToolbarPosition } from '../../../../utils/toolbarPositioning';
 import { eventBus } from '../../../../lib/eventBus';
@@ -100,6 +100,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
       Underline,
       FontSize,
       BackgroundColor,
+      FontFamily,
     ],
     content: initialContent,
     editorProps: {
@@ -132,12 +133,48 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
       setUpdateTrigger((prev) => prev + 1);
     },
     onBlur: ({ event }) => {
-      // 延迟隐藏，给用户时间点击工具栏
+      const nativeEvent = event as unknown as FocusEvent;
+      const relatedTarget = nativeEvent.relatedTarget as HTMLElement | null;
+
+      console.log('[RichTextEditor] onBlur triggered, relatedTarget:', relatedTarget);
+
+      // 检查失焦目标是否在工具栏内或是 Ant Design 的弹出层
+      const isClickingToolbar =
+        relatedTarget &&
+        // 检查是否点击了工具栏容器
+        (relatedTarget.closest('[data-toolbar="inline-text"]') ||
+          // 检查是否点击了 Ant Design 的下拉菜单
+          relatedTarget.closest('.ant-select-dropdown') ||
+          // 检查是否点击了 ColorPicker 的面板
+          relatedTarget.closest('.ant-popover') ||
+          // 检查是否点击了 Popover 内容
+          relatedTarget.closest('.ant-popover-inner'));
+
+      if (isClickingToolbar) {
+        console.log('[RichTextEditor] Clicking toolbar, maintaining selection');
+        return; // 不关闭工具栏
+      }
+
+      // 延迟隐藏，给用户时间点击工具栏（防止某些情况下 relatedTarget 为 null）
       setTimeout(() => {
+        // 双重检查：如果当前焦点在工具栏内，不关闭
+        const activeElement = document.activeElement as HTMLElement;
+        if (
+          activeElement &&
+          (activeElement.closest('[data-toolbar="inline-text"]') ||
+            activeElement.closest('.ant-select-dropdown') ||
+            activeElement.closest('.ant-popover'))
+        ) {
+          console.log('[RichTextEditor] Active element in toolbar, maintaining selection');
+          return;
+        }
+
+        console.log('[RichTextEditor] Hiding toolbar');
         setSelection({ visible: false, position: { x: 0, y: 0 } });
         eventBus.emit('text-editor:selection-change', { hasSelection: false });
-      }, 150);
-      onBlur(event as unknown as React.FocusEvent);
+      }, 300); // 增加延迟时间到 300ms
+
+      onBlur(nativeEvent as unknown as React.FocusEvent);
     },
     autofocus: 'end',
   });
