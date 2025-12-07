@@ -55,6 +55,12 @@ export class RenderEngine {
   // 预览元素相关
   private previewGraphics: PIXI.Container | null = null;
 
+  // 当前正在编辑的元素ID
+  private editingElementId: string | null = null;
+
+  // 当前选中的元素ID列表
+  private currentSelectedElementIds: string[] = [];
+
   private container: HTMLElement;
   private viewportInteraction!: ViewportInteraction;
   // private coordinateTransformer: CoordinateTransformer | null = null;
@@ -313,12 +319,18 @@ export class RenderEngine {
    */
   private updateSelection(command: UpdateSelectionCommand): void {
     const { selectedElementIds } = command;
+    this.currentSelectedElementIds = selectedElementIds;
 
     // 清除选择层
     this.layerManager.getSelectionLayer().removeChildren();
 
     if (selectedElementIds.length <= 1) {
       selectedElementIds.forEach((elementId) => {
+        // 如果元素正在编辑，不绘制选中框
+        if (elementId === this.editingElementId) {
+          return;
+        }
+
         const graphics = this.elementGraphics.get(elementId);
         if (graphics) {
           this.drawSelectionBox(graphics, elementId, true);
@@ -326,6 +338,11 @@ export class RenderEngine {
       });
     } else {
       selectedElementIds.forEach((elementId) => {
+        // 如果元素正在编辑，不绘制选中框
+        if (elementId === this.editingElementId) {
+          return;
+        }
+
         const graphics = this.elementGraphics.get(elementId);
         if (graphics) {
           this.drawSelectionBox(graphics, elementId, false);
@@ -813,6 +830,21 @@ export class RenderEngine {
       graphics.alpha = visible ? 1 : 0;
       this.renderScheduler.scheduleRender(RenderPriority.HIGH);
     }
+  }
+
+  /**
+   * 设置当前正在编辑的元素ID
+   * 编辑状态下，该元素不会显示选中框
+   */
+  setEditingElement(elementId: string | null): void {
+    this.editingElementId = elementId;
+
+    // 触发重新渲染选中状态
+    this.updateSelection({
+      type: 'UPDATE_SELECTION',
+      selectedElementIds: this.currentSelectedElementIds,
+      priority: RenderPriority.HIGH,
+    });
   }
 
   isElementVisible(elementId: string): boolean {
