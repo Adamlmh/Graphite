@@ -13,7 +13,7 @@ interface Size {
 }
 
 /** 边界框，用于碰撞检测和空间计算（不存储，实时计算） */
-interface Bounds {
+export interface Bounds {
   x: number; // 左上角X坐标
   y: number; // 左上角Y坐标
   width: number; // 边界框宽度
@@ -72,7 +72,7 @@ export interface TextStyle {
 }
 
 /** 富文本片段 - 对应【P0】局部文本样式挑战需求 */
-interface RichTextSpan {
+export interface RichTextSpan {
   start: number; // 起始位置
   end: number; // 结束位置
   style: Partial<TextStyle>; // 局部样式覆盖

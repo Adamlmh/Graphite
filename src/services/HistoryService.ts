@@ -148,12 +148,32 @@ export class HistoryService {
     ) => void;
   }) {
     this.store = store;
-    this.setupAutoSave();
+    // 初始化时先禁用自动保存
+    this.autoSaveEnabled = false;
     this.setupPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
     // 初始化 IndexedDB
-    this.initIndexedDB().catch(console.error);
+    this.initIndexedDB()
+      .then(() => {
+        // 关键：初始化完成后立刻加载
+        return this.loadFromStorage();
+      })
+      .then(() => {
+        // 加载完快照后，恢复到最新状态
+        if (this.snapshots.length > 0) {
+          const latest = this.snapshots[this.snapshots.length - 1];
+          return this.restoreSnapshot(latest.id); // 不抛错，让页面能继续用
+        }
+      })
+      .then(() => {
+        this.autoSaveEnabled = true; // 恢复完成后再启用
+        this.setupAutoSave();
+      })
+      .catch((e) => {
+        console.warn('[HistoryService] 未能从持久化存储恢复', e);
+        // 可以在这里给一个“新建空白画布”的默认状态
+      });
   }
   // 自动保存相关
   private autoSaveTimeout: number | null = null;
@@ -189,6 +209,7 @@ export class HistoryService {
     storageBackend: 'indexeddb' as 'indexeddb' | 'localstorage', // 存储后端选择
     maxDBRecords: 1000, // 最大存储记录数
     autoSaveToDB: true, // 是否自动保存到数据库
+    maxDBAge: 30 * 24 * 60 * 60 * 1000, // 默认保留30天
   };
 
   /**
@@ -334,8 +355,24 @@ export class HistoryService {
           snapshots.push(cursor.value as Snapshot);
           cursor.continue();
         } else {
-          // 按时间戳排序并恢复
-          this.restoreFromSnapshots(snapshots).then(resolve).catch(reject);
+          // 修复：直接处理快照，不再调用 restoreFromSnapshots（避免循环）
+          if (snapshots.length === 0) {
+            console.log('📊 IndexedDB 中无快照数据');
+            this.snapshots = [];
+            resolve();
+            return;
+          }
+
+          // 按时间戳排序
+          snapshots.sort((a, b) => a.timestamp - b.timestamp);
+
+          // 修复：添加空值检查
+          const lastFullSnapshotIndex = Math.max(snapshots.length - this.config.maxSnapshots, 0);
+
+          // 保留最新的快照
+          this.snapshots = snapshots.slice(lastFullSnapshotIndex);
+          console.log('📦 从 IndexedDB 加载的快照数量:', this.snapshots.length);
+          resolve();
         }
       };
 
@@ -400,21 +437,18 @@ export class HistoryService {
     const store = transaction.objectStore('snapshots');
     const index = store.index('timestamp');
 
-    const request = index.openCursor();
-    const recordsToDelete: string[] = [];
-    let count = 0;
+    // 设置默认值，比如默认保留30天
+    const maxDBAge = this.config.maxDBAge || 30 * 24 * 60 * 60 * 1000;
+    const cutoffTime = Date.now() - maxDBAge;
+
+    const range = IDBKeyRange.upperBound(cutoffTime);
+    const request = index.openCursor(range);
 
     request.onsuccess = () => {
       const cursor = request.result;
       if (cursor) {
-        count++;
-        if (count > this.config.maxDBRecords) {
-          recordsToDelete.push(cursor.primaryKey as string);
-        }
+        store.delete(cursor.primaryKey);
         cursor.continue();
-      } else {
-        // 删除旧记录
-        recordsToDelete.forEach((id) => store.delete(id));
       }
     };
   }
@@ -423,17 +457,27 @@ export class HistoryService {
    * 从快照数组恢复
    */
   private async restoreFromSnapshots(snapshots: Snapshot[]): Promise<void> {
-    if (snapshots.length === 0) return;
+    if (snapshots.length === 0) {
+      console.log('restoreFromSnapshots: 传入快照为空');
+      return;
+    }
 
     // 按时间戳排序
     snapshots.sort((a, b) => a.timestamp - b.timestamp);
 
     // 恢复到最新的快照
     const latestSnapshot = snapshots[snapshots.length - 1];
-    await this.restoreSnapshot(latestSnapshot.id);
+    try {
+      await this.restoreSnapshot(latestSnapshot.id);
+    } catch (error) {
+      console.warn('恢复最新快照失败，使用默认状态:', error);
+    }
 
-    this.snapshots = snapshots;
-    console.log(`Loaded ${snapshots.length} snapshots from storage`);
+    // 保留最新的快照
+    const lastFullSnapshotIndex = Math.max(snapshots.length - this.config.maxSnapshots, 0);
+
+    this.snapshots = snapshots.slice(lastFullSnapshotIndex);
+    console.log('📦 最终保留的快照数量:', this.snapshots.length);
   }
 
   /**
@@ -449,7 +493,7 @@ export class HistoryService {
         previousState = currentState;
         this.scheduleAutoSave();
       }
-    }, 1000); // 每秒检查一次
+    }, 3000); // 每3秒检查一次
 
     // 设置定时保存
     setInterval(() => {
@@ -479,12 +523,13 @@ export class HistoryService {
       const currentObj = JSON.parse(current) as CanvasState;
       const previousObj = JSON.parse(previous) as CanvasState;
 
-      // 检查元素变化
+      // 1. 检查元素变化
       if (JSON.stringify(currentObj.elements) !== JSON.stringify(previousObj.elements)) {
         return true;
       }
 
-      // 检查视口变化
+      // 2. 检查视口变化
+      /*
       if (
         currentObj.viewport.zoom !== previousObj.viewport.zoom ||
         currentObj.viewport.offset.x !== previousObj.viewport.offset.x ||
@@ -492,12 +537,22 @@ export class HistoryService {
       ) {
         return true;
       }
+       */
 
-      // 检查选择变化
+      if (currentObj.viewport.zoom !== previousObj.viewport.zoom) {
+        return true;
+      }
+
+      // 3. 检查选择变化
       if (
         JSON.stringify(currentObj.selectedElementIds) !==
         JSON.stringify(previousObj.selectedElementIds)
       ) {
+        return true;
+      }
+
+      // 4. 检查工具状态变化（关键变更）
+      if (currentObj.tool.activeTool !== previousObj.tool.activeTool) {
         return true;
       }
 
@@ -595,8 +650,10 @@ export class HistoryService {
       lastModified: Date.now(),
     };
 
+    console.log('Loaded persistableState:', persistableState);
     const jsonString = JSON.stringify(persistableState);
     const compressedData = this.config.compressionEnabled ? compress(jsonString) : jsonString;
+    //console.log(`Loaded compressedData: ${compressedData}`);
 
     // 更新性能指标
     const endTime = performance.now();
@@ -732,6 +789,8 @@ export class HistoryService {
    * 创建快照
    */
   async createSnapshot(isFullSnapshot: boolean = false): Promise<Snapshot> {
+    //console.log(`CutCommand: 重做剪切命令，重新剪切 ${this.elements.length} 个元素`);
+    console.log('尝试创建快照');
     if (this.saveStatus === SaveStatus.SAVING) {
       throw new Error('Another save operation is in progress');
     }
@@ -740,8 +799,9 @@ export class HistoryService {
 
     try {
       const currentState = this.store.getState();
+      // 异步执行序列化与存储
+      await new Promise((resolve) => requestIdleCallback(resolve));
       const snapshotData = this.serializeStateForPersistence(currentState);
-
       const snapshot: Snapshot = {
         id: uuidv4(),
         timestamp: Date.now(),
@@ -761,6 +821,7 @@ export class HistoryService {
       // 保存到持久化存储
       if (this.config.autoSaveToDB) {
         await this.saveSnapshotToDB(snapshot);
+        console.log('保存到持久化存储');
       }
 
       // 清理旧的快照
@@ -810,33 +871,44 @@ export class HistoryService {
    * 恢复到指定快照
    */
   async restoreSnapshot(snapshotId: string): Promise<void> {
-    // 首先尝试从内存加载
-    let snapshot = this.snapshots.find((s) => s.id === snapshotId);
+    this.autoSaveEnabled = false; // 临时禁用自动保存
 
-    // 如果内存中没有，尝试从持久化存储加载
-    if (!snapshot && this.isDBReady) {
-      await this.loadFromStorage();
-      snapshot = this.snapshots.find((s) => s.id === snapshotId);
-    }
+    // 只从内存中查找快照，不再调用 loadFromStorage（避免循环）
+    const snapshot = this.snapshots.find((s) => s.id === snapshotId);
 
     if (!snapshot) {
-      throw new Error(`Snapshot ${snapshotId} not found`);
+      console.warn(`快照 ${snapshotId} 未在内存中找到`);
+      this.autoSaveEnabled = true;
+      return;
     }
 
     try {
       const stateData = this.deserializeStateFromPersistence(snapshot.data) as Partial<CanvasState>;
-      this.store.setState((prevState: CanvasState) => {
-        return {
-          ...prevState,
-          ...stateData,
-        };
+      console.log('恢复历史数据：', stateData);
+
+      const currentState = this.store.getState();
+      console.log('📝 恢复前的状态:', {
+        elementsCount: Object.keys(currentState.elements || {}).length,
+        currentVersion: this.currentVersion,
       });
 
       this.currentVersion = snapshot.version;
+      this.store.setState(stateData);
+
+      // 延迟检查新状态
+      setTimeout(() => {
+        const newState = this.store.getState();
+        console.log('✅ 延迟检查新状态:', {
+          elementsCount: Object.keys(newState.elements || {}).length,
+          newVersion: snapshot.version,
+          stateKeys: Object.keys(newState),
+        });
+      }, 100);
     } catch (error) {
-      // 尝试从最近的快照恢复
-      await this.tryRecoveryFromBackup(error as Error);
-      throw error;
+      console.error('恢复快照失败:', error);
+      // 不再尝试从备份恢复（避免进一步循环）
+    } finally {
+      this.autoSaveEnabled = true;
     }
   }
 
@@ -1239,13 +1311,46 @@ export class HistoryService {
   }
 
   /**
-   * 清理历史记录
+   * 删除所有持久化存储的数据
    */
-  clearHistory(): void {
-    this.undoStack = [];
-    this.redoStack = [];
-    this.snapshots = [];
-    this.currentVersion = 0;
+  async clearHistory(): Promise<void> {
+    try {
+      // 清空内存中的快照
+      this.snapshots = [];
+      this.undoStack = [];
+      this.redoStack = [];
+      this.currentVersion = 0;
+
+      // 清空 IndexedDB
+      if (this.isDBReady && this.config.storageBackend === 'indexeddb' && this.db) {
+        const transaction = this.db.transaction(['snapshots'], 'readwrite');
+        const store = transaction.objectStore('snapshots');
+        await store.clear();
+        console.log('IndexedDB storage cleared');
+      }
+
+      // 清空 localStorage
+      if (this.config.storageBackend === 'localstorage') {
+        const index = JSON.parse(localStorage.getItem('canvas-snapshots-index') || '[]');
+        index.forEach((item: { id: string }) => {
+          localStorage.removeItem(`canvas-snapshot-${item.id}`);
+        });
+        localStorage.removeItem('canvas-snapshots-index');
+        console.log('localStorage cleared');
+      }
+
+      // 重置状态
+      this.lastSaveTime = 0;
+      this.saveStatus = SaveStatus.IDLE;
+      this.saveError = null;
+      this.lastSavedVersion = 0;
+      this.hasUnsavedChanges = false;
+
+      console.log('All persistent storage cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear persistent storage:', error);
+      throw error;
+    }
   }
 
   /**

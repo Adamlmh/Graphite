@@ -1,7 +1,7 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
 import { eventBus } from '../lib/eventBus';
-import type { CanvasEvent } from '../lib/EventBridge';
+// import type { CanvasEvent } from '../lib/EventBridge';
 import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
 import type { Element, ElementType, ViewportState } from '../types';
 import {
@@ -22,7 +22,8 @@ import { RenderScheduler } from './scheduling/RenderScheduler';
 import { ScrollbarManager } from './ui/ScrollbarManager';
 import { ViewportController } from './viewport/ViewportController';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
-import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
+import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
+import { useCanvasStore } from '../stores/canvas-store';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
@@ -53,8 +54,16 @@ export class RenderEngine {
   // 预览元素相关
   private previewGraphics: PIXI.Container | null = null;
 
+  // 当前正在编辑的元素ID
+  private editingElementId: string | null = null;
+
+  // 当前选中的元素ID列表
+  private currentSelectedElementIds: string[] = [];
+
   private container: HTMLElement;
   private viewportInteraction!: ViewportInteraction;
+  // private coordinateTransformer: CoordinateTransformer | null = null;
+  private coordinateTransformer!: CoordinateTransformer;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -115,6 +124,7 @@ export class RenderEngine {
     // 初始化视口交互
     this.viewportInteraction = new ViewportInteraction(this.container);
     this.viewportInteraction.init();
+    this.coordinateTransformer = new CoordinateTransformer();
   }
 
   /**
@@ -308,12 +318,18 @@ export class RenderEngine {
    */
   private updateSelection(command: UpdateSelectionCommand): void {
     const { selectedElementIds } = command;
+    this.currentSelectedElementIds = selectedElementIds;
 
     // 清除选择层
     this.layerManager.getSelectionLayer().removeChildren();
 
     if (selectedElementIds.length <= 1) {
       selectedElementIds.forEach((elementId) => {
+        // 如果元素正在编辑，不绘制选中框
+        if (elementId === this.editingElementId) {
+          return;
+        }
+
         const graphics = this.elementGraphics.get(elementId);
         if (graphics) {
           this.drawSelectionBox(graphics, elementId, true);
@@ -321,6 +337,11 @@ export class RenderEngine {
       });
     } else {
       selectedElementIds.forEach((elementId) => {
+        // 如果元素正在编辑，不绘制选中框
+        if (elementId === this.editingElementId) {
+          return;
+        }
+
         const graphics = this.elementGraphics.get(elementId);
         if (graphics) {
           this.drawSelectionBox(graphics, elementId, false);
@@ -336,12 +357,27 @@ export class RenderEngine {
       let maxY = -Infinity;
 
       selectedElementIds.forEach((elementId) => {
-        const provider = new ElementProvider(elementId);
-        const b = this.geometryService.getElementBoundsWorld(provider);
-        minX = Math.min(minX, b.x);
-        minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.width);
-        maxY = Math.max(maxY, b.y + b.height);
+        // 如果元素正在编辑，跳过计算
+        if (elementId === this.editingElementId) {
+          return;
+        }
+
+        const graphics = this.elementGraphics.get(elementId);
+        if (!graphics) return;
+
+        // 使用与单选时相同的方法计算边界框：getBounds() + camera.toLocal()
+        // 这样可以确保多选和单选的边界框计算方式完全一致
+        const pixiBounds = graphics.getBounds() as unknown as PIXI.Rectangle;
+        const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
+        const br = this.camera.toLocal(
+          new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
+        );
+        const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
       });
 
       if (minX !== Infinity) {
@@ -418,11 +454,20 @@ export class RenderEngine {
           handle.interactive = true;
           handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
             event.stopPropagation();
+
+            // 转换坐标为世界坐标
+            const screenX = event.clientX;
+            const screenY = event.clientY;
+            const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+
             eventBus.emit('group-resize-start', {
               elementIds: selectedElementIds,
               handleType: handleTypes[index],
               bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-              event,
+              worldPoint, // 传递世界坐标
+              screenX, // 同时传递屏幕坐标
+              screenY,
+              nativeEvent: event,
             });
           });
           selectionLayer.addChild(handle);
@@ -444,43 +489,20 @@ export class RenderEngine {
         rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
           // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
           event.stopPropagation();
-
-          // 将 Pixi 原生事件转换为统一的 CanvasEvent 格式，方便事件系统复用
-          const canvasEvent: CanvasEvent & {
-            elementIds: string[];
-            bounds: { x: number; y: number; width: number; height: number };
-          } = {
-            type: 'pointerdown',
-            screen: {
-              x: event.screen.x,
-              y: event.screen.y,
-            },
-            world: {
-              x: event.global.x,
-              y: event.global.y,
-            },
-            buttons: event.buttons,
-            modifiers: {
-              shift: event.shiftKey,
-              ctrl: event.ctrlKey,
-              alt: event.altKey,
-              meta: event.metaKey,
-            },
-            nativeEvent: event,
-            preventDefault: () => {
-              event.preventDefault();
-            },
-            stopPropagation: () => {
-              event.stopPropagation();
-            },
-            // 旋转操作自己的扩展字段
+          // 转换坐标为世界坐标
+          const screenX = event.clientX;
+          const screenY = event.clientY;
+          const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+          eventBus.emit('group-rotation-start', {
             elementIds: selectedElementIds,
             bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-          };
-
-          // 使用统一 CanvasEvent 结构发出事件
-          eventBus.emit('group-rotation-start', canvasEvent);
+            worldPoint, // 传递世界坐标
+            screenX, // 同时传递屏幕坐标
+            screenY,
+            nativeEvent: event,
+          });
         });
+
         selectionLayer.addChild(rotationHandle);
       }
     }
@@ -573,9 +595,29 @@ export class RenderEngine {
     elementId: string,
     withHandles: boolean = true,
   ): void {
-    // 使用 GeometryService 获取元素的世界坐标边界框
-    const elementProvider = new ElementProvider(elementId);
-    const bounds = this.geometryService.getElementBoundsWorld(elementProvider);
+    const pixiBounds = elementGraphics.getBounds() as unknown as PIXI.Rectangle;
+    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
+    const br = this.camera.toLocal(
+      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
+    );
+    const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+    const element = useCanvasStore.getState().elements[elementId];
+    const lastTransform = element?.transform;
+    const lastWidth = element?.width;
+    const lastHeight = element?.height;
+    const worldPos = {
+      x: elementGraphics.position.x + -this.camera.position.x / this.camera.scale.x,
+      y: elementGraphics.position.y + -this.camera.position.y / this.camera.scale.y,
+    };
+    console.log('RenderEngine: 选框与元素对齐检查', {
+      elementId,
+      bounds,
+      worldPos,
+      pivot: lastTransform ? { x: lastTransform.pivotX, y: lastTransform.pivotY } : undefined,
+      size: { width: lastWidth, height: lastHeight },
+      rotation: element?.rotation,
+    });
+    this.validateSelectionAlignment(elementId, bounds);
 
     const selectionLayer = this.layerManager.getSelectionLayer();
 
@@ -674,9 +716,29 @@ export class RenderEngine {
         handle.interactive = true;
         handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
         handle.cursor = handleCursors[index];
+        // handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+        //   event.stopPropagation();
+        //   const screenX = event.clientX;
+        //   const screenY = event.clientY;
+        //   const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+        //   eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
+        // });
         handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
           event.stopPropagation();
-          eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
+
+          // 转换坐标为世界坐标
+          const screenX = event.clientX;
+          const screenY = event.clientY;
+          const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+
+          eventBus.emit('resize-start', {
+            elementId,
+            handleType: handleTypes[index],
+            worldPoint, // 传递世界坐标
+            screenX, // 同时传递屏幕坐标
+            screenY,
+            nativeEvent: event,
+          });
         });
         selectionLayer.addChild(handle);
       });
@@ -693,11 +755,68 @@ export class RenderEngine {
       // 使用静态事件模式，确保可以接收事件
       rotationHandle.eventMode = 'static';
       rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-        // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
         event.stopPropagation();
-        eventBus.emit('rotation-start', { elementId, event });
+        const screenX = event.clientX;
+        const screenY = event.clientY;
+        const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+
+        eventBus.emit('rotation-start', {
+          elementId,
+          worldPoint,
+          screenX,
+          screenY,
+          nativeEvent: event,
+        });
       });
+
       selectionLayer.addChild(rotationHandle);
+    }
+
+    console.log('RenderEngine: 选中层内容统计', {
+      elementId,
+      selectionChildren: selectionLayer.children.length,
+      withHandles,
+    });
+  }
+
+  /**
+   * 验证选中框与元素在世界坐标的对齐情况
+   */
+  private validateSelectionAlignment(
+    elementId: string,
+    bounds: { x: number; y: number; width: number; height: number },
+  ): void {
+    const graphics = this.elementGraphics.get(elementId);
+    if (!graphics) return;
+
+    const pixiBounds = graphics.getBounds() as unknown as PIXI.Rectangle;
+    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
+    const br = this.camera.toLocal(
+      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
+    );
+    const worldPixiBounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+
+    const dx = Math.abs(worldPixiBounds.x - bounds.x);
+    const dy = Math.abs(worldPixiBounds.y - bounds.y);
+    const dw = Math.abs(worldPixiBounds.width - bounds.width);
+    const dh = Math.abs(worldPixiBounds.height - bounds.height);
+
+    const tolerance = 0.5; // 像素级对齐容差
+    const aligned = dx <= tolerance && dy <= tolerance && dw <= tolerance && dh <= tolerance;
+
+    if (!aligned) {
+      console.warn('RenderEngine: 选框与渲染不对齐', {
+        elementId,
+        bounds,
+        worldPixiBounds,
+        delta: { dx, dy, dw, dh },
+      });
+    } else {
+      console.log('RenderEngine: 选框与渲染对齐', {
+        elementId,
+        bounds,
+        worldPixiBounds,
+      });
     }
   }
 
@@ -725,6 +844,21 @@ export class RenderEngine {
       graphics.alpha = visible ? 1 : 0;
       this.renderScheduler.scheduleRender(RenderPriority.HIGH);
     }
+  }
+
+  /**
+   * 设置当前正在编辑的元素ID
+   * 编辑状态下，该元素不会显示选中框
+   */
+  setEditingElement(elementId: string | null): void {
+    this.editingElementId = elementId;
+
+    // 触发重新渲染选中状态
+    this.updateSelection({
+      type: 'UPDATE_SELECTION',
+      selectedElementIds: this.currentSelectedElementIds,
+      priority: RenderPriority.HIGH,
+    });
   }
 
   isElementVisible(elementId: string): boolean {

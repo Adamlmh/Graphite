@@ -264,8 +264,9 @@ export class CreateInteraction {
         // 选中新创建的元素
         this.selectCreatedElement(finalElement);
 
-        // 切换到选择工具
-        this.switchToSelectTool();
+        setTimeout(() => {
+          this.switchToSelectTool();
+        }, 0);
 
         // 发出创建完成事件
         this.emitCreationEvent(CreationEvent.CREATION_END, {
@@ -418,7 +419,9 @@ export class CreateInteraction {
     this.selectCreatedElement(textElement);
 
     // 切换到选择工具
-    this.switchToSelectTool();
+    setTimeout(() => {
+      this.switchToSelectTool();
+    }, 0);
 
     // 发出创建完成事件
     this.emitCreationEvent(CreationEvent.CREATION_END, {

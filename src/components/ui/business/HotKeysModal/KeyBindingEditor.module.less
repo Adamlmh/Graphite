@@ -1,0 +1,74 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.inputArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recording {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recordingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
+.pulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+.keyInput {
+  font-family:
+    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--primary-color);
+  }
+}
+
+.conflictWarning {
+  font-size: 12px;
+  color: #ff4d4f;
+  padding: 4px 8px;
+  background-color: rgba(255, 77, 79, 0.1);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 77, 79, 0.2);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}

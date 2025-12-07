@@ -69,13 +69,11 @@ export class CanvasBridge {
 
   /**
    * 针对元素、视口等大类注册订阅。
-   * 暂不做 raf/diff，仅监听引用变化。
+   * 对于 elements，使用深度比较来检测变化，确保即使 store 直接修改元素对象也能触发响应。
    */
   private subscribeToStore(): void {
-    const elementsUnsubscribe = this.subscribeToSlice(
-      (state) => state.elements,
-      (next, prev) => this.handleElementsChange(next, prev),
-    );
+    // 对 elements 使用深度比较订阅，确保能检测到对象内部属性的变化
+    const elementsUnsubscribe = this.subscribeToElementsWithDeepCompare();
 
     const selectedElementIdsUnsubscribe = this.subscribeToSlice(
       (state) => state.selectedElementIds,
@@ -98,6 +96,83 @@ export class CanvasBridge {
       viewportUnsubscribe,
       tempElementUnsubscribe,
     );
+  }
+
+  /**
+   * 订阅 elements 状态，使用深度比较来检测变化
+   * 这样可以检测到即使 store 直接修改元素对象内部属性的情况
+   *
+   * 实现方式：每次 store 订阅触发时，都检查 elements 的实际内容变化
+   * 即使引用没变，也会通过深度比较检测到内容变化
+   *
+   * @returns 取消订阅函数
+   */
+  private subscribeToElementsWithDeepCompare(): () => void {
+    let previousElements = this.store.getState().elements;
+
+    return this.store.subscribe((state) => {
+      const nextElements = state.elements;
+
+      // 先检查引用是否变化（快速路径）
+      if (Object.is(nextElements, previousElements)) {
+        // 引用没变，但可能内容变了（如果 store 直接修改了对象属性）
+        // 使用深度比较检查是否有实际内容变化
+        if (this.hasElementsContentChanged(previousElements, nextElements)) {
+          const lastElements = previousElements;
+          previousElements = nextElements;
+          this.handleElementsChange(nextElements, lastElements);
+        }
+        return;
+      }
+
+      // 引用变化了，直接触发处理（handleElementsChange 内部会做 diff）
+      const lastElements = previousElements;
+      previousElements = nextElements;
+      this.handleElementsChange(nextElements, lastElements);
+    });
+  }
+
+  /**
+   * 检查 elements 的内容是否有变化（深度比较，不依赖引用）
+   * 用于检测当引用没变但内容可能变化的情况
+   *
+   * @param prev - 之前的 elements
+   * @param next - 最新的 elements
+   * @returns 是否有内容变化
+   */
+  private hasElementsContentChanged(prev: ElementsState, next: ElementsState): boolean {
+    // 检查键的数量
+    const prevKeys = Object.keys(prev);
+    const nextKeys = Object.keys(next);
+
+    if (prevKeys.length !== nextKeys.length) {
+      return true;
+    }
+
+    // 检查每个元素是否有变化
+    for (const key of nextKeys) {
+      const prevElement = prev[key];
+      const nextElement = next[key];
+
+      if (!prevElement) {
+        // 新增元素
+        return true;
+      }
+
+      // 使用已有的 diffElement 方法检查元素是否有变化
+      if (this.diffElement(prevElement, nextElement) !== null) {
+        return true;
+      }
+    }
+
+    // 检查是否有删除的元素
+    for (const key of prevKeys) {
+      if (!next[key]) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -135,6 +210,7 @@ export class CanvasBridge {
    * 未来可以在这里插入 diff / patch / 批处理 等高级能力。
    */
   protected handleElementsChange(next: ElementsState, prev: ElementsState): void {
+    console.log('%c [ 触发变化 ]-139', 'font-size:13px; background:pink; color:#bf2c9f;');
     const commands: AllRenderCommand[] = [];
     const state = this.store.getState();
     const selectedElementIds = state.selectedElementIds;
