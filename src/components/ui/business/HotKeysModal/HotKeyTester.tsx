@@ -140,9 +140,7 @@ const HotKeyTester: React.FC<HotKeyTesterProps> = ({ onClose }) => {
                       <span className={styles.description}>
                         {result.hotkey.description || result.hotkey.id}
                       </span>
-                      <Tag size="small" color="blue">
-                        {result.hotkey.context || 'global'}
-                      </Tag>
+                      <Tag color="blue">{result.hotkey.context || 'global'}</Tag>
                     </div>
                   )}
                   {!result.matched && (

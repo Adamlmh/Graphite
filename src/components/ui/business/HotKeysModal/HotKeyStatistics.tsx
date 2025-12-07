@@ -102,7 +102,7 @@ const HotKeyStatistics: React.FC<HotKeyStatisticsProps> = ({ hotKeys, usageStats
                   <div className={styles.itemHeader}>
                     <span className={styles.description}>{hk.description || hk.id}</span>
                     <Space>
-                      <Tag size="small">{hk.context || 'global'}</Tag>
+                      <Tag>{hk.context || 'global'}</Tag>
                       <span className={styles.count}>{hk.count} 次</span>
                     </Space>
                   </div>

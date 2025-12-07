@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { Card, Tag, Alert, Empty } from 'antd';
+import { Card, Tag, Alert, Empty, Space } from 'antd';
 import { WarningOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import { hotKeyManager, HotKeyManager } from '../../../../services/hotkeys/hotKeyManager';
+import { HotKeyManager } from '../../../../services/hotkeys/hotKeyManager';
 import type { HotKeyDescriptor } from '../../../../services/hotkeys/hotKeyTypes';
 import styles from './ConflictDetector.module.less';
 
@@ -114,15 +114,9 @@ const ConflictDetector: React.FC<ConflictDetectorProps> = ({ hotKeys }) => {
                 <div key={hk.id} className={styles.conflictItem}>
                   <div className={styles.itemInfo}>
                     <span className={styles.description}>{hk.description || hk.id}</span>
-                    <Tag size="small" color="blue">
-                      {hk.id}
-                    </Tag>
+                    <Tag color="blue">{hk.id}</Tag>
                   </div>
-                  {hk.userAssignable === false && (
-                    <Tag color="default" size="small">
-                      系统保护
-                    </Tag>
-                  )}
+                  {hk.userAssignable === false && <Tag color="default">系统保护</Tag>}
                 </div>
               ))}
             </div>
