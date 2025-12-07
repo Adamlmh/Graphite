@@ -139,19 +139,10 @@ export function moveGroup(groupId: string, dx: number, dy: number): void {
     }
   });
 
-  // 移动组合元素本身
-  updates.push({
-    id: groupId,
-    updates: {
-      x: group.x + dx,
-      y: group.y + dy,
-    },
-  });
-
   if (updates.length > 0) {
     useCanvasStore.getState().updateElements(updates);
 
-    // 重新计算组合边界
+    // 重新计算组合边界（group 的位置应该由子元素的边界决定）
     const newState = useCanvasStore.getState();
     const updatedGroup = newState.elements[groupId];
     if (updatedGroup && isGroupElement(updatedGroup)) {

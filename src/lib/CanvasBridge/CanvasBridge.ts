@@ -53,9 +53,23 @@ export class CanvasBridge {
 
     this.subscribeToStore();
 
+    // 初始化时主动触发一次状态更新，确保从历史状态恢复时元素能被渲染
+    const initialState = this.store.getState();
+
+    // 初始化时主动触发一次元素状态更新，确保元素被渲染
+    // 这解决了从历史状态恢复时元素不显示的问题
+    const initialElements = initialState.elements;
+    if (Object.keys(initialElements).length > 0) {
+      console.log('[CanvasBridge.start] 初始化时触发元素状态更新', {
+        elementCount: Object.keys(initialElements).length,
+        elementIds: Object.keys(initialElements),
+      });
+      // 使用空对象作为 prev，强制触发所有元素的 CREATE_ELEMENT 命令
+      this.handleElementsChange(initialElements, {});
+    }
+
     // 初始化时主动触发一次选中状态更新，确保选中框被绘制
     // 这解决了从历史状态恢复时选中框不显示的问题
-    const initialState = this.store.getState();
     if (initialState.selectedElementIds.length > 0) {
       console.log('[CanvasBridge.start] 初始化时触发选中状态更新', {
         selectedElementIds: initialState.selectedElementIds,

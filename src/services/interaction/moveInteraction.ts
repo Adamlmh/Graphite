@@ -405,7 +405,18 @@ export class MoveInteraction {
 
       // 如果选中的是 group，使用 moveGroup 方法
       if (isGroupElement(element)) {
-        moveGroup(id, delta.x, delta.y);
+        // 计算目标位置（基于原始位置）
+        const targetX = originalPosition.x + delta.x;
+        const targetY = originalPosition.y + delta.y;
+
+        // 计算实际需要移动的偏移（目标位置 - 当前位置）
+        const actualDeltaX = targetX - element.x;
+        const actualDeltaY = targetY - element.y;
+
+        // 只有当偏移不为0时才移动
+        if (actualDeltaX !== 0 || actualDeltaY !== 0) {
+          moveGroup(id, actualDeltaX, actualDeltaY);
+        }
         return;
       }
 
