@@ -329,8 +329,27 @@ export class RenderEngine {
     // 检查是否有 group 元素被选中
     const state = useCanvasStore.getState();
 
-    if (selectedElementIds.length <= 1) {
-      selectedElementIds.forEach((elementId) => {
+    // 过滤掉组合元素的子元素：如果选中了组合元素，不应该显示子元素的选中框
+    const filteredSelectedIds = selectedElementIds.filter((elementId) => {
+      const element = state.elements[elementId];
+      if (!element) {
+        return false;
+      }
+
+      // 如果元素有 parentId，检查它的父元素是否也在选中列表中
+      if (element.parentId) {
+        const parent = state.elements[element.parentId];
+        // 如果父元素是组合元素且在选中列表中，则过滤掉这个子元素
+        if (parent && isGroupElement(parent) && selectedElementIds.includes(element.parentId)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    if (filteredSelectedIds.length <= 1) {
+      filteredSelectedIds.forEach((elementId) => {
         const element = state.elements[elementId];
         console.log(`[RenderEngine.updateSelection] 处理元素 ${elementId}`, {
           elementExists: !!element,
@@ -347,7 +366,6 @@ export class RenderEngine {
           if (graphics) {
             // 如果 group 有 graphics 对象，使用与普通元素相同的方式绘制选中框
             // 但是需要重新计算 bounds（因为 group 的 bounds 应该基于子元素）
-            const pixiBounds = graphics.getBounds() as unknown as PIXI.Rectangle;
             const groupBounds = computeGroupBounds(elementId);
 
             if (groupBounds) {
@@ -383,7 +401,7 @@ export class RenderEngine {
         }
       });
     } else {
-      selectedElementIds.forEach((elementId) => {
+      filteredSelectedIds.forEach((elementId) => {
         const element = state.elements[elementId];
 
         // 如果是 group，使用 computeGroupBounds 计算边界
@@ -403,13 +421,13 @@ export class RenderEngine {
     }
 
     // 如果选择多个元素，绘制组合边界框以增强视觉反馈
-    if (selectedElementIds.length > 1) {
+    if (filteredSelectedIds.length > 1) {
       let minX = Infinity;
       let minY = Infinity;
       let maxX = -Infinity;
       let maxY = -Infinity;
 
-      selectedElementIds.forEach((elementId) => {
+      filteredSelectedIds.forEach((elementId) => {
         const element = state.elements[elementId];
         let b: { x: number; y: number; width: number; height: number };
 
