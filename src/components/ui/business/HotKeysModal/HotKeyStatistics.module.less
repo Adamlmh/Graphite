@@ -1,0 +1,113 @@
+.statistics {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.overview {
+  margin-bottom: 8px;
+}
+
+.mostUsedCard,
+.contextCard {
+  :global(.ant-card-head) {
+    border-bottom: 1px solid var(--border-normal);
+  }
+
+  :global(.ant-card-body) {
+    padding: 16px;
+  }
+}
+
+.mostUsedList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mostUsedItem {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--btn-bg-normal);
+  flex-shrink: 0;
+}
+
+.rankNumber {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.itemContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.itemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.description {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  flex: 1;
+}
+
+.count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.progress {
+  margin: 0;
+}
+
+.contextStats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contextItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contextHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.contextName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.contextInfo {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.contextProgress {
+  margin: 0;
+}

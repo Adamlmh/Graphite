@@ -1,0 +1,132 @@
+.testerCard {
+  margin-bottom: 20px;
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+
+  :global(.ant-card-head) {
+    background-color: rgba(24, 144, 255, 0.05);
+    border-bottom: 1px solid var(--border-normal);
+  }
+
+  :global(.ant-card-body) {
+    padding: 16px;
+  }
+}
+
+.testerContent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.currentKey {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-color: var(--btn-bg-normal);
+  border-radius: 8px;
+  min-height: 80px;
+  gap: 12px;
+}
+
+.keyLabel {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.keyTag {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 8px 16px;
+  font-family:
+    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.placeholder {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  font-style: italic;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.resultsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.count {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.resultsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.resultItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background-color: var(--btn-bg-normal);
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: var(--btn-bg-hover);
+  }
+}
+
+.resultKey {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.matchIcon {
+  color: #52c41a;
+  font-size: 16px;
+}
+
+.resultInfo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.description {
+  font-size: 13px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.noMatch {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
