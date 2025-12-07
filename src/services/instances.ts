@@ -9,6 +9,7 @@ import { CopyPasteInteraction } from './interaction/CopyPasteInteraction';
 import { DeleteInteraction } from './interaction/DeleteInteraction';
 import { MoveInteraction } from './interaction/moveInteraction';
 import { ResizeInteraction } from './interaction/ResizeInteraction';
+import { GroupInteraction } from './interaction/GroupInteraction';
 
 // 全局初始化 HistoryService
 export const historyService = new HistoryService({
@@ -24,3 +25,4 @@ export const copyPasteInteraction = new CopyPasteInteraction(historyService);
 export const deleteInteraction = new DeleteInteraction(historyService);
 export const moveInteraction = new MoveInteraction(historyService);
 export const resizeInteraction = new ResizeInteraction(historyService);
+export const groupInteraction = new GroupInteraction(historyService);

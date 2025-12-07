@@ -10,12 +10,14 @@ import {
   UndoOutlined,
   RedoOutlined,
   SaveOutlined,
+  ApartmentOutlined,
+  UngroupOutlined,
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { useTheme } from '../../../../hooks/useTheme';
 import { eventBus } from '../../../../lib/eventBus';
-import { historyService } from '../../../../services/instances';
+import { historyService, groupInteraction } from '../../../../services/instances';
 import styles from './ToolBar.module.less';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;
@@ -33,6 +35,11 @@ const ToolBar: React.FC = () => {
   const [canRedo, setCanRedo] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // 打组/解组状态
+  const selectedElementIds = useCanvasStore((state) => state.selectedElementIds);
+  const [canGroup, setCanGroup] = useState(false);
+  const [canUngroup, setCanUngroup] = useState(false);
+
   // 监听历史状态变化
   useEffect(() => {
     const updateHistoryState = () => {
@@ -48,6 +55,22 @@ const ToolBar: React.FC = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  // 监听选中状态变化，更新打组/解组按钮状态
+  useEffect(() => {
+    const updateGroupState = () => {
+      setCanGroup(groupInteraction.canGroup());
+      setCanUngroup(groupInteraction.canUngroup());
+    };
+
+    // 初始化时更新一次
+    updateGroupState();
+
+    // 监听 store 变化
+    const interval = setInterval(updateGroupState, 200);
+
+    return () => clearInterval(interval);
+  }, [selectedElementIds]);
 
   // 处理撤销
   const handleUndo = async () => {
@@ -82,6 +105,28 @@ const ToolBar: React.FC = () => {
       console.error('Save error:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // 处理打组
+  const handleGroup = async () => {
+    try {
+      await groupInteraction.groupSelectedElements();
+      message.success('打组成功');
+    } catch (error) {
+      message.error('打组失败');
+      console.error('Group error:', error);
+    }
+  };
+
+  // 处理解组
+  const handleUngroup = async () => {
+    try {
+      await groupInteraction.ungroupSelectedElements();
+      message.success('解组成功');
+    } catch (error) {
+      message.error('解组失败');
+      console.error('Ungroup error:', error);
     }
   };
 
@@ -155,6 +200,25 @@ const ToolBar: React.FC = () => {
             />
           </Tooltip>
         ))}
+        <div className={styles.divider} />
+        <Tooltip title="打组 (Ctrl+G)" placement="bottom">
+          <Button
+            type="text"
+            className={styles.toolButton}
+            icon={<ApartmentOutlined />}
+            onClick={handleGroup}
+            disabled={!canGroup}
+          />
+        </Tooltip>
+        <Tooltip title="解组 (Ctrl+Shift+G)" placement="bottom">
+          <Button
+            type="text"
+            className={styles.toolButton}
+            icon={<UngroupOutlined />}
+            onClick={handleUngroup}
+            disabled={!canUngroup}
+          />
+        </Tooltip>
         <div className={styles.divider} />
         <Tooltip title={isDarkMode ? '切换为明亮主题' : '切换为暗夜主题'} placement="bottom">
           <Button
