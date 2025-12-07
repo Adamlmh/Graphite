@@ -183,6 +183,7 @@ export class HistoryService {
   private lastSavedVersion: number = 0; //待确认
   private hasUnsavedChanges: boolean = false;
   private autoSaveEnabled: boolean = true;
+  private lastDBSaveTime: number = 0;
   //private autoSaveInterval: number = 10000; // 10秒自动保存间隔
 
   // IndexedDB 相关属性
@@ -484,20 +485,9 @@ export class HistoryService {
    * 设置自动保存监听
    */
   private setupAutoSave(): void {
-    // 使用轮询方式替代 subscribe
-    let previousState = JSON.stringify(this.store.getState());
-
-    setInterval(() => {
-      const currentState = JSON.stringify(this.store.getState());
-      if (this.hasMeaningfulChange(currentState, previousState)) {
-        previousState = currentState;
-        this.scheduleAutoSave();
-      }
-    }, 3000); // 每3秒检查一次
-
     // 设置定时保存
     setInterval(() => {
-      if (this.shouldAutoSave()) {
+      if (this.hasUnsavedChanges && this.shouldAutoSave()) {
         this.createSnapshot(false).catch(console.error);
       }
     }, 30000); // 30秒定时保存
@@ -672,9 +662,13 @@ export class HistoryService {
     const serialized: Record<string, PersistedElement> = {};
 
     Object.entries(elements).forEach(([id, element]) => {
-      // 排除运行时字段
-      //const { cacheKey, visibility, lastRenderedAt, ...persistedElement } = element;
-      const { ...persistedElement } = element;
+      type RuntimeFields = { cacheKey?: string; visibility?: string; lastRenderedAt?: number };
+      const {
+        cacheKey: _c,
+        visibility: _v,
+        lastRenderedAt: _l,
+        ...persistedElement
+      } = element as Element & RuntimeFields;
       serialized[id] = persistedElement as PersistedElement;
     });
 
@@ -789,7 +783,6 @@ export class HistoryService {
    * 创建快照
    */
   async createSnapshot(isFullSnapshot: boolean = false): Promise<Snapshot> {
-    //console.log(`CutCommand: 重做剪切命令，重新剪切 ${this.elements.length} 个元素`);
     console.log('尝试创建快照');
     if (this.saveStatus === SaveStatus.SAVING) {
       throw new Error('Another save operation is in progress');
@@ -799,7 +792,6 @@ export class HistoryService {
 
     try {
       const currentState = this.store.getState();
-      // 异步执行序列化与存储
       await new Promise((resolve) => requestIdleCallback(resolve));
       const snapshotData = this.serializeStateForPersistence(currentState);
       const snapshot: Snapshot = {
@@ -810,7 +802,7 @@ export class HistoryService {
         isFullSnapshot: isFullSnapshot || this.shouldCreateFullSnapshot(),
         metadata: {
           elementCount: Object.keys(currentState.elements).length,
-          memoryUsage: new Blob([snapshotData]).size,
+          memoryUsage: snapshotData.length,
           compressedSize: snapshotData.length,
         },
       };
@@ -818,10 +810,14 @@ export class HistoryService {
       this.snapshots.push(snapshot);
       this.lastSaveTime = Date.now();
 
-      // 保存到持久化存储
+      // 保存到持久化存储（仅在完整快照或间隔到达时）
       if (this.config.autoSaveToDB) {
-        await this.saveSnapshotToDB(snapshot);
-        console.log('保存到持久化存储');
+        const shouldPersist = snapshot.isFullSnapshot || Date.now() - this.lastDBSaveTime > 60000;
+        if (shouldPersist) {
+          await this.saveSnapshotToDB(snapshot);
+          this.lastDBSaveTime = Date.now();
+          console.log('保存到持久化存储');
+        }
       }
 
       // 清理旧的快照
@@ -830,6 +826,7 @@ export class HistoryService {
       this.saveStatus = SaveStatus.SAVED;
       this.saveError = null;
       this.lastSavedVersion = this.currentVersion;
+      this.hasUnsavedChanges = false;
 
       return snapshot;
     } catch (error) {
@@ -952,8 +949,9 @@ export class HistoryService {
       // 根据操作频率调整快照间隔
       this.adjustSnapshotInterval();
 
-      // 创建快照
-      await this.createSnapshot(false);
+      // 标记有未保存的更改并延迟保存
+      this.hasUnsavedChanges = true;
+      this.scheduleAutoSave();
     } catch (error) {
       console.error('Failed to execute command:', error);
       throw error;
