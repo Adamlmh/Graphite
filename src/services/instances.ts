@@ -16,7 +16,16 @@ import { TextEditorInteraction } from './interaction/TextEditorInteraction';
 export const historyService = new HistoryService({
   getState: () => useCanvasStore.getState(),
   setState: (partial) => {
-    useCanvasStore.setState((state: CanvasState) => Object.assign(state, partial));
+    if (typeof partial === 'function') {
+      // 如果是函数，直接传递给 Zustand
+      useCanvasStore.setState(partial as (state: CanvasState) => Partial<CanvasState>);
+    } else {
+      // 如果是对象，使用 immer 的方式更新
+      useCanvasStore.setState((state: CanvasState) => {
+        // 使用 immer，直接修改 draft state
+        Object.assign(state, partial);
+      });
+    }
   },
 });
 

@@ -588,13 +588,39 @@ export class HistoryService {
   }
 
   /**
+   * 将 Blob URL 转换为 DataURL（base64）
+   */
+  private async blobUrlToDataURL(blobUrl: string): Promise<string> {
+    try {
+      const response = await fetch(blobUrl);
+      const blob = await response.blob();
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Failed to convert blob to data URL'));
+          }
+        };
+        reader.onerror = () => reject(new Error('FileReader error'));
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Failed to convert blob URL to data URL:', error);
+      // 如果转换失败，返回原始 URL（虽然可能无法恢复，但至少不会丢失引用）
+      return blobUrl;
+    }
+  }
+
+  /**
    * 序列化需要持久化的状态字段
    */
-  private serializeStateForPersistence(state: CanvasState): string {
+  private async serializeStateForPersistence(state: CanvasState): Promise<string> {
     const startTime = performance.now();
     // 显式声明类型并按正确顺序构造
     const persistableState: PersistedCanvasState = {
-      elements: this.serializeElementsForPersistence(state.elements),
+      elements: await this.serializeElementsForPersistence(state.elements),
       viewport: {
         zoom: state.viewport.zoom,
         offset: state.viewport.offset,
@@ -656,21 +682,37 @@ export class HistoryService {
   /**
    * 序列化元素字典用于持久化
    */
-  private serializeElementsForPersistence(
+  private async serializeElementsForPersistence(
     elements: Record<string, Element>,
-  ): Record<string, PersistedElement> {
+  ): Promise<Record<string, PersistedElement>> {
     const serialized: Record<string, PersistedElement> = {};
 
-    Object.entries(elements).forEach(([id, element]) => {
-      type RuntimeFields = { cacheKey?: string; visibility?: string; lastRenderedAt?: number };
-      const {
-        cacheKey: _c,
-        visibility: _v,
-        lastRenderedAt: _l,
-        ...persistedElement
-      } = element as Element & RuntimeFields;
+    // 使用 Promise.all 并行处理所有元素，提高性能
+    const serializationPromises = Object.entries(elements).map(async ([id, element]) => {
+      // 排除运行时字段，创建持久化元素（这些字段不需要持久化）
+      const { cacheKey, visibility, lastRenderedAt, ...rest } = element;
+      // 这些字段被排除，不需要使用
+      void cacheKey;
+      void visibility;
+      void lastRenderedAt;
+      const persistedElement = rest as Omit<Element, 'cacheKey' | 'visibility' | 'lastRenderedAt'>;
+
+      // 如果是图片元素且 src 是 Blob URL，则转换为 DataURL
+      if (element.type === 'image') {
+        const imageElement = element as import('../types/index').ImageElement;
+        const src = imageElement.src;
+        if (typeof src === 'string' && src.startsWith('blob:')) {
+          // 将 Blob URL 转换为 DataURL
+          const dataUrl = await this.blobUrlToDataURL(src);
+          // 更新图片元素的 src 字段
+          (persistedElement as PersistedElement & { src: string }).src = dataUrl;
+        }
+      }
+
       serialized[id] = persistedElement as PersistedElement;
     });
+
+    await Promise.all(serializationPromises);
 
     return serialized;
   }
@@ -742,13 +784,25 @@ export class HistoryService {
   ): Record<string, Element> {
     const elements: Record<string, Element> = {};
 
+    console.log('反序列化元素:', {
+      elementsDataCount: Object.keys(elementsData).length,
+      elementsDataKeys: Object.keys(elementsData),
+    });
+
     Object.entries(elementsData).forEach(([id, elementData]) => {
       try {
-        elements[id] = this.deserializeElementFromPersistence(elementData);
+        const element = this.deserializeElementFromPersistence(elementData);
+        elements[id] = element;
+        console.log(`✅ 成功反序列化元素 ${id}:`, { type: element.type });
       } catch (error) {
-        console.warn(`Failed to deserialize element ${id}:`, error);
+        console.error(`❌ 反序列化元素失败 ${id}:`, error, elementData);
         // 跳过损坏的元素，继续恢复其他元素
       }
+    });
+
+    console.log('反序列化完成:', {
+      successCount: Object.keys(elements).length,
+      successKeys: Object.keys(elements),
     });
 
     return elements;
@@ -772,9 +826,23 @@ export class HistoryService {
       ...baseElement,
       ...elementData,
       cacheKey: uuidv4(),
-      visibility: true,
+      visibility: 'visible' as const,
       lastRenderedAt: Date.now(),
     };
+
+    // 检查图片元素的 src 格式
+    if (elementData.type === 'image') {
+      const imageElement = elementWithData as unknown as import('../types/index').ImageElement;
+      const src = imageElement.src;
+      if (typeof src === 'string' && src.startsWith('blob:')) {
+        console.warn('⚠️ 恢复的图片元素包含 Blob URL，这可能在页面刷新后失效:', {
+          elementId: elementData.id,
+          srcPreview: src.substring(0, 50),
+        });
+        // Blob URL 在页面刷新后失效，无法恢复
+        // 这通常意味着持久化时转换失败，或者这是旧数据
+      }
+    }
 
     return elementWithData as Element;
   }
@@ -793,7 +861,7 @@ export class HistoryService {
     try {
       const currentState = this.store.getState();
       await new Promise((resolve) => requestIdleCallback(resolve));
-      const snapshotData = this.serializeStateForPersistence(currentState);
+      const snapshotData = await this.serializeStateForPersistence(currentState);
       const snapshot: Snapshot = {
         id: uuidv4(),
         timestamp: Date.now(),
@@ -883,6 +951,28 @@ export class HistoryService {
       const stateData = this.deserializeStateFromPersistence(snapshot.data) as Partial<CanvasState>;
       console.log('恢复历史数据：', stateData);
 
+      // 检查图片元素的 src 格式
+      if (stateData.elements) {
+        Object.values(stateData.elements).forEach((element) => {
+          if (element.type === 'image') {
+            const imageElement = element as import('../types/index').ImageElement;
+            const src = imageElement.src;
+            console.log('📷 恢复的图片元素:', {
+              id: element.id,
+              srcType:
+                typeof src === 'string'
+                  ? src.startsWith('blob:')
+                    ? 'Blob URL'
+                    : src.startsWith('data:')
+                      ? 'DataURL'
+                      : 'Other'
+                  : 'Unknown',
+              srcPreview: typeof src === 'string' ? src.substring(0, 100) : src,
+            });
+          }
+        });
+      }
+
       const currentState = this.store.getState();
       console.log('📝 恢复前的状态:', {
         elementsCount: Object.keys(currentState.elements || {}).length,
@@ -890,7 +980,39 @@ export class HistoryService {
       });
 
       this.currentVersion = snapshot.version;
-      this.store.setState(stateData);
+
+      // 确保使用新的对象引用，触发订阅
+      const prevStateBeforeRestore = this.store.getState();
+      console.log('恢复前状态:', {
+        elementsCount: Object.keys(prevStateBeforeRestore.elements || {}).length,
+        elementsRef: prevStateBeforeRestore.elements,
+      });
+
+      // 检查恢复的数据
+      console.log('恢复的数据 stateData:', {
+        hasElements: !!stateData.elements,
+        elementsCount: stateData.elements ? Object.keys(stateData.elements).length : 0,
+        elementsKeys: stateData.elements ? Object.keys(stateData.elements) : [],
+        stateDataKeys: Object.keys(stateData),
+      });
+
+      // 使用函数式更新，确保创建新的对象引用
+      this.store.setState((prevState: CanvasState) => {
+        const newElements = stateData.elements ? { ...stateData.elements } : prevState.elements;
+        console.log('setState 回调中:', {
+          prevElementsCount: Object.keys(prevState.elements || {}).length,
+          stateDataElementsCount: stateData.elements ? Object.keys(stateData.elements).length : 0,
+          newElementsCount: Object.keys(newElements || {}).length,
+          newElementsKeys: Object.keys(newElements || {}),
+        });
+
+        return {
+          ...prevState,
+          ...stateData,
+          // 确保 elements 是新对象
+          elements: newElements,
+        };
+      });
 
       // 延迟检查新状态
       setTimeout(() => {
@@ -899,6 +1021,7 @@ export class HistoryService {
           elementsCount: Object.keys(newState.elements || {}).length,
           newVersion: snapshot.version,
           stateKeys: Object.keys(newState),
+          elementsRef: newState.elements,
         });
       }, 100);
     } catch (error) {
