@@ -11,7 +11,7 @@ import { DeleteInteraction } from './interaction/DeleteInteraction';
 import { SelectInteraction } from './interaction/SelectInteraction';
 // import { ResizeInteraction } from './interaction/ResizeInteraction';
 import { GroupInteraction } from './interaction/GroupInteraction';
-import { TextEditorInteraction } from './interaction/TextEditorInteraction';
+// import { TextEditorInteraction } from './interaction/TextEditorInteraction';
 
 // 导出 SaveStatus 供 UI 使用
 export { SaveStatus };
@@ -36,7 +36,7 @@ export const historyService = new HistoryService({
 // 初始化交互
 new CreateInteraction(historyService);
 // export const selectionInteraction = new SelectionInteraction(historyService);
-new TextEditorInteraction();
+// new TextEditorInteraction();
 export const copyPasteInteraction = new CopyPasteInteraction(historyService);
 export const deleteInteraction = new DeleteInteraction(historyService);
 export const selectInteraction = new SelectInteraction(historyService);

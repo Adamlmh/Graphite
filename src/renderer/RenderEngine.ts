@@ -767,20 +767,20 @@ export class RenderEngine {
         handle.scale.set(1 / zoom);
         handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
         handle.cursor = handleCursors[index];
-        handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-          event.stopPropagation();
-          const screenX = event.clientX;
-          const screenY = event.clientY;
-          const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
-          eventBus.emit('resize-start', {
-            elementId,
-            handleType: handleTypes[index],
-            worldPoint,
-            screenX,
-            screenY,
-            nativeEvent: event,
-          });
-        });
+        // handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+        //   event.stopPropagation();
+        //   const screenX = event.clientX;
+        //   const screenY = event.clientY;
+        //   const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+        //   eventBus.emit('resize-start', {
+        //     elementId,
+        //     handleType: handleTypes[index],
+        //     worldPoint,
+        //     screenX,
+        //     screenY,
+        //     nativeEvent: event,
+        //   });
+        // });
         selectionLayer.addChild(handle);
       });
 

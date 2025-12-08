@@ -465,6 +465,7 @@ class RotateInteraction {
 export class SelectInteraction {
   private state: SelectSubState = 'Idle';
   private selectionTolerance = 0.5;
+  private debugEnabled = true;
   private coordinateTransformer = new CoordinateTransformer();
   private geometryService = new GeometryService(this.coordinateTransformer);
   private historyService: HistoryService | null = null;
@@ -495,9 +496,21 @@ export class SelectInteraction {
   }
   private isSelectTool(): boolean {
     const isSelect = useCanvasStore.getState().tool.activeTool === 'select';
+    if (this.debugEnabled) {
+      this.log('tool-check', { activeTool: useCanvasStore.getState().tool.activeTool, isSelect });
+    }
     return isSelect;
   }
   private handlePointerDown = (payload: CanvasEvent): void => {
+    if (this.debugEnabled) {
+      this.log('pointerdown', {
+        world: payload.world,
+        screen: payload.screen,
+        modifiers: payload.modifiers,
+        nativeType: (payload.nativeEvent as unknown as { type?: string })?.type,
+        state: this.state,
+      });
+    }
     if (!this.isSelectTool()) return;
     if (
       this.state === 'DragMoving' ||
@@ -510,6 +523,7 @@ export class SelectInteraction {
     if (handleInfo && handleInfo.type === 'handle') {
       const store = useCanvasStore.getState();
       const selectedIds = store.selectedElementIds;
+      this.log('handle-detected', { handleInfo, selectedIds });
       if (handleInfo.handleType === 'rotation') {
         if (handleInfo.isGroup) {
           const bounds = this.computeGroupBounds(selectedIds);
@@ -522,6 +536,7 @@ export class SelectInteraction {
           this.rotateInteraction.startSingle(handleInfo.elementId, center);
         }
         this.state = 'DragRotating';
+        this.log('state-change', { to: this.state });
         return;
       }
       const handleType = handleInfo.handleType as ResizeHandleType;
@@ -532,6 +547,7 @@ export class SelectInteraction {
         this.resizeInteraction.startSingle(handleInfo.elementId, handleType, payload.world);
       }
       this.state = 'DragResizing';
+      this.log('state-change', { to: this.state, handleType });
       return;
     }
     const hit = this.findTopHitElement(payload.world);
@@ -544,18 +560,36 @@ export class SelectInteraction {
       } else {
         store.setSelectedElements([hit.id]);
       }
+      this.log('element-hit', {
+        world: payload.world,
+        screen: payload.screen,
+        elementId: hit.id,
+        type: hit.type,
+        bounds: { x: hit.x, y: hit.y, width: hit.width, height: hit.height },
+        zIndex: hit.zIndex,
+        rotation: hit.rotation,
+        transform: hit.transform,
+        visibility: hit.visibility,
+        selectedIds: store.selectedElementIds,
+      });
       eventBus.emit('interaction:onSelectionChange', { selectedIds: store.selectedElementIds });
       this.moveInteraction.start(store.selectedElementIds, payload.world);
       this.state = 'DragMoving';
+      this.log('state-change', { to: this.state });
     } else {
       this.marqueeStartPoint = { ...payload.world };
+      this.log('marquee-start', { start: this.marqueeStartPoint, screen: payload.screen });
       useCanvasStore.setState((state) => {
         state.tool.tempElement = undefined;
       });
       this.state = 'DragMarqueeSelecting';
+      this.log('state-change', { to: this.state });
     }
   };
   private handlePointerMove = (payload: CanvasEvent): void => {
+    if (this.debugEnabled) {
+      this.log('pointermove', { world: payload.world, screen: payload.screen, state: this.state });
+    }
     if (!this.isSelectTool()) return;
     if (this.state === 'DragMoving') {
       this.moveInteraction.update(payload.world);
@@ -577,12 +611,17 @@ export class SelectInteraction {
     this.hoverInfo = hover ?? { type: null };
     if (hover?.type === 'handle') {
       this.state = 'HoverHandle';
+      this.log('state-change', { to: this.state, handleInfo: hover });
       return;
     }
     const hit = this.findTopHitElement(payload.world);
     this.state = hit ? 'HoverElement' : 'Idle';
+    this.log('state-change', { to: this.state, hoverElementId: hit?.id });
   };
   private handlePointerUp = (payload: CanvasEvent): void => {
+    if (this.debugEnabled) {
+      this.log('pointerup', { world: payload.world, screen: payload.screen, state: this.state });
+    }
     if (!this.isSelectTool()) return;
     if (this.state === 'DragMoving') {
       this.moveInteraction.end(payload.world);
@@ -590,6 +629,7 @@ export class SelectInteraction {
         selectedIds: useCanvasStore.getState().selectedElementIds,
       });
       this.state = 'Idle';
+      this.log('state-change', { to: this.state });
       return;
     }
     if (this.state === 'DragMarqueeSelecting') {
@@ -606,6 +646,7 @@ export class SelectInteraction {
       }
       this.endMarqueeSelection();
       this.state = 'Idle';
+      this.log('state-change', { to: this.state });
       return;
     }
     if (this.state === 'DragResizing') {
@@ -614,6 +655,7 @@ export class SelectInteraction {
         selectedIds: useCanvasStore.getState().selectedElementIds,
       });
       this.state = 'Idle';
+      this.log('state-change', { to: this.state });
       return;
     }
     if (this.state === 'DragRotating') {
@@ -622,6 +664,7 @@ export class SelectInteraction {
         selectedIds: useCanvasStore.getState().selectedElementIds,
       });
       this.state = 'Idle';
+      this.log('state-change', { to: this.state });
       return;
     }
   };
@@ -749,6 +792,18 @@ export class SelectInteraction {
     const provider = new ElementProvider(el.id);
     const hit = this.geometryService.isPointInElement(world, provider);
     const bounds = this.geometryService.getElementBoundsWorld(provider);
+    this.log('hit-test', {
+      world,
+      elementId: el.id,
+      type: el.type,
+      aabb: bounds,
+      zIndex: el.zIndex,
+      rotation: el.rotation,
+      transform: el.transform,
+      visibility: el.visibility,
+      selectionTolerance: this.selectionTolerance,
+      result: hit,
+    });
     if (!hit) {
       const expanded = {
         x: bounds.x - this.selectionTolerance,
@@ -762,6 +817,9 @@ export class SelectInteraction {
         width: 0.001,
         height: 0.001,
       });
+      if (approx) {
+        this.log('hit-test-tolerance', { elementId: el.id, world, expanded });
+      }
       return approx;
     }
     return hit;
@@ -772,6 +830,16 @@ export class SelectInteraction {
     el: Element,
   ): boolean {
     const aabb = this.computeElementAABB(el);
+    this.log('rect-intersect', {
+      rect,
+      elementId: el.id,
+      type: el.type,
+      elementAABB: aabb,
+      zIndex: el.zIndex,
+      rotation: el.rotation,
+      transform: el.transform,
+      visibility: el.visibility,
+    });
     return !(
       rect.x + rect.width < aabb.x ||
       rect.x > aabb.x + aabb.width ||
@@ -787,10 +855,12 @@ export class SelectInteraction {
   private findTopHitElement(worldPoint: Point): Element | null {
     const elements = Object.values(useCanvasStore.getState().elements);
     const sorted = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+    this.log('hit-scan-start', { world: worldPoint, count: sorted.length });
     for (const el of sorted) {
       if (el.visibility === 'hidden') continue;
       const ok = this.pointInElement(worldPoint, el);
       if (ok) {
+        this.log('top-hit', { world: worldPoint, elementId: el.id, zIndex: el.zIndex });
         return el;
       }
     }
@@ -830,14 +900,27 @@ export class SelectInteraction {
     const elements = Object.values(useCanvasStore.getState().elements);
     const selected = new SelectionManager().getElementsInRect(rect, elements);
     useCanvasStore.getState().setSelectedElements(selected.map((e) => e.id));
+    this.log('marquee-update', {
+      start: this.marqueeStartPoint,
+      current: worldPoint,
+      rect,
+      selectedIds: selected.map((e) => e.id),
+    });
     eventBus.emit('interaction:onSelectionChange', { selectedIds: selected.map((e) => e.id) });
   }
   private endMarqueeSelection(): void {
     this.marqueeStartPoint = null;
     this.marqueeLastPoint = null;
+    this.log('marquee-end', {});
     useCanvasStore.setState((state) => {
       state.tool.tempElement = undefined;
     });
+  }
+
+  private log(tag: string, payload: unknown): void {
+    const ts = new Date().toISOString();
+    console.debug(`[SelectInteraction][${ts}][${tag}]`, payload);
+    eventBus.emit('debug:select', { tag, ts, payload });
   }
 }
 
