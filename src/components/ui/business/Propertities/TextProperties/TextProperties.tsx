@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Slider, Button, Tooltip, Popover } from 'antd';
+import { Slider, Button, Tooltip, Popover, Select } from 'antd';
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -13,6 +13,7 @@ import type { Element } from '../../../../../types/index';
 import styles from './TextProperties.module.less';
 import { useElementCategory } from '../../../../../hooks/useElementCategory';
 import { useCanvasStore } from '../../../../../stores/canvas-store';
+import { cleanupRichTextSpans } from '../../../../../utils/tiptapConverter';
 
 // 这里用 props 接收Zustand的 selectedElements
 type TextPropertiesProps = {
@@ -38,7 +39,23 @@ type TextStylePatch = {
   textDecoration?: string;
   color?: string;
   backgroundColor?: string;
+  fontFamily?: string;
 };
+
+// 常用字体列表
+const FONT_FAMILIES = [
+  { label: '默认字体', value: 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif' },
+  { label: '宋体', value: 'SimSun, STSong, serif' },
+  { label: '黑体', value: 'SimHei, STHeiti, sans-serif' },
+  { label: '微软雅黑', value: 'Microsoft YaHei, sans-serif' },
+  { label: '楷体', value: 'KaiTi, STKaiti, serif' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Times New Roman', value: 'Times New Roman, serif' },
+  { label: 'Courier New', value: 'Courier New, monospace' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+];
+
 const computeDecoration = (current: string | undefined, target: 'underline' | 'line-through') => {
   if (!current || current === 'none') {
     return target;
@@ -92,9 +109,13 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
   const [textPatch, setTextPatch] = useState<TextStylePatch>({});
 
   // 重置补丁状态当元素改变时
+  const textElementIds = React.useMemo(
+    () => textElements.map((el) => el.id).join(','),
+    [textElements],
+  );
   React.useEffect(() => {
     setTextPatch({});
-  }, [textElements.map((el) => el.id).join(',')]);
+  }, [textElementIds]);
 
   if (!shouldShowTextPanel) {
     return null;
@@ -112,6 +133,8 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
       return;
     }
 
+    console.log('[TextProperties] Applying patch:', patch);
+
     // 批量更新所有文本元素
     textElements.forEach((el) => {
       const updates: Partial<TextElementType> = {};
@@ -124,7 +147,8 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         patch.fontStyle ||
         patch.textDecoration ||
         patch.color ||
-        patch.backgroundColor
+        patch.backgroundColor ||
+        patch.fontFamily
       ) {
         updates.textStyle = {
           ...el.textStyle,
@@ -150,6 +174,16 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         }
         if (patch.backgroundColor !== undefined) {
           updates.textStyle.backgroundColor = patch.backgroundColor;
+        }
+        if (patch.fontFamily !== undefined) {
+          updates.textStyle.fontFamily = patch.fontFamily;
+        }
+
+        // 🎯 关键修复: 清理与新全局样式冲突的局部样式片段
+        if (el.richText && el.richText.length > 0) {
+          console.log('[TextProperties] Cleaning up richText before:', el.richText);
+          updates.richText = cleanupRichTextSpans(el.richText, updates.textStyle);
+          console.log('[TextProperties] Cleaned up richText after:', updates.richText);
         }
       }
 
@@ -182,6 +216,10 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
     | 'normal'
     | 'italic';
   const decoration = textPatch.textDecoration ?? currentTextStyle?.textDecoration ?? 'none';
+  const fontFamily =
+    textPatch.fontFamily ??
+    currentTextStyle?.fontFamily ??
+    'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif';
 
   // 更新样式的方法
   const updateTextStyle = (patch: Partial<TextStylePatch>) => {
@@ -216,6 +254,18 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
 
   return (
     <div className={styles.toolbar}>
+      {/* 字体选择 */}
+      <Select
+        value={fontFamily}
+        onChange={(value) => updateTextStyle({ fontFamily: value })}
+        style={{ width: 140 }}
+        size="small"
+        options={FONT_FAMILIES}
+        className={styles.fontSelect}
+        popupMatchSelectWidth={false}
+        placement="bottomLeft"
+      />
+
       <Popover
         content={fontSizeSlider}
         trigger="hover"

@@ -287,7 +287,7 @@ class EventBridge {
       let parent = target.parent;
       while (parent) {
         if (parent.name === 'SELECTION') {
-          console.log('⚠️ EventBridge: 跳过选择层手柄事件', { target, type });
+          // console.log('⚠️ EventBridge: 跳过选择层手柄事件', { target, type });
           return; // 不处理选择层手柄的事件
         }
         parent = parent.parent;

@@ -120,11 +120,6 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     return null;
   }
 
-  // 如果是文本元素，且不在编辑状态，隐藏面板
-  if (shouldShowTextPanel && !isTextEditing) {
-    return null;
-  }
-
   // 如果局部文本选择激活（显示了InlineToolbar），隐藏全局属性面板
   if (isTextSelectionActive) {
     return null;
