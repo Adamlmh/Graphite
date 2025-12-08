@@ -16,6 +16,7 @@ export interface InlineTextToolbarProps {
   visible: boolean;
   position: { x: number; y: number };
   updateTrigger?: number; // 用于强制刷新组件的触发器
+  lastSelection?: { from: number; to: number } | null; // 最近一次有效选区，用于保持选区
 }
 
 // 常用字体列表
@@ -49,6 +50,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   visible,
   position,
   updateTrigger = 0,
+  lastSelection,
 }) => {
   // 获取当前选区的文本样式状态
   // 依赖 updateTrigger 确保在选区变化时更新
@@ -74,7 +76,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
     //   attrs,
     // });
 
-    return {
+    const styles = {
       isBold: editor.isActive('bold'),
       isItalic: editor.isActive('italic'),
       isUnderline: editor.isActive('underline'),
@@ -84,72 +86,88 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
       fontSize: parseInt(attrs.fontSize || '16', 10),
       fontFamily: attrs.fontFamily || 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif',
     };
-    // updateTrigger 是必需的,用于触发重新计算
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, visible, updateTrigger]);
+
+    console.log('[InlineTextToolbar] 🎨 刷新工具栏样式状态:', {
+      updateTrigger,
+      attrs,
+      computedStyles: styles,
+      lastSelection,
+    });
+
+    return styles;
+  }, [editor, visible, updateTrigger, lastSelection]);
+
+  // === 选区辅助：在工具栏交互时恢复最近的有效选区，避免选区丢失导致工具栏闪退 ===
+  const runWithSelection = (
+    executor: (chain: ReturnType<typeof editor.chain>) => ReturnType<typeof editor.chain>,
+  ) => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+
+    // 如果当前是空选区且有上次有效选区，先恢复选区
+    const needsRestore = from === to && lastSelection && lastSelection.from !== lastSelection.to;
+    let chain = editor.chain();
+    if (needsRestore) {
+      chain = chain.setTextSelection(lastSelection);
+    }
+
+    executor(chain.focus()).run();
+  };
 
   // === 样式操作处理函数 ===
   // 应用/取消加粗样式
   const handleToggleBold = () => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Executing toggleBold');
-    editor.chain().focus().toggleBold().run();
-    console.log('[InlineTextToolbar] toggleBold executed, active:', editor.isActive('bold'));
+    runWithSelection((chain) => chain.toggleBold());
+    console.log('[InlineTextToolbar] toggleBold executed, active:', editor?.isActive('bold'));
   };
 
   // 应用/取消斜体样式
   const handleToggleItalic = () => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Executing toggleItalic');
-    editor.chain().focus().toggleItalic().run();
-    console.log('[InlineTextToolbar] toggleItalic executed, active:', editor.isActive('italic'));
+    runWithSelection((chain) => chain.toggleItalic());
+    console.log('[InlineTextToolbar] toggleItalic executed, active:', editor?.isActive('italic'));
   };
 
   // 应用/取消下划线样式
   const handleToggleUnderline = () => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Executing toggleUnderline');
-    editor.chain().focus().toggleUnderline().run();
+    runWithSelection((chain) => chain.toggleUnderline());
     console.log(
       '[InlineTextToolbar] toggleUnderline executed, active:',
-      editor.isActive('underline'),
+      editor?.isActive('underline'),
     );
   };
 
   // 应用/取消删除线样式
   const handleToggleStrike = () => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Executing toggleStrike');
-    editor.chain().focus().toggleStrike().run();
-    console.log('[InlineTextToolbar] toggleStrike executed, active:', editor.isActive('strike'));
+    runWithSelection((chain) => chain.toggleStrike());
+    console.log('[InlineTextToolbar] toggleStrike executed, active:', editor?.isActive('strike'));
   };
 
   // 修改文本颜色
   const handleTextColorChange = (color: string) => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Changing text color to:', color);
-    editor.chain().focus().setColor(color).run();
+    runWithSelection((chain) => chain.setColor(color));
   };
 
   // 修改背景颜色
   const handleBackgroundColorChange = (backgroundColor: string) => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Changing background color to:', backgroundColor);
-    editor.chain().focus().setBackgroundColor(backgroundColor).run();
+    runWithSelection((chain) => chain.setBackgroundColor(backgroundColor));
   };
 
   // 修改字号
   const handleFontSizeChange = (fontSize: number) => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Changing font size to:', fontSize);
-    editor.chain().focus().setFontSize(`${fontSize}px`).run();
+    runWithSelection((chain) => chain.setFontSize(`${fontSize}px`));
   };
 
   // 修改字体
   const handleFontFamilyChange = (fontFamily: string) => {
-    if (!editor) return;
     console.log('[InlineTextToolbar] Changing font family to:', fontFamily);
-    editor.chain().focus().setFontFamily(fontFamily).run();
+    runWithSelection((chain) => chain.setFontFamily(fontFamily));
   };
 
   if (!visible) {

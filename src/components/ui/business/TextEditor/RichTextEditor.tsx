@@ -37,6 +37,16 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
     position: { x: 0, y: 0 },
   });
 
+  // 记录最近一次有效的选区，用于在工具栏交互时保持选区
+  const [lastSelectionRange, setLastSelectionRange] = useState<{ from: number; to: number } | null>(
+    null,
+  );
+
+  // 记录上一次工具栏位置，用于在选区暂时为空时保持工具栏不闪退
+  const [lastToolbarPosition, setLastToolbarPosition] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+
   // 更新触发器，用于强制刷新 InlineTextToolbar
   const [updateTrigger, setUpdateTrigger] = useState(0);
 
@@ -52,45 +62,68 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
   });
 
   // 处理选择变化
-  const handleSelectionUpdate = useCallback((editor: NonNullable<ReturnType<typeof useEditor>>) => {
-    console.log('[RichTextEditor] Selection update triggered'); // 调试信息
+  const handleSelectionUpdate = useCallback(
+    (editor: NonNullable<ReturnType<typeof useEditor>>) => {
+      console.log('[RichTextEditor] Selection update triggered'); // 调试信息
 
-    // 延迟执行，确保DOM已更新
-    setTimeout(() => {
-      const { from, to } = editor.state.selection;
-      const hasSelection = from !== to;
+      // 延迟执行，确保DOM已更新
+      setTimeout(() => {
+        const { from, to } = editor.state.selection;
+        const hasSelection = from !== to;
 
-      console.log('[RichTextEditor] Selection info:', { from, to, hasSelection }); // 调试信息
+        console.log('[RichTextEditor] Selection info:', { from, to, hasSelection }); // 调试信息
 
-      if (hasSelection) {
-        // 获取编辑器容器的位置
-        const editorContainer = editorRef.current?.querySelector('.ProseMirror');
-        if (editorContainer) {
-          const containerRect = editorContainer.getBoundingClientRect();
+        if (hasSelection) {
+          // 记录最近一次有效选区
+          setLastSelectionRange({ from, to });
 
-          // 计算工具栏位置
-          const toolbarPosition = calculateToolbarPosition(containerRect, {
-            width: 280,
-            height: 60,
-            gap: 8,
-            viewportPadding: 16,
-          });
+          // 获取编辑器容器的位置
+          const editorContainer = editorRef.current?.querySelector('.ProseMirror');
+          if (editorContainer) {
+            const containerRect = editorContainer.getBoundingClientRect();
 
-          console.log('[RichTextEditor] Toolbar position calculated:', toolbarPosition); // 调试信息
+            // 计算工具栏位置
+            const toolbarPosition = calculateToolbarPosition(containerRect, {
+              width: 280,
+              height: 60,
+              gap: 8,
+              viewportPadding: 16,
+            });
 
-          setSelection({
-            visible: true,
-            position: toolbarPosition,
-          });
-          eventBus.emit('text-editor:selection-change', { hasSelection: true });
+            console.log('[RichTextEditor] Toolbar position calculated:', toolbarPosition); // 调试信息
+
+            setSelection({
+              visible: true,
+              position: toolbarPosition,
+            });
+            setLastToolbarPosition(toolbarPosition);
+            eventBus.emit('text-editor:selection-change', { hasSelection: true });
+          }
+        } else {
+          // 选区为空，但如果仍然聚焦或正在操作工具栏，并且有最近的选区记录，则保持工具栏可见，防止闪退
+          const activeEl = document.activeElement as HTMLElement | null;
+          const interactingToolbar =
+            activeEl &&
+            (activeEl.closest('[data-toolbar="inline-text"]') ||
+              activeEl.closest('.ant-select-dropdown') ||
+              activeEl.closest('.ant-popover'));
+
+          const hasFocus = editor.view.hasFocus() || !!interactingToolbar;
+
+          if (hasFocus && lastSelectionRange && lastToolbarPosition) {
+            console.log('[RichTextEditor] Keeping toolbar visible with last selection');
+            setSelection({ visible: true, position: lastToolbarPosition });
+            eventBus.emit('text-editor:selection-change', { hasSelection: true });
+          } else {
+            console.log('[RichTextEditor] Hiding toolbar'); // 调试信息
+            setSelection({ visible: false, position: { x: 0, y: 0 } });
+            eventBus.emit('text-editor:selection-change', { hasSelection: false });
+          }
         }
-      } else {
-        console.log('[RichTextEditor] Hiding toolbar'); // 调试信息
-        setSelection({ visible: false, position: { x: 0, y: 0 } });
-        eventBus.emit('text-editor:selection-change', { hasSelection: false });
-      }
-    }, 50); // 延迟50ms确保DOM更新
-  }, []);
+      }, 50); // 延迟50ms确保DOM更新
+    },
+    [lastSelectionRange, lastToolbarPosition],
+  );
 
   const editor = useEditor({
     extensions: [
@@ -279,6 +312,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
           visible={selection.visible}
           position={selection.position}
           updateTrigger={updateTrigger}
+          lastSelection={lastSelectionRange}
         />
       )}
     </div>
