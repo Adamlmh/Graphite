@@ -619,8 +619,20 @@ export class HistoryService {
     }
 
     this.autoSaveTimeout = setTimeout(() => {
+      this.autoSaveTimeout = null;
       this.createSnapshot(false).catch(console.error);
     }, this.config.autoSaveDelay);
+  }
+
+  /**
+   * 取消待处理的自动保存
+   * 用于在操作完成时立即保存，而不是等待防抖延迟
+   */
+  private cancelPendingAutoSave(): void {
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout as number);
+      this.autoSaveTimeout = null;
+    }
   }
 
   /**
@@ -1140,8 +1152,13 @@ export class HistoryService {
       // 根据操作频率调整快照间隔
       this.adjustSnapshotInterval();
 
-      // 标记有未保存的更改并延迟保存
+      // 标记有未保存的更改
       this.hasUnsavedChanges = true;
+
+      // 取消之前的自动保存定时器，确保保存的是最新状态
+      this.cancelPendingAutoSave();
+
+      // 重新调度自动保存（防抖）
       this.scheduleAutoSave();
     } catch (error) {
       console.error('Failed to execute command:', error);
@@ -1176,6 +1193,13 @@ export class HistoryService {
       error: this.saveError,
       lastSaveTime: this.lastSaveTime,
     };
+  }
+
+  /**
+   * 检查是否有待处理的快照
+   */
+  hasPendingSnapshots(): boolean {
+    return this.pendingSnapshotIds.size > 0;
   }
 
   /**
