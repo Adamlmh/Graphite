@@ -152,6 +152,8 @@ export class HistoryService {
     ) => void;
   }) {
     this.store = store;
+    // 加载持久化偏好设置
+    this.config.persistenceEnabled = this.loadPersistencePreference();
     // 初始化时先禁用自动保存
     this.autoSaveEnabled = false;
     this.setupPageUnloadListener();
@@ -174,7 +176,8 @@ export class HistoryService {
 
         // 最终写入 IndexedDB【仍由主线程负责】
         // 保存到持久化存储（仅在完整快照或间隔到达时）
-        if (this.config.autoSaveToDB) {
+        // 检查是否启用持久化
+        if (this.config.persistenceEnabled && this.config.autoSaveToDB) {
           const shouldPersist = snapshot.isFullSnapshot || Date.now() - this.lastDBSaveTime > 60000;
           if (shouldPersist) {
             this.saveSnapshotToDB(snapshot)
@@ -198,7 +201,7 @@ export class HistoryService {
             this.updateSaveStatus();
           }
         } else {
-          // 如果未启用自动保存，也标记为已完成
+          // 如果未启用持久化或自动保存，也标记为已完成
           this.pendingSnapshotIds.delete(snapshotId);
           this.updateSaveStatus();
         }
@@ -266,7 +269,34 @@ export class HistoryService {
     maxDBRecords: 1000, // 最大存储记录数
     autoSaveToDB: true, // 是否自动保存到数据库
     maxDBAge: 30 * 24 * 60 * 60 * 1000, // 默认保留30天
+    persistenceEnabled: true, // 是否启用持久化（用户可控制），在构造函数中初始化
   };
+
+  /**
+   * 从 localStorage 加载持久化偏好设置
+   */
+  private loadPersistencePreference(): boolean {
+    try {
+      const saved = localStorage.getItem('canvas-persistence-enabled');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch (error) {
+      console.warn('Failed to load persistence preference:', error);
+    }
+    return true; // 默认启用
+  }
+
+  /**
+   * 保存持久化偏好设置到 localStorage
+   */
+  private savePersistencePreference(enabled: boolean): void {
+    try {
+      localStorage.setItem('canvas-persistence-enabled', String(enabled));
+    } catch (error) {
+      console.warn('Failed to save persistence preference:', error);
+    }
+  }
 
   /**
    * 初始化 IndexedDB
@@ -378,6 +408,11 @@ export class HistoryService {
    * 从持久化存储加载快照
    */
   async loadFromStorage(): Promise<void> {
+    // 如果未启用持久化，跳过加载
+    if (!this.config.persistenceEnabled) {
+      console.log('持久化已禁用，跳过加载');
+      return;
+    }
     if (this.config.storageBackend === 'indexeddb' && this.isDBReady) {
       await this.loadFromIndexedDB();
     } else {
@@ -464,6 +499,11 @@ export class HistoryService {
    * 手动保存到持久化存储
    */
   async saveToStorage(): Promise<void> {
+    // 如果未启用持久化，跳过保存
+    if (!this.config.persistenceEnabled) {
+      console.log('持久化已禁用，跳过保存');
+      return;
+    }
     const snapshot = await this.createSnapshot(true); // 创建完整快照
     if (this.config.storageBackend === 'indexeddb') {
       await this.saveSnapshotToDB(snapshot);
@@ -953,6 +993,16 @@ export class HistoryService {
       this.snapshots.push(snapshot);
       this.lastSaveTime = Date.now();
 
+      // 如果禁用持久化，跳过 worker 处理，直接标记为完成
+      if (!this.config.persistenceEnabled) {
+        // 标记快照为已完成（不发送到 worker）
+        this.pendingSnapshotIds.delete(snapshot.id);
+        this.updateSaveStatus();
+        // 清理旧的快照
+        this.cleanupOldSnapshots();
+        return snapshot;
+      }
+
       // 标记快照为待处理状态
       this.pendingSnapshotIds.add(snapshot.id);
 
@@ -1300,6 +1350,10 @@ export class HistoryService {
    * 页面卸载前的处理
    */
   private handleBeforeUnload(event: BeforeUnloadEvent): void {
+    // 如果未启用持久化，不阻止页面关闭
+    if (!this.config.persistenceEnabled) {
+      return;
+    }
     // 如果有待处理的快照或未保存的更改，阻止页面关闭
     if ((this.pendingSnapshotIds.size > 0 || this.hasUnsavedChanges) && this.autoSaveEnabled) {
       // 尝试最后一次保存
@@ -1612,6 +1666,22 @@ export class HistoryService {
       snapshotCount: this.snapshots.length,
       currentVersion: this.currentVersion,
     };
+  }
+
+  /**
+   * 设置是否启用持久化
+   */
+  setPersistenceEnabled(enabled: boolean): void {
+    this.config.persistenceEnabled = enabled;
+    this.savePersistencePreference(enabled);
+    console.log(`持久化已${enabled ? '启用' : '禁用'}`);
+  }
+
+  /**
+   * 获取持久化状态
+   */
+  isPersistenceEnabled(): boolean {
+    return this.config.persistenceEnabled;
   }
 
   // 暴露快捷键入口
