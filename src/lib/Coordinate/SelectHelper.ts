@@ -56,12 +56,9 @@ export class SelectHelper {
       // 4. 为每个元素构造 ElementProvider
       const elementProvider = new ElementProvider(element.id);
 
-      // 5. 调用 geometry.getElementBoundsWorld(provider) 获取元素世界边界框
-      const elementBounds = this.geometryService.getElementBoundsWorld(elementProvider);
+      const worldCorners = this.geometryService.getElementWorldCorners(elementProvider);
 
-      // 6. 调用 geometry.rectIntersect(selectionBox, elementBounds) 判断是否相交
-      if (this.geometryService.rectIntersect(selectionBox, elementBounds)) {
-        // 命中则加入结果数组
+      if (this.geometryService.rectContainsPoints(selectionBox, worldCorners)) {
         selectedElementIds.push(element.id);
       }
     }

@@ -75,6 +75,19 @@ export class GeometryService {
     };
   }
 
+  public getElementWorldCorners(element: IElementProvider): Point[] {
+    const size = element.getSize();
+    const corners = [
+      { x: 0, y: 0 },
+      { x: size.width, y: 0 },
+      { x: size.width, y: size.height },
+      { x: 0, y: size.height },
+    ];
+    return corners.map((corner) =>
+      this.coordinateTransformer.localToWorld(corner.x, corner.y, element),
+    );
+  }
+
   /**
    * 判断两个矩形（Bounds）是否相交（AABB 相交检测）
    *
@@ -89,6 +102,19 @@ export class GeometryService {
       a.y + a.height < b.y ||
       a.y > b.y + b.height
     );
+  }
+
+  public rectContainsPoints(rect: Bounds, points: Point[]): boolean {
+    const rx1 = rect.x;
+    const ry1 = rect.y;
+    const rx2 = rect.x + rect.width;
+    const ry2 = rect.y + rect.height;
+    for (const p of points) {
+      if (p.x < rx1 || p.x > rx2 || p.y < ry1 || p.y > ry2) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
