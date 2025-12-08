@@ -7,6 +7,7 @@ import { type MoveState, MoveEvent } from './interactionTypes';
 import type { HistoryService } from '../HistoryService';
 import { MoveCommand } from '../command/HistoryCommand';
 import { isGroupElement } from '../../types/index';
+import { SelectionManager } from '../SelectionManager';
 import { moveGroup } from '../group-service';
 
 // 定义移动事件数据接口
@@ -37,6 +38,7 @@ export class MoveInteraction {
 
   // 用于防止重复初始化的标志
   private isInitialized: boolean = false;
+  private selectionManager: SelectionManager = new SelectionManager();
 
   constructor(historyService?: HistoryService) {
     this.canvasStore = useCanvasStore;
@@ -89,10 +91,7 @@ export class MoveInteraction {
    * 指针按下事件处理
    */
   private handlePointerDown = (event: CanvasEvent): void => {
-    const activeTool = this.canvasStore.getState().tool.activeTool;
-    const selectedElementIds = this.canvasStore.getState().selectedElementIds;
-
-    if (activeTool !== 'hand' || selectedElementIds.length === 0) {
+    if (this.canvasStore.getState().tool.activeTool !== 'select') {
       return;
     }
 
@@ -100,8 +99,43 @@ export class MoveInteraction {
       return;
     }
 
-    const point = this.getWorldPoint(event);
-    this.startMove(point);
+    const state = this.canvasStore.getState();
+    const elementList = Object.values(state.elements);
+    const screenPoint = { x: event.screen.x, y: event.screen.y };
+    const clickedElement = this.selectionManager.handleClick(screenPoint, elementList);
+
+    if (clickedElement && state.selectedElementIds.includes(clickedElement.id)) {
+      const point = this.getWorldPoint(event);
+      this.startMove(point);
+      return;
+    }
+
+    const worldPoint = this.getWorldPoint(event);
+    const ids = state.selectedElementIds;
+    if (ids.length > 0) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const id of ids) {
+        const el = state.elements[id];
+        if (!el) continue;
+        minX = Math.min(minX, el.x);
+        minY = Math.min(minY, el.y);
+        maxX = Math.max(maxX, el.x + el.width);
+        maxY = Math.max(maxY, el.y + el.height);
+      }
+      if (minX !== Infinity) {
+        const inside =
+          worldPoint.x >= minX &&
+          worldPoint.x <= maxX &&
+          worldPoint.y >= minY &&
+          worldPoint.y <= maxY;
+        if (inside) {
+          this.startMove(worldPoint);
+        }
+      }
+    }
   };
 
   /**
