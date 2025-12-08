@@ -6,6 +6,7 @@ import {
   deleteInteraction,
   moveInteraction,
   historyService,
+  groupInteraction,
 } from '../instances';
 
 export function bindCanvasHotKeys() {
@@ -151,6 +152,21 @@ export function bindCanvasHotKeys() {
   //   // 如果没有框选工具，可以暂时切换到选择工具
   //   canvasStore.getState().setTool('select');
   // });
+
+  // === 打组/解组操作 ===
+  hotKeyManager.setHandler('group', async () => {
+    console.log('执行打组');
+    if (groupInteraction.canGroup()) {
+      await groupInteraction.groupSelectedElements();
+    }
+  });
+
+  hotKeyManager.setHandler('ungroup', async () => {
+    console.log('执行解组');
+    if (groupInteraction.canUngroup()) {
+      await groupInteraction.ungroupSelectedElements();
+    }
+  });
 
   // 你可以按需增加更多...
 }

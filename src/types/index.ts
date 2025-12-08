@@ -170,6 +170,9 @@ export type BaseElement<T extends ElementType = ElementType> = {
   cacheKey?: string; // 渲染缓存键，避免重复渲染
   visibility: 'visible' | 'hidden'; // 可见性状态，用于虚拟化渲染
   lastRenderedAt?: number; // 最后渲染时间戳，用于脏检查
+
+  // 🆕 组合元素支持 - 对应嵌套组合功能
+  parentId?: string | null; // 父组合元素ID，没有父组合则为 null/undefined
 } & ElementExtensions<T>;
 
 // === 具体元素类型别名 ===
@@ -264,6 +267,9 @@ export interface CanvasState {
   renderCache: Map<string, string>; // 渲染缓存
   visibleElements: string[]; // 视口内可见元素ID（虚拟化）
 
+  // 🆕 组合元素编辑状态
+  groupEditStack: string[]; // 组合编辑栈，支持嵌套组合的编辑模式
+
   // 派生状态
   get selectedElements(): Element[]; // 选中元素数组（计算属性）
   get elementList(): Element[]; // 元素列表（计算属性）
@@ -279,3 +285,7 @@ export const isTextElement = (element: Element): element is TextElement => eleme
 
 export const isImageElement = (element: Element): element is ImageElement =>
   element.type === 'image';
+
+/** 类型守卫：判断元素是否为组合元素 */
+export const isGroupElement = (element: Element): element is GroupElement =>
+  element.type === 'group';

@@ -34,6 +34,13 @@ export interface CanvasState {
    */
   tool: ToolState;
 
+  /**
+   * 组合编辑栈，支持嵌套组合的编辑模式
+   * 当进入组合编辑模式时，将组合ID推入栈中
+   * 点击命中组合时，优先命中栈顶组合的子元素
+   */
+  groupEditStack: string[];
+
   // === 派生状态（纯计算，无副作用）===
 
   /**
@@ -228,6 +235,7 @@ export const useCanvasStore = create<CanvasState>()(
       drawing: false,
       isCreating: false,
     },
+    groupEditStack: [],
 
     // === 派生状态实现 ===
     get selectedElements() {
@@ -365,6 +373,7 @@ export const useCanvasStore = create<CanvasState>()(
           drawing: false,
           isCreating: false,
         };
+        state.groupEditStack = [];
       }),
   })),
 );
