@@ -27,7 +27,6 @@ export type ElementType = 'rect' | 'circle' | 'triangle' | 'text' | 'image' | 'g
 export type Tool =
   | 'select'
   | 'hand'
-  | 'transfor'
   | 'rect'
   | 'rounded-rect'
   | 'circle'

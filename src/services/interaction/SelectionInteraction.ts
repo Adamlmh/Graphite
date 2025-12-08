@@ -65,61 +65,26 @@ export class SelectionInteraction {
    * 指针按下事件处理
    */
   private handlePointerDown = (event: CanvasEvent): void => {
+    // 只有在选择工具激活时才处理
     if (this.canvasStore.getState().tool.activeTool !== 'select') {
       return;
     }
 
-    const state = this.canvasStore.getState();
-    const ids = state.selectedElementIds;
-    if (ids.length > 0) {
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (const id of ids) {
-        const el = state.elements[id];
-        if (!el) continue;
-        minX = Math.min(minX, el.x);
-        minY = Math.min(minY, el.y);
-        maxX = Math.max(maxX, el.x + el.width);
-        maxY = Math.max(maxY, el.y + el.height);
-      }
-      if (minX !== Infinity) {
-        const wx = event.world.x;
-        const wy = event.world.y;
-        const inside = wx >= minX && wx <= maxX && wy >= minY && wy <= maxY;
-        if (inside) {
-          return;
+    // 检查是否可能是文本元素的双击
+    if (this.isPotentialTextDoubleClick()) {
+      // 先标记为拖拽状态，但延迟实际的拖拽逻辑
+      this.isDragging = true;
+
+      // 延迟启动拖拽，给双击检测一些时间
+      setTimeout(() => {
+        if (this.isDragging) {
+          // 如果延迟后仍在拖拽状态，开始框选逻辑
+          this.startDragSelection(event);
         }
-      }
+      }, 100);
+    } else {
+      this.startDragSelection(event);
     }
-    const elementList = Object.values(state.elements);
-    const screenPoint: Point = { x: event.screen.x, y: event.screen.y };
-    const clickedElement = this.selectionManager.handleClick(screenPoint, elementList);
-
-    const isMultiSelect = event.modifiers.ctrl || event.modifiers.meta;
-
-    if (clickedElement) {
-      if (isMultiSelect) {
-        const currentSelection = this.canvasStore.getState().selectedElementIds;
-        if (currentSelection.includes(clickedElement.id)) {
-          const newSelection = currentSelection.filter((id) => id !== clickedElement.id);
-          state.setSelectedElements(newSelection);
-        } else {
-          state.setSelectedElements([...currentSelection, clickedElement.id]);
-        }
-      } else {
-        state.setSelectedElements([clickedElement.id]);
-      }
-
-      this.isDragging = false;
-      this.dragStartTime = Date.now();
-      this.dragStartPoint = { x: event.screen.x, y: event.screen.y };
-      this.dragStartWorld = { x: event.world.x, y: event.world.y };
-      return;
-    }
-
-    this.startDragSelection(event);
   };
 
   /**
@@ -294,13 +259,6 @@ export class SelectionInteraction {
       } else {
         // 单选
         setSelectedElements([clickedElement.id]);
-        if (clickedElement.type === 'text') {
-          const position = { x: clickedElement.x, y: clickedElement.y };
-          eventBus.emit('text-editor:open', {
-            element: clickedElement,
-            position,
-          });
-        }
       }
     } else {
       console.log('SelectionInteraction: 点击空白处');

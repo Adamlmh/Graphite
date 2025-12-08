@@ -8,8 +8,7 @@ import type { Tool } from '../types';
  */
 export const CURSOR_MAP: Record<Tool, string> = {
   select: 'default',
-  hand: 'grab',
-  transfor: 'default',
+  hand: 'move',
   rect: 'crosshair',
   'rounded-rect': 'crosshair',
   circle: 'crosshair',
