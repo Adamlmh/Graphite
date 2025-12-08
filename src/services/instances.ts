@@ -3,7 +3,7 @@
  * 避免循环依赖问题
  */
 import { useCanvasStore, type CanvasState } from '../stores/canvas-store';
-import { HistoryService } from './HistoryService';
+import { HistoryService, SaveStatus } from './HistoryService';
 import { CreateInteraction } from './interaction/CreateInteraction';
 import { SelectionInteraction } from './interaction/SelectionInteraction';
 import { CopyPasteInteraction } from './interaction/CopyPasteInteraction';
@@ -12,11 +12,23 @@ import { ResizeInteraction } from './interaction/ResizeInteraction';
 import { GroupInteraction } from './interaction/GroupInteraction';
 import { TextEditorInteraction } from './interaction/TextEditorInteraction';
 
+// 导出 SaveStatus 供 UI 使用
+export { SaveStatus };
+
 // 全局初始化 HistoryService
 export const historyService = new HistoryService({
   getState: () => useCanvasStore.getState(),
   setState: (partial) => {
-    useCanvasStore.setState((state: CanvasState) => Object.assign(state, partial));
+    if (typeof partial === 'function') {
+      // 如果是函数，直接传递给 Zustand
+      useCanvasStore.setState(partial as (state: CanvasState) => Partial<CanvasState>);
+    } else {
+      // 如果是对象，使用 immer 的方式更新
+      useCanvasStore.setState((state: CanvasState) => {
+        // 使用 immer，直接修改 draft state
+        Object.assign(state, partial);
+      });
+    }
   },
 });
 
