@@ -45,22 +45,9 @@ export class GeometryService {
    * @returns 元素的世界边界框
    */
   public getElementBoundsWorld(element: IElementProvider): Bounds {
-    const position = element.getPosition();
     const size = element.getSize();
-    const rotation = element.getRotation();
-    const scale = element.getScale();
 
-    // 无旋转情况：直接计算
-    if (rotation === 0 || rotation % 360 === 0) {
-      return {
-        x: position.x,
-        y: position.y,
-        width: size.width * scale.scaleX,
-        height: size.height * scale.scaleY,
-      };
-    }
-
-    // 有旋转情况：通过四个角点计算 AABB
+    // 统一通过四个角点计算 AABB，这样可以正确处理 pivot、scale 和 rotation
     // 获取元素的局部四个角点
     const corners = [
       { x: 0, y: 0 }, // 左上角

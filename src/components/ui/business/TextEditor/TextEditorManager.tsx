@@ -87,6 +87,8 @@ const TextEditorManager: React.FC = () => {
     const { element } = editorState;
     const { textStyle } = element;
 
+    console.log('[TextEditorManager] Updating content:', { content, richText, textStyle });
+
     // 测量文本尺寸
     const style = new TextStyle({
       fontFamily: textStyle.fontFamily,
@@ -100,20 +102,6 @@ const TextEditorManager: React.FC = () => {
       wordWrapWidth: element.width, // 使用当前宽度作为基准
     });
 
-    // 如果内容变长，我们希望宽度自适应还是保持固定？
-    // 既然用户抱怨宽高没变，说明他们希望宽高能跟随内容变化。
-    // 这里我们采用一种策略：
-    // 1. 如果是单行文本（无换行符），且宽度超过当前宽度，则扩展宽度。
-    // 2. 如果有多行文本，则保持宽度，扩展高度。
-    // 但为了简单起见，且符合大多数“点击输入”的直觉，我们先尝试让宽高都自适应内容。
-    // 注意：如果一直自适应宽度，就无法换行了（除非手动输入换行符）。
-
-    // 修正策略：
-    // 既然 TextRenderer 强制使用了 wordWrap = true 和 wordWrapWidth = width，
-    // 那么如果我们不更新 width，文本就会在旧 width 处换行。
-    // 如果用户在编辑器里看到的是不换行的（因为编辑器可能没限制宽度），但渲染出来换行了，这就是“不一致”。
-
-    // 我们尝试测量“自然”宽高（不限制宽度），看看效果。
     const naturalStyle = new TextStyle({
       ...style,
       wordWrap: false, // 不强制换行，测量自然宽度

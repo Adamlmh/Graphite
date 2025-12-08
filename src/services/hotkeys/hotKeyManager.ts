@@ -415,3 +415,6 @@ class HotKeyManager {
 
 // export singleton
 export const hotKeyManager = HotKeyManager.instance;
+
+// export class for static methods access
+export { HotKeyManager };

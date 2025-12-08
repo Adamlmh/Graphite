@@ -22,7 +22,6 @@ import { RenderScheduler } from './scheduling/RenderScheduler';
 import { ScrollbarManager } from './ui/ScrollbarManager';
 import { ViewportController } from './viewport/ViewportController';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
-import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { useCanvasStore } from '../stores/canvas-store';
 import { isGroupElement } from '../types/index';
@@ -171,9 +170,6 @@ export class RenderEngine {
         default:
           console.warn('未知渲染命令:', command);
       }
-
-      // 打印世界坐标
-      this.printWorldCoordinates();
     } catch (error) {
       console.error('执行渲染命令失败:', error);
     }
@@ -880,22 +876,7 @@ export class RenderEngine {
       new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
     );
     const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
-    const element = useCanvasStore.getState().elements[elementId];
-    const lastTransform = element?.transform;
-    const lastWidth = element?.width;
-    const lastHeight = element?.height;
-    const worldPos = {
-      x: elementGraphics.position.x + -this.camera.position.x / this.camera.scale.x,
-      y: elementGraphics.position.y + -this.camera.position.y / this.camera.scale.y,
-    };
-    console.log('RenderEngine: 选框与元素对齐检查', {
-      elementId,
-      bounds,
-      worldPos,
-      pivot: lastTransform ? { x: lastTransform.pivotX, y: lastTransform.pivotY } : undefined,
-      size: { width: lastWidth, height: lastHeight },
-      rotation: element?.rotation,
-    });
+
     this.validateSelectionAlignment(elementId, bounds);
 
     const selectionLayer = this.layerManager.getSelectionLayer();
@@ -1197,31 +1178,5 @@ export class RenderEngine {
       this.previewGraphics.destroy();
       this.previewGraphics = null;
     }
-  }
-
-  /**
-   * 打印所有元素的PIXI世界坐标
-   */
-  printWorldCoordinates(): void {
-    console.log('=== PIXI 渲染图形世界坐标 ===');
-    this.elementGraphics.forEach((graphics, elementId) => {
-      // 获取相对于camera的局部坐标
-      const localPos = graphics.position;
-      // 获取camera的偏移量（世界坐标）
-      const cameraOffset = {
-        x: -this.camera.position.x / this.camera.scale.x,
-        y: -this.camera.position.y / this.camera.scale.y,
-      };
-      // 计算真正的世界坐标：局部坐标 + camera偏移
-      const worldPos = {
-        x: localPos.x + cameraOffset.x,
-        y: localPos.y + cameraOffset.y,
-      };
-
-      console.log(
-        `元素 ${elementId}: 世界坐标 (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`,
-      );
-    });
-    console.log('================================');
   }
 }

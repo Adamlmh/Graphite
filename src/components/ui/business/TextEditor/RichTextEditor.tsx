@@ -6,7 +6,7 @@ import { Color } from '@tiptap/extension-color';
 import { Underline } from '@tiptap/extension-underline';
 import type { TextElement, RichTextSpan } from '../../../../types';
 import InlineTextToolbar from './InlineTextToolbar';
-import { FontSize, BackgroundColor } from './extensions';
+import { FontSize, BackgroundColor, FontFamily } from './extensions';
 import { buildTiptapContent, parseTiptapContent } from '../../../../utils/tiptapConverter';
 import { calculateToolbarPosition } from '../../../../utils/toolbarPositioning';
 import { eventBus } from '../../../../lib/eventBus';
@@ -37,55 +37,93 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
     position: { x: 0, y: 0 },
   });
 
+  // 记录最近一次有效的选区，用于在工具栏交互时保持选区
+  const [lastSelectionRange, setLastSelectionRange] = useState<{ from: number; to: number } | null>(
+    null,
+  );
+
+  // 记录上一次工具栏位置，用于在选区暂时为空时保持工具栏不闪退
+  const [lastToolbarPosition, setLastToolbarPosition] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+
   // 更新触发器，用于强制刷新 InlineTextToolbar
   const [updateTrigger, setUpdateTrigger] = useState(0);
 
   // 从 richText 构建初始内容
-  const initialContent =
-    richText && richText.length > 0 ? buildTiptapContent(content || '', richText) : content || '';
+  // 注意：始终传入textStyle以确保全局样式被正确应用
+  const initialContent = buildTiptapContent(content || '', richText, textStyle);
 
-  console.log('[RichTextEditor] Initializing with:', { content, richText, initialContent });
+  console.log('[RichTextEditor] Initializing with:', {
+    content,
+    richText,
+    textStyle,
+    initialContent,
+  });
 
   // 处理选择变化
-  const handleSelectionUpdate = useCallback((editor: NonNullable<ReturnType<typeof useEditor>>) => {
-    console.log('[RichTextEditor] Selection update triggered'); // 调试信息
+  const handleSelectionUpdate = useCallback(
+    (editor: NonNullable<ReturnType<typeof useEditor>>) => {
+      console.log('[RichTextEditor] Selection update triggered'); // 调试信息
 
-    // 延迟执行，确保DOM已更新
-    setTimeout(() => {
-      const { from, to } = editor.state.selection;
-      const hasSelection = from !== to;
+      // 延迟执行，确保DOM已更新
+      setTimeout(() => {
+        const { from, to } = editor.state.selection;
+        const hasSelection = from !== to;
 
-      console.log('[RichTextEditor] Selection info:', { from, to, hasSelection }); // 调试信息
+        console.log('[RichTextEditor] Selection info:', { from, to, hasSelection }); // 调试信息
 
-      if (hasSelection) {
-        // 获取编辑器容器的位置
-        const editorContainer = editorRef.current?.querySelector('.ProseMirror');
-        if (editorContainer) {
-          const containerRect = editorContainer.getBoundingClientRect();
+        if (hasSelection) {
+          // 记录最近一次有效选区
+          setLastSelectionRange({ from, to });
 
-          // 计算工具栏位置
-          const toolbarPosition = calculateToolbarPosition(containerRect, {
-            width: 280,
-            height: 60,
-            gap: 8,
-            viewportPadding: 16,
-          });
+          // 获取编辑器容器的位置
+          const editorContainer = editorRef.current?.querySelector('.ProseMirror');
+          if (editorContainer) {
+            const containerRect = editorContainer.getBoundingClientRect();
 
-          console.log('[RichTextEditor] Toolbar position calculated:', toolbarPosition); // 调试信息
+            // 计算工具栏位置
+            const toolbarPosition = calculateToolbarPosition(containerRect, {
+              width: 280,
+              height: 60,
+              gap: 8,
+              viewportPadding: 16,
+            });
 
-          setSelection({
-            visible: true,
-            position: toolbarPosition,
-          });
-          eventBus.emit('text-editor:selection-change', { hasSelection: true });
+            console.log('[RichTextEditor] Toolbar position calculated:', toolbarPosition); // 调试信息
+
+            setSelection({
+              visible: true,
+              position: toolbarPosition,
+            });
+            setLastToolbarPosition(toolbarPosition);
+            eventBus.emit('text-editor:selection-change', { hasSelection: true });
+          }
+        } else {
+          // 选区为空，但如果仍然聚焦或正在操作工具栏，并且有最近的选区记录，则保持工具栏可见，防止闪退
+          const activeEl = document.activeElement as HTMLElement | null;
+          const interactingToolbar =
+            activeEl &&
+            (activeEl.closest('[data-toolbar="inline-text"]') ||
+              activeEl.closest('.ant-select-dropdown') ||
+              activeEl.closest('.ant-popover'));
+
+          const hasFocus = editor.view.hasFocus() || !!interactingToolbar;
+
+          if (hasFocus && lastSelectionRange && lastToolbarPosition) {
+            console.log('[RichTextEditor] Keeping toolbar visible with last selection');
+            setSelection({ visible: true, position: lastToolbarPosition });
+            eventBus.emit('text-editor:selection-change', { hasSelection: true });
+          } else {
+            console.log('[RichTextEditor] Hiding toolbar'); // 调试信息
+            setSelection({ visible: false, position: { x: 0, y: 0 } });
+            eventBus.emit('text-editor:selection-change', { hasSelection: false });
+          }
         }
-      } else {
-        console.log('[RichTextEditor] Hiding toolbar'); // 调试信息
-        setSelection({ visible: false, position: { x: 0, y: 0 } });
-        eventBus.emit('text-editor:selection-change', { hasSelection: false });
-      }
-    }, 50); // 延迟50ms确保DOM更新
-  }, []);
+      }, 50); // 延迟50ms确保DOM更新
+    },
+    [lastSelectionRange, lastToolbarPosition],
+  );
 
   const editor = useEditor({
     extensions: [
@@ -100,6 +138,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
       Underline,
       FontSize,
       BackgroundColor,
+      FontFamily,
     ],
     content: initialContent,
     editorProps: {
@@ -108,8 +147,6 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         style: `
           font-family: ${textStyle.fontFamily};
           font-size: ${textStyle.fontSize}px;
-          font-weight: ${textStyle.fontWeight};
-          font-style: ${textStyle.fontStyle};
           color: ${textStyle.color};
           text-align: ${textStyle.textAlign};
           line-height: ${textStyle.lineHeight};
@@ -118,9 +155,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
     },
     onUpdate: ({ editor }) => {
       const json = editor.getJSON();
-      const { content: plainText, richText } = parseTiptapContent(json);
+      // 🎯 关键修复: 传入globalTextStyle，让parseTiptapContent生成相对差异
+      const { content: plainText, richText } = parseTiptapContent(json, textStyle);
 
-      console.log('[RichTextEditor] Syncing to Zustand:', { plainText, richText }); // 调试信息
+      // cleanupRichTextSpans不再需要，因为parseTiptapContent已经生成了差异
+      console.log('[RichTextEditor] Syncing to Zustand:', {
+        plainText,
+        richText,
+        globalStyle: textStyle,
+      });
 
       onUpdate(plainText, richText);
       setUpdateTrigger((prev) => prev + 1);
@@ -132,12 +175,48 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
       setUpdateTrigger((prev) => prev + 1);
     },
     onBlur: ({ event }) => {
-      // 延迟隐藏，给用户时间点击工具栏
+      const nativeEvent = event as unknown as FocusEvent;
+      const relatedTarget = nativeEvent.relatedTarget as HTMLElement | null;
+
+      console.log('[RichTextEditor] onBlur triggered, relatedTarget:', relatedTarget);
+
+      // 检查失焦目标是否在工具栏内或是 Ant Design 的弹出层
+      const isClickingToolbar =
+        relatedTarget &&
+        // 检查是否点击了工具栏容器
+        (relatedTarget.closest('[data-toolbar="inline-text"]') ||
+          // 检查是否点击了 Ant Design 的下拉菜单
+          relatedTarget.closest('.ant-select-dropdown') ||
+          // 检查是否点击了 ColorPicker 的面板
+          relatedTarget.closest('.ant-popover') ||
+          // 检查是否点击了 Popover 内容
+          relatedTarget.closest('.ant-popover-inner'));
+
+      if (isClickingToolbar) {
+        console.log('[RichTextEditor] Clicking toolbar, maintaining selection');
+        return; // 不关闭工具栏
+      }
+
+      // 延迟隐藏，给用户时间点击工具栏（防止某些情况下 relatedTarget 为 null）
       setTimeout(() => {
+        // 双重检查：如果当前焦点在工具栏内，不关闭
+        const activeElement = document.activeElement as HTMLElement;
+        if (
+          activeElement &&
+          (activeElement.closest('[data-toolbar="inline-text"]') ||
+            activeElement.closest('.ant-select-dropdown') ||
+            activeElement.closest('.ant-popover'))
+        ) {
+          console.log('[RichTextEditor] Active element in toolbar, maintaining selection');
+          return;
+        }
+
+        console.log('[RichTextEditor] Hiding toolbar');
         setSelection({ visible: false, position: { x: 0, y: 0 } });
         eventBus.emit('text-editor:selection-change', { hasSelection: false });
-      }, 150);
-      onBlur(event as unknown as React.FocusEvent);
+      }, 300); // 增加延迟时间到 300ms
+
+      onBlur(nativeEvent as unknown as React.FocusEvent);
     },
     autofocus: 'end',
   });
@@ -150,33 +229,35 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         // 应用所有文本样式
         contentEl.style.fontFamily = textStyle.fontFamily;
         contentEl.style.fontSize = `${textStyle.fontSize}px`;
-        contentEl.style.fontWeight = textStyle.fontWeight;
-        contentEl.style.fontStyle = textStyle.fontStyle;
+        // 将 BIUS 基线回退到 normal，让 marks 控制加粗/斜体/下划线
+        contentEl.style.fontWeight = 'normal';
+        contentEl.style.fontStyle = 'normal';
         contentEl.style.color = textStyle.color;
         contentEl.style.textAlign = textStyle.textAlign;
         contentEl.style.lineHeight = `${textStyle.lineHeight}`;
+        contentEl.style.textDecoration = 'none';
 
-        // 应用背景色
+        // 应用背景色（保留）
         if (textStyle.backgroundColor) {
           contentEl.style.backgroundColor = textStyle.backgroundColor;
+        } else {
+          contentEl.style.backgroundColor = '';
         }
+      }
 
-        // 应用文本装饰
-        contentEl.style.textDecoration = textStyle.textDecoration || 'none';
+      // 🎯 关键修复: 当全局样式变化时,重新构建编辑器内容以应用新样式
+      const currentJson = editor.getJSON();
+      const newContent = buildTiptapContent(content || '', richText, textStyle);
+
+      // 只在内容结构真正不同时才更新,避免不必要的光标跳动
+      if (JSON.stringify(currentJson) !== JSON.stringify(newContent)) {
+        console.log('[RichTextEditor] Global style changed, rebuilding content');
+        editor.commands.setContent(newContent);
+        // 触发InlineTextToolbar更新 - 使用setTimeout避免cascading render
+        setTimeout(() => setUpdateTrigger((prev) => prev + 1), 0);
       }
     }
-  }, [editor, textStyle]);
-
-  // 监听内容变化，同步到编辑器
-  useEffect(() => {
-    if (editor && editor.getHTML() !== content) {
-      // 避免光标位置丢失，只在内容真的不同时才更新
-      const currentContent = editor.getText();
-      if (currentContent !== (content || '')) {
-        editor.commands.setContent(content || '');
-      }
-    }
-  }, [editor, content]);
+  }, [editor, textStyle, content, richText]);
 
   // 自动聚焦 - 使用 setTimeout 确保编辑器已完全挂载
   useEffect(() => {
@@ -231,6 +312,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
           visible={selection.visible}
           position={selection.position}
           updateTrigger={updateTrigger}
+          lastSelection={lastSelectionRange}
         />
       )}
     </div>

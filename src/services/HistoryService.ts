@@ -148,7 +148,8 @@ export class HistoryService {
     ) => void;
   }) {
     this.store = store;
-    this.setupAutoSave();
+    // 初始化时先禁用自动保存
+    this.autoSaveEnabled = false;
     this.setupPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
@@ -164,6 +165,10 @@ export class HistoryService {
           const latest = this.snapshots[this.snapshots.length - 1];
           return this.restoreSnapshot(latest.id); // 不抛错，让页面能继续用
         }
+      })
+      .then(() => {
+        this.autoSaveEnabled = true; // 恢复完成后再启用
+        this.setupAutoSave();
       })
       .catch((e) => {
         console.warn('[HistoryService] 未能从持久化存储恢复', e);
@@ -488,7 +493,7 @@ export class HistoryService {
         previousState = currentState;
         this.scheduleAutoSave();
       }
-    }, 1000); // 每秒检查一次
+    }, 3000); // 每3秒检查一次
 
     // 设置定时保存
     setInterval(() => {
@@ -518,12 +523,13 @@ export class HistoryService {
       const currentObj = JSON.parse(current) as CanvasState;
       const previousObj = JSON.parse(previous) as CanvasState;
 
-      // 检查元素变化
+      // 1. 检查元素变化
       if (JSON.stringify(currentObj.elements) !== JSON.stringify(previousObj.elements)) {
         return true;
       }
 
-      // 检查视口变化
+      // 2. 检查视口变化
+      /*
       if (
         currentObj.viewport.zoom !== previousObj.viewport.zoom ||
         currentObj.viewport.offset.x !== previousObj.viewport.offset.x ||
@@ -531,12 +537,22 @@ export class HistoryService {
       ) {
         return true;
       }
+       */
 
-      // 检查选择变化
+      if (currentObj.viewport.zoom !== previousObj.viewport.zoom) {
+        return true;
+      }
+
+      // 3. 检查选择变化
       if (
         JSON.stringify(currentObj.selectedElementIds) !==
         JSON.stringify(previousObj.selectedElementIds)
       ) {
+        return true;
+      }
+
+      // 4. 检查工具状态变化（关键变更）
+      if (currentObj.tool.activeTool !== previousObj.tool.activeTool) {
         return true;
       }
 
@@ -783,6 +799,8 @@ export class HistoryService {
 
     try {
       const currentState = this.store.getState();
+      // 异步执行序列化与存储
+      await new Promise((resolve) => requestIdleCallback(resolve));
       const snapshotData = this.serializeStateForPersistence(currentState);
       const snapshot: Snapshot = {
         id: uuidv4(),
@@ -1293,13 +1311,46 @@ export class HistoryService {
   }
 
   /**
-   * 清理历史记录
+   * 删除所有持久化存储的数据
    */
-  clearHistory(): void {
-    this.undoStack = [];
-    this.redoStack = [];
-    this.snapshots = [];
-    this.currentVersion = 0;
+  async clearHistory(): Promise<void> {
+    try {
+      // 清空内存中的快照
+      this.snapshots = [];
+      this.undoStack = [];
+      this.redoStack = [];
+      this.currentVersion = 0;
+
+      // 清空 IndexedDB
+      if (this.isDBReady && this.config.storageBackend === 'indexeddb' && this.db) {
+        const transaction = this.db.transaction(['snapshots'], 'readwrite');
+        const store = transaction.objectStore('snapshots');
+        await store.clear();
+        console.log('IndexedDB storage cleared');
+      }
+
+      // 清空 localStorage
+      if (this.config.storageBackend === 'localstorage') {
+        const index = JSON.parse(localStorage.getItem('canvas-snapshots-index') || '[]');
+        index.forEach((item: { id: string }) => {
+          localStorage.removeItem(`canvas-snapshot-${item.id}`);
+        });
+        localStorage.removeItem('canvas-snapshots-index');
+        console.log('localStorage cleared');
+      }
+
+      // 重置状态
+      this.lastSaveTime = 0;
+      this.saveStatus = SaveStatus.IDLE;
+      this.saveError = null;
+      this.lastSavedVersion = 0;
+      this.hasUnsavedChanges = false;
+
+      console.log('All persistent storage cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear persistent storage:', error);
+      throw error;
+    }
   }
 
   /**

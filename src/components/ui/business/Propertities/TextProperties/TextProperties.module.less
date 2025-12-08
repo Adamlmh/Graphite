@@ -14,6 +14,50 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+/* 字体选择器样式 */
+.fontSelect {
+  :global(.ant-select-selector) {
+    border-color: rgba(0, 0, 0, 0.15) !important;
+    background: transparent !important;
+    color: rgba(0, 0, 0, 0.85) !important;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: rgba(0, 0, 0, 0.3) !important;
+    }
+  }
+
+  :global(.ant-select-focused .ant-select-selector) {
+    border-color: var(--primary-color) !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1) !important;
+  }
+
+  :global(.ant-select-arrow) {
+    color: rgba(0, 0, 0, 0.45);
+  }
+}
+
+[data-theme='dark'] .fontSelect {
+  :global(.ant-select-selector) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    background: rgba(0, 0, 0, 0.2) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+
+    &:hover {
+      border-color: rgba(255, 255, 255, 0.3) !important;
+    }
+  }
+
+  :global(.ant-select-focused .ant-select-selector) {
+    border-color: var(--primary-color) !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+  }
+
+  :global(.ant-select-arrow) {
+    color: rgba(255, 255, 255, 0.45);
+  }
+}
+
 .toolButton {
   width: 32px;
   height: 32px;
@@ -146,6 +190,18 @@
 .popoverSlider {
   flex: 1;
   margin: 0;
+
+  :global(.ant-slider-rail) {
+    background-color: var(--border-normal);
+  }
+
+  :global(.ant-slider-track) {
+    background-color: var(--primary-color);
+  }
+
+  :global(.ant-slider-handle)::after {
+    box-shadow: 0 0 0 2px var(--primary-color);
+  }
 }
 
 .sliderValue {
@@ -155,8 +211,46 @@
   text-align: right;
 }
 
-/* 使用主题变量控制颜色，无需单独覆盖暗色 */
-
 .colorPickerPopover {
   padding: 8px;
+  background: var(--bg-secondary);
+}
+
+/* ColorPicker 下拉面板主题化 */
+:global(.ant-popover) {
+  [data-theme='dark'] & {
+    :global(.ant-popover-inner) {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-normal);
+    }
+
+    :global(.ant-color-picker-panel) {
+      background: var(--bg-secondary);
+    }
+
+    :global(.ant-color-picker-inner-panel) {
+      background: var(--bg-primary);
+    }
+  }
+}
+
+/* Select 下拉菜单主题化 */
+[data-theme='dark'] {
+  :global(.ant-select-dropdown) {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-normal);
+
+    :global(.ant-select-item) {
+      color: var(--text-primary);
+
+      &:hover {
+        background: var(--bg-hover);
+      }
+    }
+
+    :global(.ant-select-item-option-selected) {
+      background: var(--btn-bg-active);
+      color: var(--primary-color);
+    }
+  }
 }
