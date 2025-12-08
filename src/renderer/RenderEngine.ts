@@ -26,6 +26,7 @@ import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import { isGroupElement } from '../types/index';
 import { computeGroupBounds } from '../services/group-service';
+import { useCanvasStore } from '../stores/canvas-store';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
  * 职责：接收渲染命令，调度各个模块协同工作
