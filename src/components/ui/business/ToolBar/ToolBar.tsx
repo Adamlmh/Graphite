@@ -9,7 +9,6 @@ import {
   MoonOutlined,
   UndoOutlined,
   RedoOutlined,
-  SaveOutlined,
   ApartmentOutlined,
   UngroupOutlined,
 } from '@ant-design/icons';
@@ -94,20 +93,6 @@ const ToolBar: React.FC = () => {
     } catch (error) {
       message.error('重做失败');
       console.error('Redo error:', error);
-    }
-  };
-
-  // 处理保存
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await historyService.forceSave();
-      console.log('Save successful');
-    } catch (error) {
-      message.error('保存失败');
-      console.error('Save error:', error);
-    } finally {
-      setIsSaving(false);
     }
   };
 

@@ -23,6 +23,7 @@ import { ScrollbarManager } from './ui/ScrollbarManager';
 import { ViewportController } from './viewport/ViewportController';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
+import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import { useCanvasStore } from '../stores/canvas-store';
 import { isGroupElement } from '../types/index';
 import { computeGroupBounds } from '../services/group-service';
