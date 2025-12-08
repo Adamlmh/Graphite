@@ -3,6 +3,7 @@ import type { Element, ElementType } from '../../types/index';
 import { type IElementRenderer } from '../../types/render.types';
 import { ResourceManager } from '../resources/ResourceManager';
 import { CircleRenderer } from './CircleRenderer';
+import { GroupRenderer } from './GroupRenderer';
 import { ImageRenderer } from './ImageRenderer';
 import { RectangleRenderer } from './RectangleRenderer';
 import { TextRenderer } from './TextRenderer';
@@ -35,6 +36,8 @@ export class ElementRendererRegistry {
     this.registerRenderer('text', new TextRenderer(this.resourceManager));
     // 注册图片渲染器
     this.registerRenderer('image', new ImageRenderer(this.resourceManager));
+    // 注册组合渲染器
+    this.registerRenderer('group', new GroupRenderer(this.resourceManager));
 
     console.log(
       'ElementRendererRegistry: 初始化完成，支持的渲染器:',

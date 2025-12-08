@@ -715,3 +715,208 @@ export class ResizeCommand implements Command {
     });
   }
 }
+
+/**
+ * 打组命令
+ */
+export class GroupCommand implements Command {
+  id: string;
+  type: string = 'group-elements';
+  timestamp: number;
+
+  private elementIds: string[];
+  private groupElement: Element;
+  private childElements: Element[]; // 保存子元素的原始状态
+  private previousSelection: string[];
+  private canvasStore: {
+    addElement: (element: Element) => void;
+    deleteElement: (id: string) => void;
+    updateElement: (id: string, updates: Partial<Element>) => void;
+    setSelectedElements: (ids: string[]) => void;
+  };
+
+  constructor(
+    elementIds: string[],
+    groupElement: Element,
+    childElements: Element[],
+    previousSelection: string[],
+    canvasStore: {
+      addElement: (element: Element) => void;
+      deleteElement: (id: string) => void;
+      updateElement: (id: string, updates: Partial<Element>) => void;
+      setSelectedElements: (ids: string[]) => void;
+    },
+  ) {
+    this.id = uuidv4();
+    this.timestamp = Date.now();
+    this.elementIds = [...elementIds];
+    this.groupElement = JSON.parse(JSON.stringify(groupElement)); // 深拷贝
+    this.childElements = childElements.map((el) => JSON.parse(JSON.stringify(el))); // 深拷贝
+    this.previousSelection = [...previousSelection];
+    this.canvasStore = canvasStore;
+  }
+
+  /**
+   * 执行命令 - 打组
+   */
+  async execute(): Promise<void> {
+    // 更新子元素的 parentId
+    this.elementIds.forEach((id) => {
+      this.canvasStore.updateElement(id, {
+        parentId: this.groupElement.id,
+      });
+    });
+
+    // 添加组合元素
+    this.canvasStore.addElement(this.groupElement);
+
+    // 选中组合元素
+    this.canvasStore.setSelectedElements([this.groupElement.id]);
+
+    return Promise.resolve();
+  }
+
+  /**
+   * 撤销命令 - 解组
+   */
+  async undo(): Promise<void> {
+    // 恢复子元素的 parentId
+    this.childElements.forEach((child) => {
+      this.canvasStore.updateElement(child.id, {
+        parentId: child.parentId,
+      });
+    });
+
+    // 删除组合元素
+    this.canvasStore.deleteElement(this.groupElement.id);
+
+    // 恢复选中状态
+    this.canvasStore.setSelectedElements(this.previousSelection);
+
+    return Promise.resolve();
+  }
+
+  /**
+   * 重做命令 - 重新打组
+   */
+  async redo(): Promise<void> {
+    await this.execute();
+    return Promise.resolve();
+  }
+
+  /**
+   * 序列化命令
+   */
+  serialize(): string {
+    return JSON.stringify({
+      id: this.id,
+      type: this.type,
+      timestamp: this.timestamp,
+      elementIds: this.elementIds,
+      groupElementId: this.groupElement.id,
+      childCount: this.childElements.length,
+      previousSelection: this.previousSelection,
+    });
+  }
+}
+
+/**
+ * 解组命令
+ */
+export class UngroupCommand implements Command {
+  id: string;
+  type: string = 'ungroup-elements';
+  timestamp: number;
+
+  private groupElement: Element;
+  private childElements: Element[]; // 保存子元素的原始状态（包含 parentId）
+  private previousSelection: string[];
+  private canvasStore: {
+    addElement: (element: Element) => void;
+    deleteElement: (id: string) => void;
+    updateElement: (id: string, updates: Partial<Element>) => void;
+    setSelectedElements: (ids: string[]) => void;
+  };
+
+  constructor(
+    groupElement: Element,
+    childElements: Element[],
+    previousSelection: string[],
+    canvasStore: {
+      addElement: (element: Element) => void;
+      deleteElement: (id: string) => void;
+      updateElement: (id: string, updates: Partial<Element>) => void;
+      setSelectedElements: (ids: string[]) => void;
+    },
+  ) {
+    this.id = uuidv4();
+    this.timestamp = Date.now();
+    this.groupElement = JSON.parse(JSON.stringify(groupElement)); // 深拷贝
+    this.childElements = childElements.map((el) => JSON.parse(JSON.stringify(el))); // 深拷贝
+    this.previousSelection = [...previousSelection];
+    this.canvasStore = canvasStore;
+  }
+
+  /**
+   * 执行命令 - 解组
+   */
+  async execute(): Promise<void> {
+    // 恢复子元素的 parentId
+    this.childElements.forEach((child) => {
+      this.canvasStore.updateElement(child.id, {
+        parentId: child.parentId,
+      });
+    });
+
+    // 删除组合元素
+    this.canvasStore.deleteElement(this.groupElement.id);
+
+    // 选中子元素
+    const childIds = this.childElements.map((child) => child.id);
+    this.canvasStore.setSelectedElements(childIds);
+
+    return Promise.resolve();
+  }
+
+  /**
+   * 撤销命令 - 重新打组
+   */
+  async undo(): Promise<void> {
+    // 恢复子元素的 parentId 为 groupId
+    this.childElements.forEach((child) => {
+      this.canvasStore.updateElement(child.id, {
+        parentId: this.groupElement.id,
+      });
+    });
+
+    // 恢复组合元素
+    this.canvasStore.addElement(this.groupElement);
+
+    // 恢复选中状态
+    this.canvasStore.setSelectedElements(this.previousSelection);
+
+    return Promise.resolve();
+  }
+
+  /**
+   * 重做命令 - 重新解组
+   */
+  async redo(): Promise<void> {
+    await this.execute();
+    return Promise.resolve();
+  }
+
+  /**
+   * 序列化命令
+   */
+  serialize(): string {
+    return JSON.stringify({
+      id: this.id,
+      type: this.type,
+      timestamp: this.timestamp,
+      groupElementId: this.groupElement.id,
+      childCount: this.childElements.length,
+      previousSelection: this.previousSelection,
+    });
+  }
+}

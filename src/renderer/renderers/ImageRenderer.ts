@@ -20,7 +20,6 @@ export class ImageRenderer implements IElementRenderer {
    * 渲染图片元素
    */
   render(element: Element, resources: RenderResources): PIXI.Sprite {
-    console.log(`ImageRenderer: resources received`, resources);
     const imageElement = element as ImageElement;
     const { x, y, width, height, opacity, src, adjustments, transform, rotation } = imageElement;
 
@@ -73,8 +72,6 @@ export class ImageRenderer implements IElementRenderer {
     (sprite as any).lastWidth = width;
     (sprite as any).lastHeight = height;
     (sprite as any).lastTransform = transform;
-
-    console.log(`ImageRenderer: 创建图片元素 ${element.id}`, { x, y, width, height, src });
 
     return sprite;
   }
@@ -135,7 +132,11 @@ export class ImageRenderer implements IElementRenderer {
       this.applyAdjustments(sprite, imageChanges.adjustments);
     }
 
-    console.log(`ImageRenderer: 更新图片元素`, changes);
+    // 更新缓存
+    if (imageChanges.width !== undefined) (sprite as any).lastWidth = imageChanges.width;
+    if (imageChanges.height !== undefined) (sprite as any).lastHeight = imageChanges.height;
+    if (imageChanges.transform !== undefined)
+      (sprite as any).lastTransform = imageChanges.transform;
   }
 
   /**
@@ -192,9 +193,12 @@ export class ImageRenderer implements IElementRenderer {
     }
 
     // 模糊：像素半径，0-20 合理
+    // 优化：根据模糊半径动态调整质量，减少 GPU 消耗
     if (typeof adjustments.blur === 'number' && adjustments.blur > 0) {
       const blurRadius = Math.min(20, Math.max(0, adjustments.blur));
-      const blur = new PIXI.BlurFilter({ strength: blurRadius, quality: 4 });
+      // 小半径使用较低质量，大半径使用较高质量
+      const quality = blurRadius < 5 ? 2 : blurRadius < 10 ? 3 : 4;
+      const blur = new PIXI.BlurFilter({ strength: blurRadius, quality });
       filters.push(blur);
     }
 

@@ -102,7 +102,7 @@ jobs:
 
   deploy:
     needs: ci
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
       contents: read

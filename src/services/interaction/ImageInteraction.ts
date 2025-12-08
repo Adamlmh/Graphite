@@ -127,24 +127,7 @@ export class ImageInteraction {
    * 读取文件为 DataURL
    */
   private readFileAsDataURL(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        const result = e.target?.result;
-        if (typeof result === 'string') {
-          resolve(result);
-        } else {
-          reject(new Error('读取文件失败：结果不是字符串'));
-        }
-      };
-
-      reader.onerror = () => {
-        reject(new Error('读取文件失败'));
-      };
-
-      reader.readAsDataURL(file);
-    });
+    return Promise.resolve(URL.createObjectURL(file));
   }
 
   /**

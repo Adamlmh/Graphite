@@ -47,12 +47,55 @@ export class CanvasBridge {
 
   /**
    * 启动桥接：订阅 store 并开始转发变化。
+   *
+   * 注意：如果启动时 store 中已有元素（如页面刷新后恢复的数据），
+   * 需要主动触发一次渲染。这是因为：
+   * 1. 订阅初始化时，previousElements 会被设置为当前状态
+   * 2. 如果此时恢复已完成，previousElements 就是恢复后的状态
+   * 3. 订阅只会检测后续的变化，不会检测到初始化时已有的数据
+   *
+   * 理想情况下，应该在 HistoryService 恢复完成后再启动 CanvasBridge，
+   * 但为了保持架构简单，这里采用主动触发的方式。
    */
   start(): void {
     if (this.isRunning) return;
 
     this.subscribeToStore();
+
+    // 初始化时主动触发一次状态更新，确保从历史状态恢复时元素能被渲染
+    const initialState = this.store.getState();
+
+    // 初始化时主动触发一次元素状态更新，确保元素被渲染
+    // 这解决了从历史状态恢复时元素不显示的问题
+    const initialElements = initialState.elements;
+    if (Object.keys(initialElements).length > 0) {
+      console.log('[CanvasBridge.start] 初始化时触发元素状态更新', {
+        elementCount: Object.keys(initialElements).length,
+        elementIds: Object.keys(initialElements),
+      });
+      // 使用空对象作为 prev，强制触发所有元素的 CREATE_ELEMENT 命令
+      this.handleElementsChange(initialElements, {});
+    }
+
+    // 初始化时主动触发一次选中状态更新，确保选中框被绘制
+    // 这解决了从历史状态恢复时选中框不显示的问题
+    if (initialState.selectedElementIds.length > 0) {
+      console.log('[CanvasBridge.start] 初始化时触发选中状态更新', {
+        selectedElementIds: initialState.selectedElementIds,
+      });
+      this.handleSelectionChange(initialState.selectedElementIds, []);
+    }
+
     this.isRunning = true;
+
+    // 启动时，如果 store 中已经有元素，需要主动触发一次渲染
+    const currentElements = this.store.getState().elements;
+    const elementCount = Object.keys(currentElements).length;
+    if (elementCount > 0) {
+      console.log('CanvasBridge: 启动时检测到已有元素，主动触发渲染', { elementCount });
+      // 使用空对象作为 prev，触发 CREATE_ELEMENT 命令
+      this.handleElementsChange(currentElements, {});
+    }
   }
 
   /**
@@ -109,15 +152,22 @@ export class CanvasBridge {
    */
   private subscribeToElementsWithDeepCompare(): () => void {
     let previousElements = this.store.getState().elements;
+    console.log(
+      'CanvasBridge: 初始化元素订阅，当前元素数量:',
+      Object.keys(previousElements).length,
+    );
 
     return this.store.subscribe((state) => {
       const nextElements = state.elements;
+      const nextCount = Object.keys(nextElements).length;
+      const prevCount = Object.keys(previousElements).length;
 
       // 先检查引用是否变化（快速路径）
       if (Object.is(nextElements, previousElements)) {
         // 引用没变，但可能内容变了（如果 store 直接修改了对象属性）
         // 使用深度比较检查是否有实际内容变化
         if (this.hasElementsContentChanged(previousElements, nextElements)) {
+          console.log('CanvasBridge: 检测到元素内容变化（引用未变）', { prevCount, nextCount });
           const lastElements = previousElements;
           previousElements = nextElements;
           this.handleElementsChange(nextElements, lastElements);
@@ -126,6 +176,7 @@ export class CanvasBridge {
       }
 
       // 引用变化了，直接触发处理（handleElementsChange 内部会做 diff）
+      console.log('CanvasBridge: 检测到元素引用变化', { prevCount, nextCount });
       const lastElements = previousElements;
       previousElements = nextElements;
       this.handleElementsChange(nextElements, lastElements);
@@ -278,8 +329,20 @@ export class CanvasBridge {
    * @param prev - 之前的选中元素ID数组
    */
   protected handleSelectionChange(next: string[], prev: string[]): void {
+    const isEqual = this.arraysEqual(next, prev);
+    console.log('[CanvasBridge.handleSelectionChange] 选中状态变化', {
+      next: [...next], // 展开数组以便查看内容
+      prev: [...prev], // 展开数组以便查看内容
+      nextLength: next.length,
+      prevLength: prev.length,
+      arraysEqual: isEqual,
+      nextIds: next.join(','),
+      prevIds: prev.join(','),
+    });
+
     // 如果选中状态没有变化，直接返回
-    if (this.arraysEqual(next, prev)) {
+    if (isEqual) {
+      console.log('[CanvasBridge.handleSelectionChange] 选中状态没有变化，跳过');
       return;
     }
 
@@ -289,6 +352,8 @@ export class CanvasBridge {
       selectedElementIds: next,
       priority: RenderPriority.HIGH, // 选中状态变化需要高优先级渲染
     };
+
+    console.log('[CanvasBridge.handleSelectionChange] 生成 UPDATE_SELECTION 命令', command);
 
     // 将命令加入队列，而不是立即执行
     // 这样优先级排序才能生效，确保 CREATE_ELEMENT 在 UPDATE_SELECTION 之前执行

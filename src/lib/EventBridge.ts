@@ -279,7 +279,20 @@ class EventBridge {
   private handlePointerEvent(type: string, event: PIXI.FederatedPointerEvent): void {
     if (!this.app || !this.coordinateTransformer) return;
 
-    // 允许选择层手柄事件传递到业务层，由选择交互统一判定
+    // 检查事件目标是否是选择层的手柄（旋转手柄或调整大小手柄）
+    // 如果是，则不处理，让手柄自己处理事件
+    const target = event.target;
+    if (target && target instanceof PIXI.Graphics) {
+      // 检查是否是选择层的手柄（通过检查父容器是否是 SELECTION 层）
+      let parent = target.parent;
+      while (parent) {
+        if (parent.name === 'SELECTION') {
+          // console.log('⚠️ EventBridge: 跳过选择层手柄事件', { target, type });
+          return; // 不处理选择层手柄的事件
+        }
+        parent = parent.parent;
+      }
+    }
 
     // 屏幕坐标：使用原生 DOM 事件的 clientX/clientY（相对于浏览器视口的坐标）
     // 注意：PIXI 的 event.screen 可能不是我们期望的值，使用原生事件的坐标更可靠
