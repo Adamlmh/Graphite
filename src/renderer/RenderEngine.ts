@@ -24,7 +24,6 @@ import { ViewportController } from './viewport/ViewportController';
 import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
-import { useCanvasStore } from '../stores/canvas-store';
 import { isGroupElement } from '../types/index';
 import { computeGroupBounds } from '../services/group-service';
 /**
@@ -143,8 +142,6 @@ export class RenderEngine {
    * 执行渲染命令 - 主要外部接口
    */
   async executeRenderCommand(command: AllRenderCommand): Promise<void> {
-    console.log('RenderEngine: 执行渲染命令', command);
-
     try {
       switch (command.type) {
         case 'CREATE_ELEMENT':

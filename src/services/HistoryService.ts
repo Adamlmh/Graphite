@@ -1,5 +1,5 @@
 // historyservice.ts
-import { compress, decompress } from 'lz-string';
+import { decompress } from 'lz-string';
 import { v4 as uuidv4 } from 'uuid';
 //import type { StoreApi} from 'zustand';
 //import { useCanvasStore } from '../stores/canvas-store';
@@ -7,6 +7,8 @@ import type { Tool, Guideline } from '../types/index.ts';
 import type { Element } from './element-factory';
 import ElementFactory from './element-factory';
 import type { CanvasState } from '../stores/canvas-store';
+import HistoryWorker from '../workers/history.worker.ts?worker';
+import type { WorkerSaveResponse } from '../workers/history.worker';
 //import {Point} from "../types/index.ts"; // 直接导入接口
 //type CanvasState = ReturnType<typeof useCanvasStore>;
 
@@ -140,6 +142,8 @@ export class HistoryService {
       state: Partial<CanvasState> | ((state: CanvasState) => Partial<CanvasState>),
     ) => void;
   };
+  private worker = new HistoryWorker();
+  private pendingSnapshotIds = new Set<string>(); // 跟踪正在 Worker 中处理的快照 ID
 
   constructor(store: {
     getState: () => CanvasState;
@@ -153,6 +157,57 @@ export class HistoryService {
     this.setupPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
+
+    // 设置 worker 回调
+    this.worker.onmessage = (e: MessageEvent<WorkerSaveResponse>) => {
+      const { snapshotId, compressed } = e.data;
+
+      // 将 worker 的结果写入快照记录
+      const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+      if (snapshot) {
+        snapshot.data = compressed;
+        snapshot.metadata = {
+          elementCount: snapshot.metadata?.elementCount || 0,
+          memoryUsage: snapshot.metadata?.memoryUsage || 0,
+          compressedSize: compressed.length,
+        };
+
+        // 最终写入 IndexedDB【仍由主线程负责】
+        // 保存到持久化存储（仅在完整快照或间隔到达时）
+        if (this.config.autoSaveToDB) {
+          const shouldPersist = snapshot.isFullSnapshot || Date.now() - this.lastDBSaveTime > 60000;
+          if (shouldPersist) {
+            this.saveSnapshotToDB(snapshot)
+              .then(() => {
+                this.lastDBSaveTime = Date.now();
+                console.log('保存到持久化存储');
+                // 标记快照已完成处理
+                this.pendingSnapshotIds.delete(snapshotId);
+                // 检查是否所有快照都已完成
+                this.updateSaveStatus();
+              })
+              .catch((error) => {
+                console.error('保存到持久化存储失败:', error);
+                // 即使失败也标记为已完成（避免永久阻塞）
+                this.pendingSnapshotIds.delete(snapshotId);
+                this.updateSaveStatus();
+              });
+          } else {
+            // 即使不持久化，也标记为已完成
+            this.pendingSnapshotIds.delete(snapshotId);
+            this.updateSaveStatus();
+          }
+        } else {
+          // 如果未启用自动保存，也标记为已完成
+          this.pendingSnapshotIds.delete(snapshotId);
+          this.updateSaveStatus();
+        }
+      } else {
+        // 如果快照不存在，也继续处理
+        this.pendingSnapshotIds.delete(snapshotId);
+        this.updateSaveStatus();
+      }
+    };
     // 初始化 IndexedDB
     this.initIndexedDB()
       .then(() => {
@@ -577,6 +632,24 @@ export class HistoryService {
   }
 
   /**
+   * 更新保存状态
+   * 当所有待处理的快照都完成后，才设置为 SAVED
+   */
+  private updateSaveStatus(): void {
+    // 如果还有待处理的快照，保持 SAVING 状态
+    if (this.pendingSnapshotIds.size > 0) {
+      this.saveStatus = SaveStatus.SAVING;
+      return;
+    }
+
+    // 所有快照都已完成，更新状态
+    this.saveStatus = SaveStatus.SAVED;
+    this.saveError = null;
+    this.lastSavedVersion = this.currentVersion;
+    this.hasUnsavedChanges = false;
+  }
+
+  /**
    * 强制立即保存
    */
   async forceSave(): Promise<void> {
@@ -588,39 +661,13 @@ export class HistoryService {
   }
 
   /**
-   * 将 Blob URL 转换为 DataURL（base64）
+   * 生成需要持久化的状态对象（同步、无 JSON.stringify、无 compress、无 Blob 转换）
+   * Blob URL 转 base64 的操作在 Worker 中完成
    */
-  private async blobUrlToDataURL(blobUrl: string): Promise<string> {
-    try {
-      const response = await fetch(blobUrl);
-      const blob = await response.blob();
-      return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === 'string') {
-            resolve(reader.result);
-          } else {
-            reject(new Error('Failed to convert blob to data URL'));
-          }
-        };
-        reader.onerror = () => reject(new Error('FileReader error'));
-        reader.readAsDataURL(blob);
-      });
-    } catch (error) {
-      console.error('Failed to convert blob URL to data URL:', error);
-      // 如果转换失败，返回原始 URL（虽然可能无法恢复，但至少不会丢失引用）
-      return blobUrl;
-    }
-  }
-
-  /**
-   * 序列化需要持久化的状态字段
-   */
-  private async serializeStateForPersistence(state: CanvasState): Promise<string> {
-    const startTime = performance.now();
+  private generatePersistableState(state: CanvasState): PersistedCanvasState {
     // 显式声明类型并按正确顺序构造
     const persistableState: PersistedCanvasState = {
-      elements: await this.serializeElementsForPersistence(state.elements),
+      elements: this.serializeElementsForPersistence(state.elements),
       viewport: {
         zoom: state.viewport.zoom,
         offset: state.viewport.offset,
@@ -666,53 +713,68 @@ export class HistoryService {
       lastModified: Date.now(),
     };
 
-    console.log('Loaded persistableState:', persistableState);
-    const jsonString = JSON.stringify(persistableState);
-    const compressedData = this.config.compressionEnabled ? compress(jsonString) : jsonString;
-    //console.log(`Loaded compressedData: ${compressedData}`);
-
-    // 更新性能指标
-    const endTime = performance.now();
-    this.performanceMetrics.saveDuration = endTime - startTime;
-    this.performanceMetrics.compressionRatio = compressedData.length / jsonString.length;
-
-    return compressedData;
+    return persistableState;
   }
 
   /**
    * 序列化元素字典用于持久化
+   * 保留所有字段，只排除运行时字段（cacheKey, visibility, lastRenderedAt）
+   * 注意：Blob URL 转 base64 的操作在 Worker 中完成，不在这里处理
    */
-  private async serializeElementsForPersistence(
+  private serializeElementsForPersistence(
     elements: Record<string, Element>,
-  ): Promise<Record<string, PersistedElement>> {
+  ): Record<string, PersistedElement> {
     const serialized: Record<string, PersistedElement> = {};
 
-    // 使用 Promise.all 并行处理所有元素，提高性能
-    const serializationPromises = Object.entries(elements).map(async ([id, element]) => {
-      // 排除运行时字段，创建持久化元素（这些字段不需要持久化）
-      const { cacheKey, visibility, lastRenderedAt, ...rest } = element;
-      // 这些字段被排除，不需要使用
-      void cacheKey;
-      void visibility;
-      void lastRenderedAt;
-      const persistedElement = rest as Omit<Element, 'cacheKey' | 'visibility' | 'lastRenderedAt'>;
+    // 同步处理所有元素，不做任何异步操作（Blob 转换在 Worker 中完成）
+    Object.entries(elements).forEach(([id, element]) => {
+      // 显式创建持久化元素，保留所有字段，只排除运行时字段
+      const persistedElement: PersistedElement = {
+        // 基础字段
+        id: element.id,
+        type: element.type,
+        zIndex: element.zIndex,
+        // 几何属性
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+        rotation: element.rotation,
+        // 样式
+        style: element.style,
+        // 通用属性
+        opacity: element.opacity,
+        // 变换系统
+        transform: {
+          scaleX: element.transform.scaleX,
+          scaleY: element.transform.scaleY,
+          pivotX: element.transform.pivotX,
+          pivotY: element.transform.pivotY,
+        },
+        // 元数据
+        version: element.version,
+        createdAt: element.createdAt,
+        updatedAt: element.updatedAt,
+        // 类型特定的扩展字段
+        ...(element.type === 'text' && {
+          content: (element as import('../types/index').TextElement).content,
+          textStyle: (element as import('../types/index').TextElement).textStyle,
+          richText: (element as import('../types/index').TextElement).richText,
+          selectionRange: (element as import('../types/index').TextElement).selectionRange,
+        }),
+        ...(element.type === 'image' && {
+          src: (element as import('../types/index').ImageElement).src,
+          naturalWidth: (element as import('../types/index').ImageElement).naturalWidth,
+          naturalHeight: (element as import('../types/index').ImageElement).naturalHeight,
+          adjustments: (element as import('../types/index').ImageElement).adjustments,
+        }),
+        ...(element.type === 'group' && {
+          children: (element as import('../types/index').GroupElement).children,
+        }),
+      } as PersistedElement;
 
-      // 如果是图片元素且 src 是 Blob URL，则转换为 DataURL
-      if (element.type === 'image') {
-        const imageElement = element as import('../types/index').ImageElement;
-        const src = imageElement.src;
-        if (typeof src === 'string' && src.startsWith('blob:')) {
-          // 将 Blob URL 转换为 DataURL
-          const dataUrl = await this.blobUrlToDataURL(src);
-          // 更新图片元素的 src 字段
-          (persistedElement as PersistedElement & { src: string }).src = dataUrl;
-        }
-      }
-
-      serialized[id] = persistedElement as PersistedElement;
+      serialized[id] = persistedElement;
     });
-
-    await Promise.all(serializationPromises);
 
     return serialized;
   }
@@ -858,48 +920,54 @@ export class HistoryService {
 
     this.saveStatus = SaveStatus.SAVING;
 
+    let snapshot: Snapshot | null = null;
     try {
       const currentState = this.store.getState();
-      await new Promise((resolve) => requestIdleCallback(resolve));
-      const snapshotData = await this.serializeStateForPersistence(currentState);
-      const snapshot: Snapshot = {
+      const state = this.generatePersistableState(currentState); // 同步生成对象，不做 stringify/compress/Blob 转换
+
+      snapshot = {
         id: uuidv4(),
         timestamp: Date.now(),
-        data: snapshotData,
-        version: this.currentVersion,
+        data: '', // 先留空，worker 会填充
         isFullSnapshot: isFullSnapshot || this.shouldCreateFullSnapshot(),
+        version: this.currentVersion,
         metadata: {
-          elementCount: Object.keys(currentState.elements).length,
-          memoryUsage: snapshotData.length,
-          compressedSize: snapshotData.length,
+          elementCount: Object.keys(state.elements).length,
+          compressedSize: 0,
+          memoryUsage: 0,
         },
       };
 
       this.snapshots.push(snapshot);
       this.lastSaveTime = Date.now();
 
-      // 保存到持久化存储（仅在完整快照或间隔到达时）
-      if (this.config.autoSaveToDB) {
-        const shouldPersist = snapshot.isFullSnapshot || Date.now() - this.lastDBSaveTime > 60000;
-        if (shouldPersist) {
-          await this.saveSnapshotToDB(snapshot);
-          this.lastDBSaveTime = Date.now();
-          console.log('保存到持久化存储');
-        }
-      }
+      // 标记快照为待处理状态
+      this.pendingSnapshotIds.add(snapshot.id);
+
+      // 把耗时操作完全交给 Worker
+      this.worker.postMessage({
+        type: 'save',
+        snapshotId: snapshot.id,
+        state,
+        isFullSnapshot: snapshot.isFullSnapshot,
+      });
 
       // 清理旧的快照
       this.cleanupOldSnapshots();
 
-      this.saveStatus = SaveStatus.SAVED;
-      this.saveError = null;
-      this.lastSavedVersion = this.currentVersion;
-      this.hasUnsavedChanges = false;
+      // 注意：不在这里设置 SAVED，等待 Worker 完成后再更新状态
+      // 这样可以避免 race condition：用户刷新时数据还未真正保存
+      // 状态会在 Worker 的 onmessage 回调中更新
 
       return snapshot;
     } catch (error) {
+      // 如果出错，清理待处理状态
+      if (snapshot) {
+        this.pendingSnapshotIds.delete(snapshot.id);
+      }
       this.saveStatus = SaveStatus.ERROR;
       this.saveError = error as Error;
+      this.updateSaveStatus(); // 更新状态
       throw error;
     }
   }
@@ -1208,13 +1276,14 @@ export class HistoryService {
    * 页面卸载前的处理
    */
   private handleBeforeUnload(event: BeforeUnloadEvent): void {
-    if (this.hasUnsavedChanges && this.autoSaveEnabled) {
+    // 如果有待处理的快照或未保存的更改，阻止页面关闭
+    if ((this.pendingSnapshotIds.size > 0 || this.hasUnsavedChanges) && this.autoSaveEnabled) {
       // 尝试最后一次保存
       this.forceSave();
 
       // 提示用户有未保存的更改
       event.preventDefault();
-      event.returnValue = '您有未保存的更改，确定要离开吗？';
+      event.returnValue = '正在保存数据，请稍候...';
     }
   }
 
