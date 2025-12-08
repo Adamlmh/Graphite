@@ -14,11 +14,13 @@ export class ViewportInteraction {
   private panVelocity: Point = { x: 0, y: 0 };
   private lastTime = 0;
   private inertiaActive = false;
+  private unsubscribe?: () => void; // store订阅清理函数
   private eventHandlers: {
     wheel?: (event: WheelEvent) => void;
     pointerdown?: (event: PointerEvent) => void;
     pointerup?: (event: PointerEvent) => void;
     pointermove?: (event: PointerEvent) => void;
+    pointerenter?: (event: PointerEvent) => void;
   } = {};
 
   constructor(container: HTMLElement) {
@@ -32,6 +34,8 @@ export class ViewportInteraction {
     if (this.isInitialized) return;
 
     this.setupEventListeners();
+    this.setupToolListener();
+    this.updateCursor(); // 初始化光标
     this.isInitialized = true;
   }
 
@@ -40,6 +44,10 @@ export class ViewportInteraction {
    */
   destroy(): void {
     this.removeEventListeners();
+    if (this.unsubscribe) {
+      this.unsubscribe();
+    }
+    this.container.style.cursor = ''; // 恢复默认光标
     this.isInitialized = false;
   }
 
@@ -65,11 +73,17 @@ export class ViewportInteraction {
       this.handlePointerMove(event);
     };
 
+    this.eventHandlers.pointerenter = (event: PointerEvent) => {
+      // 鼠标进入画布时更新光标
+      this.updateCursor();
+    };
+
     // 注册到容器
     this.container.addEventListener('wheel', this.eventHandlers.wheel, { passive: false });
     this.container.addEventListener('pointerdown', this.eventHandlers.pointerdown);
     this.container.addEventListener('pointerup', this.eventHandlers.pointerup);
     this.container.addEventListener('pointermove', this.eventHandlers.pointermove);
+    this.container.addEventListener('pointerenter', this.eventHandlers.pointerenter);
   }
 
   /**
@@ -87,6 +101,9 @@ export class ViewportInteraction {
     }
     if (this.eventHandlers.pointermove) {
       this.container.removeEventListener('pointermove', this.eventHandlers.pointermove);
+    }
+    if (this.eventHandlers.pointerenter) {
+      this.container.removeEventListener('pointerenter', this.eventHandlers.pointerenter);
     }
     this.eventHandlers = {};
   }
@@ -115,13 +132,27 @@ export class ViewportInteraction {
    * 处理指针按下
    */
   private handlePointerDown(event: PointerEvent): void {
-    if (event.button !== 1) return; // 只处理中键
+    const store = useCanvasStore.getState();
+    const activeTool = store.tool.activeTool;
+
+    // 中键始终可以拖拽画布
+    const isMiddleButton = event.button === 1;
+    // 左键 + hand工具也可以拖拽画布
+    const isLeftButtonWithHandTool = event.button === 0 && activeTool === 'hand';
+
+    if (!isMiddleButton && !isLeftButtonWithHandTool) return;
+
+    event.preventDefault();
+    event.stopPropagation();
 
     this.isDragging = true;
     this.lastPointerPos = { x: event.clientX, y: event.clientY };
     this.panVelocity = { x: 0, y: 0 };
     this.lastTime = performance.now();
     this.stopInertia();
+
+    // 设置拖拽光标
+    this.container.style.cursor = 'grabbing';
   }
 
   /**
@@ -132,6 +163,9 @@ export class ViewportInteraction {
 
     this.isDragging = false;
     this.startInertia();
+
+    // 恢复光标样式
+    this.updateCursor();
   }
 
   /**
@@ -248,5 +282,29 @@ export class ViewportInteraction {
    */
   private stopInertia(): void {
     this.inertiaActive = false;
+  }
+
+  /**
+   * 更新光标样式
+   */
+  private updateCursor(): void {
+    const store = useCanvasStore.getState();
+    const activeTool = store.tool.activeTool;
+
+    // 只处理 hand 工具的光标样式
+    if (activeTool === 'hand') {
+      this.container.style.cursor = this.isDragging ? 'grabbing' : 'grab';
+    }
+    // 其他工具的光标由 useCursor hook 统一管理，不在此处干预
+  }
+
+  /**
+   * 监听工具切换，更新光标样式
+   */
+  setupToolListener(): void {
+    // 订阅store变化
+    this.unsubscribe = useCanvasStore.subscribe((state) => {
+      this.updateCursor();
+    });
   }
 }
