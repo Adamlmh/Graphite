@@ -1,14 +1,10 @@
 // historyservice.ts
 import { compress, decompress } from 'lz-string';
 import { v4 as uuidv4 } from 'uuid';
-//import type { StoreApi} from 'zustand';
-//import { useCanvasStore } from '../stores/canvas-store';
 import type { Tool, Guideline } from '../types/index.ts';
 import type { Element } from './element-factory';
 import ElementFactory from './element-factory';
 import type { CanvasState } from '../stores/canvas-store';
-//import {Point} from "../types/index.ts"; // 直接导入接口
-//type CanvasState = ReturnType<typeof useCanvasStore>;
 
 /*
 // 协同操作类型定义
@@ -157,6 +153,7 @@ export class HistoryService {
     this.initIndexedDB()
       .then(() => {
         // 关键：初始化完成后立刻加载
+        //this.clearHistory();
         return this.loadFromStorage();
       })
       .then(() => {
@@ -332,6 +329,7 @@ export class HistoryService {
   /**
    * 从 IndexedDB 加载
    */
+  // 修改 loadFromIndexedDB 方法
   private async loadFromIndexedDB(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (!this.db) {
@@ -341,44 +339,35 @@ export class HistoryService {
 
       const transaction = this.db.transaction(['snapshots'], 'readonly');
       const store = transaction.objectStore('snapshots');
-      const index = store.index('timestamp');
-      // 构造空的 IDBKeyRange，明确匹配所有记录
+      const timestampIndex = store.index('timestamp');
       const emptyRange = IDBKeyRange.lowerBound(0, true);
-      // 显式指定 openCursor 的返回类型为 IDBRequest<IDBCursorWithValue | null>
-      const request = index.openCursor(emptyRange, 'prev') as IDBRequest<IDBCursorWithValue | null>;
-
-      const snapshots: Snapshot[] = [];
+      // 降序查询，找最新的完整快照
+      const request = timestampIndex.openCursor(
+        emptyRange,
+        'prev',
+      ) as IDBRequest<IDBCursorWithValue | null>;
 
       request.onsuccess = () => {
         const cursor = request.result;
         if (cursor) {
-          snapshots.push(cursor.value as Snapshot);
-          cursor.continue();
-        } else {
-          // 修复：直接处理快照，不再调用 restoreFromSnapshots（避免循环）
-          if (snapshots.length === 0) {
-            console.log('📊 IndexedDB 中无快照数据');
-            this.snapshots = [];
+          const snapshot = cursor.value as Snapshot;
+          if (snapshot.isFullSnapshot) {
+            // 找到第一个完整快照就停止
+            this.snapshots = [snapshot]; // 仅保留最新完整快照
+            console.log('📦 仅加载最新完整快照，ID:', snapshot.id);
             resolve();
             return;
           }
-
-          // 按时间戳排序
-          snapshots.sort((a, b) => a.timestamp - b.timestamp);
-
-          // 修复：添加空值检查
-          const lastFullSnapshotIndex = Math.max(snapshots.length - this.config.maxSnapshots, 0);
-
-          // 保留最新的快照
-          this.snapshots = snapshots.slice(lastFullSnapshotIndex);
-          console.log('📦 从 IndexedDB 加载的快照数量:', this.snapshots.length);
+          cursor.continue(); // 不是完整快照，继续找
+        } else {
+          // 无完整快照时，加载最新的增量快照（降级方案）
+          this.snapshots = [];
+          console.log('📊 无完整快照，使用空状态');
           resolve();
         }
       };
 
-      request.onerror = () => {
-        reject(request.error);
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -789,7 +778,6 @@ export class HistoryService {
    * 创建快照
    */
   async createSnapshot(isFullSnapshot: boolean = false): Promise<Snapshot> {
-    //console.log(`CutCommand: 重做剪切命令，重新剪切 ${this.elements.length} 个元素`);
     console.log('尝试创建快照');
     if (this.saveStatus === SaveStatus.SAVING) {
       throw new Error('Another save operation is in progress');
@@ -824,8 +812,10 @@ export class HistoryService {
         console.log('保存到持久化存储');
       }
 
-      // 清理旧的快照
-      this.cleanupOldSnapshots();
+      // 延迟清理旧记录（页面空闲时执行）
+      if (this.config.autoSaveToDB) {
+        requestIdleCallback(() => this.cleanupOldDBRecords()); // 替换直接await
+      }
 
       this.saveStatus = SaveStatus.SAVED;
       this.saveError = null;
@@ -1086,13 +1076,35 @@ export class HistoryService {
   /**
    * 页面卸载前的处理
    */
-  private handleBeforeUnload(event: BeforeUnloadEvent): void {
-    if (this.hasUnsavedChanges && this.autoSaveEnabled) {
-      // 尝试最后一次保存
-      this.forceSave();
+  private async handleBeforeUnload(event: BeforeUnloadEvent): Promise<void> {
+    if (!this.autoSaveEnabled || this.saveStatus === SaveStatus.SAVED) {
+      return;
+    }
 
-      // 提示用户有未保存的更改
+    // 检查是否有未保存的更改
+    const hasChanges = this.hasUnsavedChanges || this.currentVersion !== this.lastSavedVersion;
+
+    if (!hasChanges) {
+      return;
+    }
+
+    try {
+      // 阻止默认行为，给保存操作留出时间
       event.preventDefault();
+
+      // 设置一个较短的超时时间来尝试保存
+      const savePromise = this.forceSave();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Save timeout')), 1000),
+      );
+
+      // 等待保存完成或超时
+      await Promise.race([savePromise, timeoutPromise]);
+
+      console.log('Data saved before page unload');
+    } catch (error) {
+      console.warn('Could not complete save before page unload:', error);
+      // 即使保存失败，也允许页面关闭，但提示用户
       event.returnValue = '您有未保存的更改，确定要离开吗？';
     }
   }
