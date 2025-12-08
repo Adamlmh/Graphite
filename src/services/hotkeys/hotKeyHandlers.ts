@@ -4,7 +4,7 @@ import { useCanvasStore } from '../../stores/canvas-store';
 import {
   copyPasteInteraction,
   deleteInteraction,
-  moveInteraction,
+  selectionInteraction,
   historyService,
   groupInteraction,
 } from '../instances';
@@ -94,42 +94,42 @@ export function bindCanvasHotKeys() {
   // // === 微移操作 ===
   hotKeyManager.setHandler('nudgeLeft', () => {
     console.log('向左微移');
-    moveInteraction.nudgeLeft();
+    selectionInteraction.nudgeLeft();
   });
 
   hotKeyManager.setHandler('nudgeRight', () => {
     console.log('向右微移');
-    moveInteraction.nudgeRight();
+    selectionInteraction.nudgeRight();
   });
 
   hotKeyManager.setHandler('nudgeUp', () => {
     console.log('向上微移');
-    moveInteraction.nudgeUp();
+    selectionInteraction.nudgeUp();
   });
 
   hotKeyManager.setHandler('nudgeDown', () => {
     console.log('向下微移');
-    moveInteraction.nudgeDown();
+    selectionInteraction.nudgeDown();
   });
 
   hotKeyManager.setHandler('fastNudgeLeft', () => {
     console.log('快速向左微移');
-    moveInteraction.nudgeLeft(true); // true 表示快速模式
+    selectionInteraction.nudgeLeft(true); // true 表示快速模式
   });
 
   hotKeyManager.setHandler('fastNudgeRight', () => {
     console.log('快速向右微移');
-    moveInteraction.nudgeRight(true);
+    selectionInteraction.nudgeRight(true);
   });
 
   hotKeyManager.setHandler('fastNudgeUp', () => {
     console.log('快速向上微移');
-    moveInteraction.nudgeUp(true);
+    selectionInteraction.nudgeUp(true);
   });
 
   hotKeyManager.setHandler('fastNudgeDown', () => {
     console.log('快速向下微移');
-    moveInteraction.nudgeDown(true);
+    selectionInteraction.nudgeDown(true);
   });
 
   // === 元素操作 ===

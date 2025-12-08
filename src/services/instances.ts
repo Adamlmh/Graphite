@@ -5,11 +5,12 @@
 import { useCanvasStore, type CanvasState } from '../stores/canvas-store';
 import { HistoryService } from './HistoryService';
 import { CreateInteraction } from './interaction/CreateInteraction';
+import { SelectionInteraction } from './interaction/SelectionInteraction';
 import { CopyPasteInteraction } from './interaction/CopyPasteInteraction';
 import { DeleteInteraction } from './interaction/DeleteInteraction';
-import { MoveInteraction } from './interaction/moveInteraction';
 import { ResizeInteraction } from './interaction/ResizeInteraction';
 import { GroupInteraction } from './interaction/GroupInteraction';
+import { TextEditorInteraction } from './interaction/TextEditorInteraction';
 
 // 全局初始化 HistoryService
 export const historyService = new HistoryService({
@@ -21,8 +22,9 @@ export const historyService = new HistoryService({
 
 // 初始化交互
 new CreateInteraction(historyService);
+export const selectionInteraction = new SelectionInteraction(historyService);
+new TextEditorInteraction();
 export const copyPasteInteraction = new CopyPasteInteraction(historyService);
 export const deleteInteraction = new DeleteInteraction(historyService);
-export const moveInteraction = new MoveInteraction(historyService);
 export const resizeInteraction = new ResizeInteraction(historyService);
 export const groupInteraction = new GroupInteraction(historyService);

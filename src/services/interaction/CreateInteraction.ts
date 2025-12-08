@@ -514,6 +514,7 @@ export class CreateInteraction {
     const toolMap: Record<Tool, ElementType | null> = {
       select: null,
       hand: null,
+      transfor: null,
       rect: 'rect',
       'rounded-rect': 'rect', // 圆角矩形也是矩形类型
       circle: 'circle',
