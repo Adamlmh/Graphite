@@ -1,12 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCursor } from '../../hooks/useCursor';
 import { CanvasBridge } from '../../lib/CanvasBridge/CanvasBridge';
 import { eventBridge } from '../../lib/EventBridge';
+import { eventBus } from '../../lib/eventBus';
 import { setPixiApp } from '../../lib/pixiApp';
 import { setRenderEngine } from '../../lib/renderEngineManager';
 import { RenderEngine } from '../../renderer/RenderEngine';
 import { ImageInteraction } from '../../services/interaction/ImageInteraction';
-import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
+// import { SelectionInteraction } from '../../services/interaction/SelectionInteraction';
 import { TextEditorInteraction } from '../../services/interaction/TextEditorInteraction';
 import { useCanvasStore } from '../../stores/canvas-store';
 import TextEditorManager from '../ui/business/TextEditor/TextEditorManager';
@@ -21,9 +22,21 @@ const CanvasRenderer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderEngineRef = useRef<RenderEngine | null>(null);
   const bridgeRef = useRef<CanvasBridge | null>(null);
-  const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
+  // const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
   const imageInteractionRef = useRef<ImageInteraction | null>(null);
   const textEditorInteractionRef = useRef<TextEditorInteraction | null>(null);
+  type SelectDebugState = {
+    state: string;
+    hitId: string | null;
+    screen: { x: number; y: number };
+    world: { x: number; y: number };
+  };
+  const [selectDebug, setSelectDebug] = useState<SelectDebugState>({
+    state: 'Idle',
+    hitId: null,
+    screen: { x: 0, y: 0 },
+    world: { x: 0, y: 0 },
+  });
 
   // 根据当前工具自动切换光标
   useCursor(containerRef);
@@ -73,8 +86,8 @@ const CanvasRenderer: React.FC = () => {
 
         console.log('CanvasRenderer: CanvasBridge 启动完成，初始化选择交互系统');
         // 初始化选择交互（使用默认 Provider，无需传入参数）
-        const selectionInteraction = new SelectionInteraction();
-        selectionInteractionRef.current = selectionInteraction;
+        // const selectionInteraction = new SelectionInteraction();
+        // selectionInteractionRef.current = selectionInteraction;
 
         // 初始化图片上传交互
         console.log('CanvasRenderer: 初始化图片上传交互系统');
@@ -130,6 +143,55 @@ const CanvasRenderer: React.FC = () => {
     };
   }, []); // 空依赖数组，只在组件挂载时执行一次
 
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const data = (args[0] ?? {}) as { tag?: string; ts?: string; payload?: unknown };
+      const tag = data?.tag;
+      const p = (data?.payload ?? {}) as Record<string, unknown>;
+      if (tag === 'state-change') {
+        const nextState = typeof p.to === 'string' ? p.to : undefined;
+        const hoverId = typeof p.hoverElementId === 'string' ? p.hoverElementId : undefined;
+        setSelectDebug((prev: SelectDebugState) => ({
+          ...prev,
+          state: nextState ?? prev.state,
+          hitId: hoverId ?? prev.hitId,
+        }));
+        return;
+      }
+      if (tag === 'element-hit' || tag === 'top-hit') {
+        const eid = typeof p.elementId === 'string' ? p.elementId : undefined;
+        if (eid) {
+          setSelectDebug((prev: SelectDebugState) => ({ ...prev, hitId: eid }));
+        }
+      }
+      if (tag === 'pointermove' || tag === 'pointerdown' || tag === 'pointerup') {
+        const screen = (p.screen ?? {}) as Record<string, unknown>;
+        const world = (p.world ?? {}) as Record<string, unknown>;
+        const sx =
+          typeof screen.x === 'number' || typeof screen.x === 'string'
+            ? Number(screen.x)
+            : undefined;
+        const sy =
+          typeof screen.y === 'number' || typeof screen.y === 'string'
+            ? Number(screen.y)
+            : undefined;
+        const wx =
+          typeof world.x === 'number' || typeof world.x === 'string' ? Number(world.x) : undefined;
+        const wy =
+          typeof world.y === 'number' || typeof world.y === 'string' ? Number(world.y) : undefined;
+        setSelectDebug((prev: SelectDebugState) => ({
+          ...prev,
+          screen: { x: sx ?? prev.screen.x, y: sy ?? prev.screen.y },
+          world: { x: wx ?? prev.world.x, y: wy ?? prev.world.y },
+        }));
+      }
+    };
+    eventBus.on('debug:select', handler);
+    return () => {
+      eventBus.off('debug:select', handler);
+    };
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -140,6 +202,30 @@ const CanvasRenderer: React.FC = () => {
         position: 'relative',
       }}
     >
+      <div
+        style={{
+          position: 'absolute',
+          top: 8,
+          left: 8,
+          padding: '6px 8px',
+          background: 'rgba(0,0,0,0.6)',
+          color: '#fff',
+          borderRadius: 6,
+          fontSize: 12,
+          pointerEvents: 'none',
+          zIndex: 1,
+          lineHeight: '18px',
+        }}
+      >
+        <div>State: {selectDebug.state}</div>
+        <div>Hit: {selectDebug.hitId ?? '-'}</div>
+        <div>
+          Screen: {selectDebug.screen.x.toFixed(1)}, {selectDebug.screen.y.toFixed(1)}
+        </div>
+        <div>
+          World: {selectDebug.world.x.toFixed(1)}, {selectDebug.world.y.toFixed(1)}
+        </div>
+      </div>
       <Minimap containerRef={containerRef} />
       <TextEditorManager /> {/* 文本编辑器管理器组件 */}
     </div>

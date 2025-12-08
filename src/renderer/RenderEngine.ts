@@ -438,24 +438,12 @@ export class RenderEngine {
           handle.endFill();
           handle.position.set(pos.x, pos.y);
           handle.interactive = true;
-          handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-            event.stopPropagation();
-
-            // 转换坐标为世界坐标
-            const screenX = event.clientX;
-            const screenY = event.clientY;
-            const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
-
-            eventBus.emit('group-resize-start', {
-              elementIds: selectedElementIds,
-              handleType: handleTypes[index],
-              bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-              worldPoint, // 传递世界坐标
-              screenX, // 同时传递屏幕坐标
-              screenY,
-              nativeEvent: event,
-            });
-          });
+          (
+            handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
+          ).__graphiteHandleType = handleTypes[index];
+          (
+            handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
+          ).__graphiteGroupHandle = true;
           selectionLayer.addChild(handle);
         });
 
@@ -468,26 +456,18 @@ export class RenderEngine {
         rotationHandle.interactive = true;
         rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
         rotationHandle.cursor = 'pointer';
-        // 使用静态事件模式，确保可以接收事件
-        rotationHandle.eventMode = 'static';
-        // 使用捕获阶段监听，确保在事件到达 stage 之前处理
-        rotationHandle.eventMode = 'static';
-        rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-          // 立即阻止事件传播，防止被 EventBridge 和 SelectionInteraction 处理
-          event.stopPropagation();
-          // 转换坐标为世界坐标
-          const screenX = event.clientX;
-          const screenY = event.clientY;
-          const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
-          eventBus.emit('group-rotation-start', {
-            elementIds: selectedElementIds,
-            bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-            worldPoint, // 传递世界坐标
-            screenX, // 同时传递屏幕坐标
-            screenY,
-            nativeEvent: event,
-          });
-        });
+        (
+          rotationHandle as unknown as {
+            __graphiteHandleType?: string;
+            __graphiteGroupHandle?: boolean;
+          }
+        ).__graphiteHandleType = 'rotation';
+        (
+          rotationHandle as unknown as {
+            __graphiteHandleType?: string;
+            __graphiteGroupHandle?: boolean;
+          }
+        ).__graphiteGroupHandle = true;
 
         selectionLayer.addChild(rotationHandle);
       }
@@ -702,30 +682,12 @@ export class RenderEngine {
         handle.interactive = true;
         handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
         handle.cursor = handleCursors[index];
-        // handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-        //   event.stopPropagation();
-        //   const screenX = event.clientX;
-        //   const screenY = event.clientY;
-        //   const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
-        //   eventBus.emit('resize-start', { elementId, handleType: handleTypes[index], event });
-        // });
-        handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-          event.stopPropagation();
-
-          // 转换坐标为世界坐标
-          const screenX = event.clientX;
-          const screenY = event.clientY;
-          const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
-
-          eventBus.emit('resize-start', {
-            elementId,
-            handleType: handleTypes[index],
-            worldPoint, // 传递世界坐标
-            screenX, // 同时传递屏幕坐标
-            screenY,
-            nativeEvent: event,
-          });
-        });
+        (
+          handle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+        ).__graphiteHandleType = handleTypes[index];
+        (
+          handle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+        ).__graphiteElementId = elementId;
         selectionLayer.addChild(handle);
       });
 
@@ -740,20 +702,12 @@ export class RenderEngine {
       rotationHandle.cursor = 'move';
       // 使用静态事件模式，确保可以接收事件
       rotationHandle.eventMode = 'static';
-      rotationHandle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
-        event.stopPropagation();
-        const screenX = event.clientX;
-        const screenY = event.clientY;
-        const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
-
-        eventBus.emit('rotation-start', {
-          elementId,
-          worldPoint,
-          screenX,
-          screenY,
-          nativeEvent: event,
-        });
-      });
+      (
+        rotationHandle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+      ).__graphiteHandleType = 'rotation';
+      (
+        rotationHandle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+      ).__graphiteElementId = elementId;
 
       selectionLayer.addChild(rotationHandle);
     }

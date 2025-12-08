@@ -113,7 +113,7 @@ export function bindCanvasHotKeys() {
 
   hotKeyManager.setHandler('fastNudgeLeft', () => {
     console.log('快速向左微移');
-    moveInteraction.nudgeLeft(true); // true 表示快速模式
+    moveInteraction.nudgeLeft(true);
   });
 
   hotKeyManager.setHandler('fastNudgeRight', () => {
