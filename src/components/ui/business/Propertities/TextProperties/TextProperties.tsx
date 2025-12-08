@@ -13,6 +13,7 @@ import type { Element } from '../../../../../types/index';
 import styles from './TextProperties.module.less';
 import { useElementCategory } from '../../../../../hooks/useElementCategory';
 import { useCanvasStore } from '../../../../../stores/canvas-store';
+import { cleanupRichTextSpans } from '../../../../../utils/tiptapConverter';
 
 // 这里用 props 接收Zustand的 selectedElements
 type TextPropertiesProps = {
@@ -108,9 +109,13 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
   const [textPatch, setTextPatch] = useState<TextStylePatch>({});
 
   // 重置补丁状态当元素改变时
+  const textElementIds = React.useMemo(
+    () => textElements.map((el) => el.id).join(','),
+    [textElements],
+  );
   React.useEffect(() => {
     setTextPatch({});
-  }, [textElements.map((el) => el.id).join(',')]);
+  }, [textElementIds]);
 
   if (!shouldShowTextPanel) {
     return null;
@@ -127,6 +132,8 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
     if (!textElements.length) {
       return;
     }
+
+    console.log('[TextProperties] Applying patch:', patch);
 
     // 批量更新所有文本元素
     textElements.forEach((el) => {
@@ -170,6 +177,13 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         }
         if (patch.fontFamily !== undefined) {
           updates.textStyle.fontFamily = patch.fontFamily;
+        }
+
+        // 🎯 关键修复: 清理与新全局样式冲突的局部样式片段
+        if (el.richText && el.richText.length > 0) {
+          console.log('[TextProperties] Cleaning up richText before:', el.richText);
+          updates.richText = cleanupRichTextSpans(el.richText, updates.textStyle);
+          console.log('[TextProperties] Cleaned up richText after:', updates.richText);
         }
       }
 

@@ -41,10 +41,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
   const [updateTrigger, setUpdateTrigger] = useState(0);
 
   // 从 richText 构建初始内容
-  const initialContent =
-    richText && richText.length > 0 ? buildTiptapContent(content || '', richText) : content || '';
+  // 注意：始终传入textStyle以确保全局样式被正确应用
+  const initialContent = buildTiptapContent(content || '', richText, textStyle);
 
-  console.log('[RichTextEditor] Initializing with:', { content, richText, initialContent });
+  console.log('[RichTextEditor] Initializing with:', {
+    content,
+    richText,
+    textStyle,
+    initialContent,
+  });
 
   // 处理选择变化
   const handleSelectionUpdate = useCallback((editor: NonNullable<ReturnType<typeof useEditor>>) => {
@@ -109,8 +114,6 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         style: `
           font-family: ${textStyle.fontFamily};
           font-size: ${textStyle.fontSize}px;
-          font-weight: ${textStyle.fontWeight};
-          font-style: ${textStyle.fontStyle};
           color: ${textStyle.color};
           text-align: ${textStyle.textAlign};
           line-height: ${textStyle.lineHeight};
@@ -119,9 +122,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
     },
     onUpdate: ({ editor }) => {
       const json = editor.getJSON();
-      const { content: plainText, richText } = parseTiptapContent(json);
+      // 🎯 关键修复: 传入globalTextStyle，让parseTiptapContent生成相对差异
+      const { content: plainText, richText } = parseTiptapContent(json, textStyle);
 
-      console.log('[RichTextEditor] Syncing to Zustand:', { plainText, richText }); // 调试信息
+      // cleanupRichTextSpans不再需要，因为parseTiptapContent已经生成了差异
+      console.log('[RichTextEditor] Syncing to Zustand:', {
+        plainText,
+        richText,
+        globalStyle: textStyle,
+      });
 
       onUpdate(plainText, richText);
       setUpdateTrigger((prev) => prev + 1);
@@ -187,33 +196,35 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         // 应用所有文本样式
         contentEl.style.fontFamily = textStyle.fontFamily;
         contentEl.style.fontSize = `${textStyle.fontSize}px`;
-        contentEl.style.fontWeight = textStyle.fontWeight;
-        contentEl.style.fontStyle = textStyle.fontStyle;
+        // 将 BIUS 基线回退到 normal，让 marks 控制加粗/斜体/下划线
+        contentEl.style.fontWeight = 'normal';
+        contentEl.style.fontStyle = 'normal';
         contentEl.style.color = textStyle.color;
         contentEl.style.textAlign = textStyle.textAlign;
         contentEl.style.lineHeight = `${textStyle.lineHeight}`;
+        contentEl.style.textDecoration = 'none';
 
-        // 应用背景色
+        // 应用背景色（保留）
         if (textStyle.backgroundColor) {
           contentEl.style.backgroundColor = textStyle.backgroundColor;
+        } else {
+          contentEl.style.backgroundColor = '';
         }
+      }
 
-        // 应用文本装饰
-        contentEl.style.textDecoration = textStyle.textDecoration || 'none';
+      // 🎯 关键修复: 当全局样式变化时,重新构建编辑器内容以应用新样式
+      const currentJson = editor.getJSON();
+      const newContent = buildTiptapContent(content || '', richText, textStyle);
+
+      // 只在内容结构真正不同时才更新,避免不必要的光标跳动
+      if (JSON.stringify(currentJson) !== JSON.stringify(newContent)) {
+        console.log('[RichTextEditor] Global style changed, rebuilding content');
+        editor.commands.setContent(newContent);
+        // 触发InlineTextToolbar更新 - 使用setTimeout避免cascading render
+        setTimeout(() => setUpdateTrigger((prev) => prev + 1), 0);
       }
     }
-  }, [editor, textStyle]);
-
-  // 监听内容变化，同步到编辑器
-  useEffect(() => {
-    if (editor && editor.getHTML() !== content) {
-      // 避免光标位置丢失，只在内容真的不同时才更新
-      const currentContent = editor.getText();
-      if (currentContent !== (content || '')) {
-        editor.commands.setContent(content || '');
-      }
-    }
-  }, [editor, content]);
+  }, [editor, textStyle, content, richText]);
 
   // 自动聚焦 - 使用 setTimeout 确保编辑器已完全挂载
   useEffect(() => {

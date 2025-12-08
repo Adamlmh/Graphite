@@ -6,6 +6,40 @@ import type { Element, TextElement, RichTextSpan, TextStyle } from '../../types/
 import type { IElementRenderer, RenderResources } from '../../types/render.types';
 import { ResourceManager } from '../resources/ResourceManager';
 
+// === textDecoration helpers (aligned with tiptapConverter) ===
+const normalizeTextDecoration = (
+  decoration?: TextStyle['textDecoration'],
+): TextStyle['textDecoration'] => {
+  if (!decoration || decoration === 'none') return 'none';
+  const parts = decoration.split(/\s+/).filter(Boolean);
+  const hasUnderline = parts.includes('underline');
+  const hasStrike = parts.includes('line-through');
+  if (hasUnderline && hasStrike) return 'underline line-through';
+  if (hasUnderline) return 'underline';
+  if (hasStrike) return 'line-through';
+  return 'none';
+};
+
+const getDecorationFlags = (
+  decoration?: TextStyle['textDecoration'],
+): { underline: boolean; strike: boolean } => {
+  const normalized = normalizeTextDecoration(decoration);
+  return {
+    underline: normalized.includes('underline'),
+    strike: normalized.includes('line-through'),
+  };
+};
+
+const buildDecorationFromFlags = (
+  underline: boolean,
+  strike: boolean,
+): TextStyle['textDecoration'] => {
+  if (underline && strike) return 'underline line-through';
+  if (underline) return 'underline';
+  if (strike) return 'line-through';
+  return 'none';
+};
+
 /**
  * 文本渲染器 - 负责文本元素的图形渲染
  * 职责：将文本元素数据转换为PIXI文本对象
@@ -316,11 +350,36 @@ export class TextRenderer implements IElementRenderer {
           originalStyle: baseStyle,
         });
       }
-      // 合并基础样式和局部样式，确保字体等属性正确传递
+      // 合并基础样式和局部样式，确保字体等属性正确传递，并对 textDecoration 做并集
+      const baseDecorationFlags = getDecorationFlags(baseStyle.textDecoration);
+      const localDecorationNormalized =
+        span.style.textDecoration !== undefined
+          ? normalizeTextDecoration(span.style.textDecoration)
+          : undefined;
+      const localDecorationFlags =
+        localDecorationNormalized !== undefined
+          ? getDecorationFlags(localDecorationNormalized)
+          : undefined;
+
+      const finalUnderline = (() => {
+        if (localDecorationNormalized === 'none') return false;
+        if (localDecorationFlags)
+          return localDecorationFlags.underline || baseDecorationFlags.underline;
+        return baseDecorationFlags.underline;
+      })();
+
+      const finalStrike = (() => {
+        if (localDecorationNormalized === 'none') return false;
+        if (localDecorationFlags) return localDecorationFlags.strike || baseDecorationFlags.strike;
+        return baseDecorationFlags.strike;
+      })();
+
       const mergedStyle: TextStyle = {
         ...baseStyle,
         ...span.style,
-        // 确保 fontFamily 正确传递
+        textDecoration: normalizeTextDecoration(
+          buildDecorationFromFlags(finalUnderline, finalStrike),
+        ),
         fontFamily: span.style.fontFamily || baseStyle.fontFamily,
       };
       segments.push({
