@@ -505,6 +505,7 @@ export class RenderEngine {
         selectionLayer.addChild(box);
         selectionLayer.addChild(fill);
 
+        const zoom = this.currentViewport?.zoom ?? 1;
         const handleSize = 8;
         const handleColor = 0xffffff;
         const handleBorderColor = 0x2563eb;
@@ -536,6 +537,8 @@ export class RenderEngine {
           handle.endFill();
           handle.position.set(pos.x, pos.y);
           handle.interactive = true;
+          handle.scale.set(1 / zoom);
+          handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
           handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
             event.stopPropagation();
 
@@ -562,8 +565,9 @@ export class RenderEngine {
         rotationHandle.lineStyle(1, handleBorderColor, 1);
         rotationHandle.circle(0, 0, 6);
         rotationHandle.endFill();
-        rotationHandle.position.set((minX + maxX) / 2, maxY + 20);
+        rotationHandle.position.set((minX + maxX) / 2, maxY + 20 / zoom);
         rotationHandle.interactive = true;
+        rotationHandle.scale.set(1 / zoom);
         rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
         rotationHandle.cursor = 'pointer';
         // 使用静态事件模式，确保可以接收事件
@@ -716,6 +720,7 @@ export class RenderEngine {
 
     // 如果需要显示调整手柄
     if (withHandles) {
+      const zoom = this.currentViewport?.zoom ?? 1;
       const handleSize = 8;
       const handleColor = 0xffffff;
       const handleBorderColor = 0x007bff;
@@ -761,6 +766,7 @@ export class RenderEngine {
         handle.endFill();
         handle.position.set(pos.x, pos.y);
         handle.interactive = true;
+        handle.scale.set(1 / zoom);
         handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
         handle.cursor = handleCursors[index];
         handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
@@ -929,6 +935,7 @@ export class RenderEngine {
     selectionLayer.addChild(highlightBox);
 
     if (withHandles) {
+      const zoom = this.currentViewport?.zoom ?? 1;
       const handleSize = 8;
       const handleColor = 0xffffff;
       const handleBorderColor = 0x007bff;
@@ -973,6 +980,7 @@ export class RenderEngine {
         handle.endFill();
         handle.position.set(pos.x, pos.y);
         handle.interactive = true;
+        handle.scale.set(1 / zoom);
         handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
         handle.cursor = handleCursors[index];
         // handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
@@ -1007,8 +1015,12 @@ export class RenderEngine {
       rotationHandle.lineStyle(1, handleBorderColor, 1);
       rotationHandle.circle(0, 0, 6);
       rotationHandle.endFill();
-      rotationHandle.position.set(bounds.x + bounds.width / 2, bounds.y + bounds.height + 20);
+      rotationHandle.position.set(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height + 20 / zoom,
+      );
       rotationHandle.interactive = true;
+      rotationHandle.scale.set(1 / zoom);
       rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
       rotationHandle.cursor = 'move';
       // 使用静态事件模式，确保可以接收事件
