@@ -9,7 +9,6 @@ import {
   MoonOutlined,
   UndoOutlined,
   RedoOutlined,
-  SaveOutlined,
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
@@ -28,10 +27,13 @@ const ToolBar: React.FC = () => {
   const setActiveTool = useCanvasStore((state) => state.setTool);
   const { isDarkMode, toggleTheme } = useTheme();
 
+  // 从 store 获取当前缩放值（实时响应）
+  const currentZoom = useCanvasStore((state) => state.viewport.zoom);
+  const setViewport = useCanvasStore((state) => state.setViewport);
+
   // 历史服务状态
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   // 监听历史状态变化
   useEffect(() => {
@@ -71,20 +73,6 @@ const ToolBar: React.FC = () => {
     }
   };
 
-  // 处理保存
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await historyService.forceSave();
-      console.log('Save successful');
-    } catch (error) {
-      message.error('保存失败');
-      console.error('Save error:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // 处理工具点击
   const handleToolClick = (toolId: Tool) => {
     if (toolId === 'image') {
@@ -94,6 +82,20 @@ const ToolBar: React.FC = () => {
       // 其他工具：正常切换
       setActiveTool(toolId);
     }
+  };
+
+  // 处理缩放值变化
+  const handleZoomChange = (value: number | null) => {
+    if (value === null) return;
+
+    // 限制缩放范围 10% - 600%
+    const clampedValue = Math.max(10, Math.min(600, value));
+    const newZoom = clampedValue / 100;
+
+    // 更新视口缩放
+    setViewport({
+      zoom: newZoom,
+    });
   };
 
   const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
@@ -129,16 +131,6 @@ const ToolBar: React.FC = () => {
             disabled={!canRedo}
           />
         </Tooltip>
-        <div className={styles.divider} />
-        <Tooltip title="保存 (Ctrl+S)" placement="bottom">
-          <Button
-            type="text"
-            className={styles.toolButton}
-            icon={<SaveOutlined />}
-            onClick={handleSave}
-            loading={isSaving}
-          />
-        </Tooltip>
       </div>
 
       {/* 中间工具栏 */}
@@ -166,15 +158,17 @@ const ToolBar: React.FC = () => {
         </Tooltip>
       </div>
       <div className={styles.rightSection}>
-        <Tooltip title="缩放比例" placement="bottom">
+        <Tooltip title="缩放比例 (Ctrl+滚轮)" placement="bottom">
           <InputNumber
-            min={50}
-            max={250}
-            defaultValue={100}
+            min={10}
+            max={600}
+            value={Math.round(currentZoom * 100)}
+            onChange={handleZoomChange}
             changeOnWheel
             className={styles.zoomInput}
             suffix="%"
             controls={false}
+            step={10}
           />
         </Tooltip>
       </div>
