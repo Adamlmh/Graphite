@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Tooltip, InputNumber, message } from 'antd';
+import { Button, Tooltip, InputNumber, message, Switch } from 'antd';
 import {
   DragOutlined,
   SelectOutlined,
@@ -11,12 +11,14 @@ import {
   RedoOutlined,
   ApartmentOutlined,
   UngroupOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { useTheme } from '../../../../hooks/useTheme';
 import { eventBus } from '../../../../lib/eventBus';
 import { historyService, groupInteraction } from '../../../../services/instances';
+import { SaveStatus } from '../../../../services/HistoryService';
 import styles from './ToolBar.module.less';
 
 const CircleIcon = () => <span className={styles.circleIcon} />;
@@ -41,18 +43,33 @@ const ToolBar: React.FC = () => {
   const selectedElementIds = useCanvasStore((state) => state.selectedElementIds);
   const [canGroup, setCanGroup] = useState(false);
   const [canUngroup, setCanUngroup] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(SaveStatus.IDLE);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [persistenceEnabled, setPersistenceEnabled] = useState(true);
 
   // 监听历史状态变化
   useEffect(() => {
     const updateHistoryState = () => {
       setCanUndo(historyService.canUndo());
       setCanRedo(historyService.canRedo());
+
+      // 更新保存状态
+      const status = historyService.getSaveStatus();
+      setSaveStatus(status.status);
+      // 检查是否有待处理的快照或保存错误
+      const hasPending = historyService.hasPendingSnapshots();
+      setHasUnsavedChanges(
+        status.status === SaveStatus.SAVING || status.status === SaveStatus.ERROR || hasPending,
+      );
+
+      // 更新持久化状态
+      setPersistenceEnabled(historyService.isPersistenceEnabled());
     };
 
     // 初始化时更新一次
     updateHistoryState();
 
-    // 监听 store 变化
+    // 监听 store 变化和保存状态
     const interval = setInterval(updateHistoryState, 500);
 
     return () => clearInterval(interval);
@@ -143,6 +160,13 @@ const ToolBar: React.FC = () => {
     });
   };
 
+  // 处理持久化开关变化
+  const handlePersistenceToggle = (checked: boolean) => {
+    historyService.setPersistenceEnabled(checked);
+    setPersistenceEnabled(checked);
+    message.success(`持久化已${checked ? '启用' : '禁用'}`);
+  };
+
   const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
     { id: 'hand', label: '移动', icon: <DragOutlined /> },
     { id: 'select', label: '光标', icon: <SelectOutlined /> },
@@ -222,7 +246,30 @@ const ToolBar: React.FC = () => {
         </Tooltip>
       </div>
       <div className={styles.rightSection}>
-        <Tooltip title="缩放比例 (Ctrl+滚轮)" placement="bottom">
+        {/* 持久化开关 */}
+        <Tooltip
+          title={persistenceEnabled ? '禁用持久化（演示模式）' : '启用持久化'}
+          placement="bottom"
+        >
+          <div>
+            <Switch checked={persistenceEnabled} onChange={handlePersistenceToggle} size="small" />
+          </div>
+        </Tooltip>
+        {/* 保存状态提示 */}
+        <span className={styles.saveStatus}>
+          {persistenceEnabled
+            ? saveStatus === SaveStatus.SAVING
+              ? '正在保存...'
+              : saveStatus === SaveStatus.SAVED
+                ? '已保存'
+                : saveStatus === SaveStatus.ERROR
+                  ? '保存失败'
+                  : hasUnsavedChanges
+                    ? '未保存'
+                    : '已保存'
+            : '持久化已禁用'}
+        </span>
+        <Tooltip title="缩放比例" placement="bottom">
           <InputNumber
             min={10}
             max={600}

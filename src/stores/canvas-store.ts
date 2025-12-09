@@ -1,7 +1,7 @@
 // store/canvas-store.ts
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { Element, Tool, ViewportState, ToolState, Point } from '../types/index';
+import type { Element, Tool, ViewportState, ToolState, Point, ImageElement } from '../types/index';
 
 export interface CanvasState {
   // === 核心数据状态 ===
@@ -268,7 +268,17 @@ export const useCanvasStore = create<CanvasState>()(
 
     deleteElement: (id) =>
       set((state) => {
-        // 🎯 删除元素并清理选中状态
+        const element = state.elements[id];
+        if (element && element.type === 'image') {
+          const src = (element as ImageElement).src;
+          if (typeof src === 'string' && src.startsWith('blob:')) {
+            try {
+              URL.revokeObjectURL(src);
+            } catch {
+              void 0;
+            }
+          }
+        }
         delete state.elements[id];
         state.selectedElementIds = state.selectedElementIds.filter((elId: string) => elId !== id);
       }),
@@ -351,6 +361,20 @@ export const useCanvasStore = create<CanvasState>()(
 
     clearCanvas: () =>
       set((state) => {
+        // 释放图片对象URL
+        Object.values(state.elements).forEach((el) => {
+          if (el.type === 'image') {
+            const src = (el as ImageElement).src;
+            if (typeof src === 'string' && src.startsWith('blob:')) {
+              try {
+                URL.revokeObjectURL(src);
+              } catch {
+                void 0;
+              }
+            }
+          }
+        });
+
         // 🎯 重置画布状态
         state.elements = {};
         state.selectedElementIds = [];

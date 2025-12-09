@@ -84,8 +84,17 @@ export class ResourceManager {
   ): Promise<PIXI.Texture> {
     return new Promise((resolve, reject) => {
       try {
-        // 处理 DataURL
+        // 检查 src 格式
+        const srcType = src.startsWith('blob:')
+          ? 'Blob URL'
+          : src.startsWith('data:')
+            ? 'DataURL'
+            : 'Other';
+        console.log('ResourceManager: 加载纹理', { srcType, srcPreview: src.substring(0, 100) });
+
+        // 处理 DataURL 和 Blob URL
         const img = new Image();
+        img.crossOrigin = 'anonymous'; // 允许跨域加载（如果需要）
         img.onload = () => {
           try {
             console.log('ResourceManager: 原始图片尺寸', {
@@ -137,8 +146,13 @@ export class ResourceManager {
             reject(new Error(`Texture creation error: ${error}`));
           }
         };
-        img.onerror = () => {
-          reject(new Error(`Failed to load image from DataURL`));
+        img.onerror = (error) => {
+          console.error('ResourceManager: 图片加载失败', {
+            srcType,
+            srcPreview: src.substring(0, 100),
+            error,
+          });
+          reject(new Error(`Failed to load image from ${srcType}: ${src.substring(0, 50)}...`));
         };
         img.src = src;
       } catch (error) {
