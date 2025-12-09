@@ -295,6 +295,14 @@ export class ViewportInteraction {
    * 更新光标样式
    */
   private updateCursor(): void {
+    // 检查容器是否有 important 光标样式（表示被 SelectInteraction 锁定）
+    const cursorValue = this.container.style.getPropertyValue('cursor');
+    const cursorPriority = this.container.style.getPropertyPriority('cursor');
+    if (cursorPriority === 'important') {
+      // 光标已被锁定，不要修改
+      return;
+    }
+
     const store = useCanvasStore.getState();
     const activeTool = store.tool.activeTool;
 
