@@ -38,6 +38,7 @@ class MoveInteraction {
       if (el) this.originalPositions.set(id, { x: el.x, y: el.y });
     });
     this.isDragging = true;
+    eventBus.emit('element:operation-start', { type: 'move' });
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint) return;
@@ -72,6 +73,7 @@ class MoveInteraction {
         void this.historyService.executeCommand(cmd);
       }
     }
+    eventBus.emit('element:operation-end', { type: 'move' });
     this.reset();
   }
   cancel(): void {
@@ -138,6 +140,7 @@ class ResizeInteraction {
     this.startBounds = { x: el.x, y: el.y, width: el.width, height: el.height };
     this.originalElements.set(elementId, { ...el });
     this.isDragging = true;
+    eventBus.emit('element:operation-start', { type: 'resize' });
   }
   startGroup(
     elementIds: string[],
@@ -156,6 +159,7 @@ class ResizeInteraction {
       if (el) this.originalElements.set(id, { ...el });
     });
     this.isDragging = true;
+    eventBus.emit('element:operation-start', { type: 'resize' });
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint || !this.startBounds) return;
@@ -352,6 +356,7 @@ class ResizeInteraction {
       });
       void this.historyService.executeCommand(cmd);
     }
+    eventBus.emit('element:operation-end', { type: 'resize' });
     this.reset();
   }
   cancel(): void {
@@ -380,6 +385,7 @@ class RotateInteraction {
     this.center = { ...boundsCenter };
     this.startRotation.set(elementId, el.rotation);
     this.isDragging = true;
+    eventBus.emit('element:operation-start', { type: 'rotate' });
   }
   startGroup(elementIds: string[], boundsCenter: Point): void {
     this.elementIds = [...elementIds];
@@ -391,6 +397,7 @@ class RotateInteraction {
       if (el) this.startRotation.set(id, el.rotation);
     });
     this.isDragging = true;
+    eventBus.emit('element:operation-start', { type: 'rotate' });
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.center) return;
@@ -429,6 +436,7 @@ class RotateInteraction {
       });
       void this.historyService.executeCommand(cmd);
     }
+    eventBus.emit('element:operation-end', { type: 'rotate' });
     this.reset();
   }
   cancel(): void {

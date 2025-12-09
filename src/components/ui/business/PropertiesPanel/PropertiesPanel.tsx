@@ -1,8 +1,8 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import { eventBus } from '../../../../lib/eventBus';
 import { useElementCategory } from '../../../../hooks/useElementCategory';
-import { calculatePanelPosition } from '../../../../utils/panelPositioning';
+import { calculatePanelPosition, throttle } from '../../../../utils';
 import FloatingPanel from '../../layout/FloatingPanel/FloatingPanel';
 import ShapeProperties from '../Propertities/ShapeProperties/ShapeProperties';
 import TextProperties from '../Propertities/TextProperties/TextProperties';
@@ -88,6 +88,21 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const [isTextEditing, setIsTextEditing] = useState(false);
   // 监听文本局部选择状态
   const [isTextSelectionActive, setIsTextSelectionActive] = useState(false);
+  // 监听元素操作状态（move/resize/rotate）
+  const [isOperating, setIsOperating] = useState(false);
+  // 使用 ref 存储节流函数，避免每次渲染都创建新函数
+  const throttledOperationEndRef = useRef<(() => void) | null>(null);
+
+  // 创建节流的操作结束处理函数
+  const handleOperationEnd = useCallback(() => {
+    setIsOperating(false);
+  }, []);
+
+  // 在组件挂载时创建节流函数
+  useEffect(() => {
+    // 使用 100ms 的节流时间，避免频繁更新
+    throttledOperationEndRef.current = throttle(handleOperationEnd, 100);
+  }, [handleOperationEnd]);
 
   useEffect(() => {
     const handleTextEditorOpen = () => {
@@ -104,19 +119,39 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       setIsTextSelectionActive(hasSelection);
     };
 
+    const handleOperationStart = () => {
+      setIsOperating(true);
+    };
+
+    const handleOperationEndEvent = () => {
+      // 使用节流函数处理操作结束事件
+      if (throttledOperationEndRef.current) {
+        throttledOperationEndRef.current();
+      }
+    };
+
     eventBus.on('text-editor:open', handleTextEditorOpen);
     eventBus.on('text-editor:close', handleTextEditorClose);
     eventBus.on('text-editor:selection-change', handleSelectionChange);
+    eventBus.on('element:operation-start', handleOperationStart);
+    eventBus.on('element:operation-end', handleOperationEndEvent);
 
     return () => {
       eventBus.off('text-editor:open', handleTextEditorOpen);
       eventBus.off('text-editor:close', handleTextEditorClose);
       eventBus.off('text-editor:selection-change', handleSelectionChange);
+      eventBus.off('element:operation-start', handleOperationStart);
+      eventBus.off('element:operation-end', handleOperationEndEvent);
     };
   }, []);
 
   // 如果没有选中元素，不显示属性面板
   if (elementCount === 0) {
+    return null;
+  }
+
+  // 如果正在进行元素操作（move/resize/rotate），隐藏属性面板
+  if (isOperating) {
     return null;
   }
 

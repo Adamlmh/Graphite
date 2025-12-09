@@ -2,6 +2,40 @@
 export { calculatePanelPosition } from './panelPositioning';
 export type { PanelPosition } from './panelPositioning';
 
+/**
+ * 节流函数 - 在指定时间内只执行一次函数
+ * @param func 要节流的函数
+ * @param wait 等待时间（毫秒）
+ * @returns 节流后的函数
+ */
+export const throttle = <T extends (...args: unknown[]) => unknown>(
+  func: T,
+  wait: number,
+): ((...args: Parameters<T>) => void) => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let lastTime = 0;
+
+  return function (this: unknown, ...args: Parameters<T>) {
+    const now = Date.now();
+    const remaining = wait - (now - lastTime);
+
+    if (remaining <= 0 || remaining > wait) {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+      lastTime = now;
+      func.apply(this, args);
+    } else if (!timeout) {
+      timeout = setTimeout(() => {
+        lastTime = Date.now();
+        timeout = null;
+        func.apply(this, args);
+      }, remaining);
+    }
+  };
+};
+
 // 示例：工具函数 - dateUtils
 // 日期格式化工具
 // export const formatDate = (date: Date, format: string = 'YYYY-MM-DD'): string => {
