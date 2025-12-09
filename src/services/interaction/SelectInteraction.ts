@@ -762,12 +762,67 @@ export class SelectInteraction {
   readonly resizeInteraction: ResizeInteraction;
   readonly rotateInteraction: RotateInteraction;
   private moveStartPoint: Point | null = null;
+
+  // 光标管理
+  private container: HTMLElement | null = null;
+  private lockedCursor: string | null = null;
+  private originalCursor: string | null = null;
+
   constructor(historyService?: HistoryService) {
     if (historyService) this.historyService = historyService;
     this.moveInteraction = new MoveInteraction(this.historyService ?? undefined);
     this.resizeInteraction = new ResizeInteraction(this.historyService ?? undefined);
     this.rotateInteraction = new RotateInteraction(this.historyService ?? undefined);
     this.setupEventListeners();
+  }
+
+  /**
+   * 设置容器元素，用于光标管理
+   */
+  setContainer(container: HTMLElement): void {
+    this.container = container;
+  }
+
+  /**
+   * 锁定光标样式
+   */
+  private lockCursor(cursor: string): void {
+    if (!this.container) return;
+    this.originalCursor = this.container.style.cursor;
+    this.lockedCursor = cursor;
+    this.container.style.cursor = cursor;
+    // 添加高优先级样式，防止被覆盖
+    this.container.style.setProperty('cursor', cursor, 'important');
+  }
+
+  /**
+   * 解除光标锁定
+   */
+  private unlockCursor(): void {
+    if (!this.container) return;
+    this.lockedCursor = null;
+    // 移除 important 标记
+    this.container.style.removeProperty('cursor');
+    // 恢复原始光标或设置为默认值
+    if (this.originalCursor) {
+      this.container.style.cursor = this.originalCursor;
+    }
+    this.originalCursor = null;
+  }
+
+  /**
+   * 如果光标未被锁定，则设置光标样式（用于悬停状态）
+   */
+  private setCursorIfNotLocked(cursor: string): void {
+    if (!this.container || this.lockedCursor) return;
+    this.container.style.cursor = cursor;
+  }
+
+  /**
+   * 检查光标是否被锁定
+   */
+  isCursorLocked(): boolean {
+    return this.lockedCursor !== null;
   }
   setHistoryService(historyService: HistoryService): void {
     this.historyService = historyService;
@@ -821,6 +876,9 @@ export class SelectInteraction {
       const selectedIds = store.selectedElementIds;
       this.log('handle-detected', { handleInfo, selectedIds });
       if (handleInfo.handleType === 'rotation') {
+        // 锁定旋转光标
+        this.lockCursor('pointer');
+
         if (handleInfo.isGroup) {
           const bounds = this.computeGroupBounds(selectedIds);
           const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
@@ -836,6 +894,21 @@ export class SelectInteraction {
         return;
       }
       const handleType = handleInfo.handleType as ResizeHandleType;
+
+      // 锁定对应的 resize 光标（排除 rotation）
+      const resizeCursors: Partial<Record<ResizeHandleType, string>> = {
+        'top-left': 'nwse-resize',
+        top: 'ns-resize',
+        'top-right': 'nesw-resize',
+        right: 'ew-resize',
+        'bottom-right': 'nwse-resize',
+        bottom: 'ns-resize',
+        'bottom-left': 'nesw-resize',
+        left: 'ew-resize',
+      };
+      const cursor = resizeCursors[handleType] || 'default';
+      this.lockCursor(cursor);
+
       if (handleInfo.isGroup) {
         const bounds = this.computeGroupBounds(selectedIds);
         this.resizeInteraction.startGroup(selectedIds, handleType, bounds, payload.world);
@@ -956,20 +1029,40 @@ export class SelectInteraction {
     const hover = this.computeHoverInfo(payload.world);
     this.hoverInfo = hover ?? { type: null };
     if (hover?.type === 'handle') {
+      // 悬停到 handle 时，设置对应的光标样式
+      if (hover.handleType === 'rotation') {
+        this.setCursorIfNotLocked('pointer');
+      } else {
+        const resizeCursors: Partial<Record<ResizeHandleType, string>> = {
+          'top-left': 'nwse-resize',
+          top: 'ns-resize',
+          'top-right': 'nesw-resize',
+          right: 'ew-resize',
+          'bottom-right': 'nwse-resize',
+          bottom: 'ns-resize',
+          'bottom-left': 'nesw-resize',
+          left: 'ew-resize',
+        };
+        const cursor = resizeCursors[hover.handleType as ResizeHandleType] || 'default';
+        this.setCursorIfNotLocked(cursor);
+      }
       this.state = 'HoverHandle';
       this.log('state-change', { to: this.state, handleInfo: hover });
       return;
     }
     if (hover?.type === 'element') {
+      this.setCursorIfNotLocked('move');
       this.state = 'HoverElement';
       this.log('state-change', { to: this.state, hoverElementId: hover.elementId });
       return;
     }
     if (hover?.type === 'group') {
+      this.setCursorIfNotLocked('default');
       this.state = 'HoverGroup';
       this.log('state-change', { to: this.state });
       return;
     }
+    this.setCursorIfNotLocked('default');
     this.state = 'Idle';
     this.log('state-change', { to: this.state });
   };
@@ -1041,6 +1134,7 @@ export class SelectInteraction {
     }
     if (this.state === 'DragResizing') {
       this.resizeInteraction.end();
+      this.unlockCursor();
       eventBus.emit('interaction:onTransformEnd', {
         selectedIds: useCanvasStore.getState().selectedElementIds,
       });
@@ -1050,6 +1144,7 @@ export class SelectInteraction {
     }
     if (this.state === 'DragRotating') {
       this.rotateInteraction.end();
+      this.unlockCursor();
       eventBus.emit('interaction:onTransformEnd', {
         selectedIds: useCanvasStore.getState().selectedElementIds,
       });
