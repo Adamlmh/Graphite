@@ -920,3 +920,65 @@ export class UngroupCommand implements Command {
     });
   }
 }
+
+export class AttributeChangeCommand implements Command {
+  id: string;
+  type: string = 'attribute-change';
+  timestamp: number;
+
+  private targetId: string;
+  private attributeName: keyof Element;
+  private oldValue: unknown;
+  private newValue: unknown;
+
+  private canvasStore: {
+    updateElement: (id: string, updates: Partial<Element>) => void;
+  };
+
+  constructor(
+    targetId: string,
+    attributeName: keyof Element,
+    oldValue: unknown,
+    newValue: unknown,
+    canvasStore: {
+      updateElement: (id: string, updates: Partial<Element>) => void;
+    },
+  ) {
+    this.id = uuidv4();
+    this.timestamp = Date.now();
+    this.targetId = targetId;
+    this.attributeName = attributeName;
+    this.oldValue = JSON.parse(JSON.stringify(oldValue));
+    this.newValue = JSON.parse(JSON.stringify(newValue));
+    this.canvasStore = canvasStore;
+  }
+
+  async execute(): Promise<void> {
+    this.canvasStore.updateElement(this.targetId, {
+      [this.attributeName]: this.newValue,
+    } as Partial<Element>);
+    return Promise.resolve();
+  }
+
+  async undo(): Promise<void> {
+    this.canvasStore.updateElement(this.targetId, {
+      [this.attributeName]: this.oldValue,
+    } as Partial<Element>);
+    return Promise.resolve();
+  }
+
+  async redo(): Promise<void> {
+    await this.execute();
+    return Promise.resolve();
+  }
+
+  serialize(): string {
+    return JSON.stringify({
+      id: this.id,
+      type: this.type,
+      timestamp: this.timestamp,
+      targetId: this.targetId,
+      attributeName: this.attributeName as string,
+    });
+  }
+}
