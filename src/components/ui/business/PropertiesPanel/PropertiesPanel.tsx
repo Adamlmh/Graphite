@@ -90,6 +90,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const [isTextSelectionActive, setIsTextSelectionActive] = useState(false);
   // 监听元素操作状态（move/resize/rotate）
   const [isOperating, setIsOperating] = useState(false);
+  // 监听画布拖动状态（viewport pan）
+  const [isViewportPanning, setIsViewportPanning] = useState(false);
   // 使用 ref 存储节流函数，避免每次渲染都创建新函数
   const throttledOperationEndRef = useRef<(() => void) | null>(null);
 
@@ -130,11 +132,21 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       }
     };
 
+    const handleViewportPanStart = () => {
+      setIsViewportPanning(true);
+    };
+
+    const handleViewportPanEnd = () => {
+      setIsViewportPanning(false);
+    };
+
     eventBus.on('text-editor:open', handleTextEditorOpen);
     eventBus.on('text-editor:close', handleTextEditorClose);
     eventBus.on('text-editor:selection-change', handleSelectionChange);
     eventBus.on('element:operation-start', handleOperationStart);
     eventBus.on('element:operation-end', handleOperationEndEvent);
+    eventBus.on('viewport:pan-start', handleViewportPanStart);
+    eventBus.on('viewport:pan-end', handleViewportPanEnd);
 
     return () => {
       eventBus.off('text-editor:open', handleTextEditorOpen);
@@ -142,6 +154,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       eventBus.off('text-editor:selection-change', handleSelectionChange);
       eventBus.off('element:operation-start', handleOperationStart);
       eventBus.off('element:operation-end', handleOperationEndEvent);
+      eventBus.off('viewport:pan-start', handleViewportPanStart);
+      eventBus.off('viewport:pan-end', handleViewportPanEnd);
     };
   }, []);
 
@@ -152,6 +166,11 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   // 如果正在进行元素操作（move/resize/rotate），隐藏属性面板
   if (isOperating) {
+    return null;
+  }
+
+  // 如果正在拖动画布（viewport pan），隐藏属性面板
+  if (isViewportPanning) {
     return null;
   }
 

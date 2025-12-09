@@ -38,7 +38,7 @@ class MoveInteraction {
       if (el) this.originalPositions.set(id, { x: el.x, y: el.y });
     });
     this.isDragging = true;
-    eventBus.emit('element:operation-start', { type: 'move' });
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint) return;
@@ -140,7 +140,7 @@ class ResizeInteraction {
     this.startBounds = { x: el.x, y: el.y, width: el.width, height: el.height };
     this.originalElements.set(elementId, { ...el });
     this.isDragging = true;
-    eventBus.emit('element:operation-start', { type: 'resize' });
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   startGroup(
     elementIds: string[],
@@ -159,7 +159,7 @@ class ResizeInteraction {
       if (el) this.originalElements.set(id, { ...el });
     });
     this.isDragging = true;
-    eventBus.emit('element:operation-start', { type: 'resize' });
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint || !this.startBounds) return;
@@ -385,7 +385,7 @@ class RotateInteraction {
     this.center = { ...boundsCenter };
     this.startRotation.set(elementId, el.rotation);
     this.isDragging = true;
-    eventBus.emit('element:operation-start', { type: 'rotate' });
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   startGroup(elementIds: string[], boundsCenter: Point): void {
     this.elementIds = [...elementIds];
@@ -397,7 +397,7 @@ class RotateInteraction {
       if (el) this.startRotation.set(id, el.rotation);
     });
     this.isDragging = true;
-    eventBus.emit('element:operation-start', { type: 'rotate' });
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.center) return;
@@ -523,6 +523,7 @@ export class SelectInteraction {
       const selectedIds = store.selectedElementIds;
       this.log('handle-detected', { handleInfo, selectedIds });
       if (handleInfo.handleType === 'rotation') {
+        eventBus.emit('element:operation-start', { type: 'rotate' });
         if (handleInfo.isGroup) {
           const bounds = this.computeGroupBounds(selectedIds);
           const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
@@ -538,6 +539,7 @@ export class SelectInteraction {
         return;
       }
       const handleType = handleInfo.handleType as ResizeHandleType;
+      eventBus.emit('element:operation-start', { type: 'resize' });
       if (handleInfo.isGroup) {
         const bounds = this.computeGroupBounds(selectedIds);
         this.resizeInteraction.startGroup(selectedIds, handleType, bounds, payload.world);
@@ -621,6 +623,7 @@ export class SelectInteraction {
       if (dist >= threshold) {
         this.state = 'DragMoving';
         this.log('state-change', { to: this.state, dist, threshold });
+        eventBus.emit('element:operation-start', { type: 'move' });
         this.moveInteraction.update(payload.world);
       }
       return;
