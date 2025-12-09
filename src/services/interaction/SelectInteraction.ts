@@ -14,7 +14,10 @@ import { SelectionManager } from '../SelectionManager';
 
 type SelectSubState =
   | 'Idle'
+  | 'IdleButPotentialMarquee'
+  | 'IdleButPotentialMove'
   | 'HoverElement'
+  | 'HoverGroup'
   | 'HoverHandle'
   | 'DragMoving'
   | 'DragResizing'
@@ -238,10 +241,10 @@ class ResizeInteraction {
     } else {
       const sb = this.startBounds;
       if (!sb) return;
+      const cx = sb.x + sb.width / 2;
+      const cy = sb.y + sb.height / 2;
       let newW = Math.max(1, sb.width);
       let newH = Math.max(1, sb.height);
-      let newX = sb.x;
-      let newY = sb.y;
       if (
         this.handleType === 'right' ||
         this.handleType === 'top-right' ||
@@ -255,7 +258,6 @@ class ResizeInteraction {
         this.handleType === 'bottom-left'
       ) {
         newW = Math.max(1, sb.width - dx);
-        newX = sb.x + dx;
       }
       if (
         this.handleType === 'bottom' ||
@@ -270,7 +272,6 @@ class ResizeInteraction {
         this.handleType === 'top-right'
       ) {
         newH = Math.max(1, sb.height - dy);
-        newY = sb.y + dy;
       }
       if (
         this.handleType === 'top-left' ||
@@ -279,51 +280,32 @@ class ResizeInteraction {
         this.handleType === 'bottom-right'
       ) {
         const s = Math.max(newW / sb.width, newH / sb.height);
-        const uniW = Math.max(1, sb.width * s);
-        const uniH = Math.max(1, sb.height * s);
-        if (this.handleType === 'bottom-right') {
-          newX = sb.x;
-          newY = sb.y;
-          newW = uniW;
-          newH = uniH;
-        } else if (this.handleType === 'top-left') {
-          const anchorX = sb.x + sb.width;
-          const anchorY = sb.y + sb.height;
-          newX = anchorX - uniW;
-          newY = anchorY - uniH;
-          newW = uniW;
-          newH = uniH;
-        } else if (this.handleType === 'top-right') {
-          const anchorX = sb.x;
-          const anchorY = sb.y + sb.height;
-          newX = anchorX;
-          newY = anchorY - uniH;
-          newW = uniW;
-          newH = uniH;
-        } else if (this.handleType === 'bottom-left') {
-          const anchorX = sb.x + sb.width;
-          const anchorY = sb.y;
-          newX = anchorX - uniW;
-          newY = anchorY;
-          newW = uniW;
-          newH = uniH;
-        }
+        newW = Math.max(1, sb.width * s);
+        newH = Math.max(1, sb.height * s);
       }
       const scaleX = newW / sb.width;
       const scaleY = newH / sb.height;
+      const newX = cx - newW / 2;
+      const newY = cy - newH / 2;
       const updates: Array<{ id: string; updates: Partial<Element> }> = [];
       this.elementIds.forEach((id) => {
         const base = this.originalElements.get(id);
         if (!base) return;
-        const relX = base.x - sb.x;
-        const relY = base.y - sb.y;
+        const baseCX = base.x + base.width / 2;
+        const baseCY = base.y + base.height / 2;
+        const relCX = baseCX - cx;
+        const relCY = baseCY - cy;
+        const childW = Math.max(1, base.width * scaleX);
+        const childH = Math.max(1, base.height * scaleY);
+        const newChildCX = cx + relCX * scaleX;
+        const newChildCY = cy + relCY * scaleY;
         updates.push({
           id,
           updates: {
-            x: newX + relX * scaleX,
-            y: newY + relY * scaleY,
-            width: Math.max(1, base.width * scaleX),
-            height: Math.max(1, base.height * scaleY),
+            x: newChildCX - childW / 2,
+            y: newChildCY - childH / 2,
+            width: childW,
+            height: childH,
           },
         });
       });
@@ -466,12 +448,14 @@ export class SelectInteraction {
   private state: SelectSubState = 'Idle';
   private selectionTolerance = 0.5;
   private debugEnabled = true;
+  private marqueeActivationThreshold = 4;
   private coordinateTransformer = new CoordinateTransformer();
   private geometryService = new GeometryService(this.coordinateTransformer);
   private historyService: HistoryService | null = null;
   readonly moveInteraction: MoveInteraction;
   readonly resizeInteraction: ResizeInteraction;
   readonly rotateInteraction: RotateInteraction;
+  private moveStartPoint: Point | null = null;
   constructor(historyService?: HistoryService) {
     if (historyService) this.historyService = historyService;
     this.moveInteraction = new MoveInteraction(this.historyService ?? undefined);
@@ -483,7 +467,7 @@ export class SelectInteraction {
     this.historyService = historyService;
   }
   private hoverInfo: {
-    type: 'element' | 'handle' | null;
+    type: 'element' | 'group' | 'handle' | null;
     elementId?: string;
     handleType?: ResizeHandleType | 'rotation';
     isGroup?: boolean;
@@ -493,6 +477,12 @@ export class SelectInteraction {
     eventBus.on('pointermove', this.handlePointerMove as (p: unknown) => void);
     eventBus.on('pointerup', this.handlePointerUp as (p: unknown) => void);
     eventBus.on('pointerupoutside', this.handlePointerUp as (p: unknown) => void);
+    eventBus.on('text-editor:double-click-handled', () => {
+      if (this.state === 'IdleButPotentialMove' || this.state === 'DragMoving') {
+        this.moveInteraction.cancel();
+      }
+      this.state = 'Idle';
+    });
   }
   private isSelectTool(): boolean {
     const isSelect = useCanvasStore.getState().tool.activeTool === 'select';
@@ -551,9 +541,30 @@ export class SelectInteraction {
       return;
     }
     const hit = this.findTopHitElement(payload.world);
+    const store = useCanvasStore.getState();
+    const selectedIds = store.selectedElementIds;
+    const multiSelect = !!(
+      payload.modifiers.shift ||
+      payload.modifiers.ctrl ||
+      payload.modifiers.meta
+    );
+    const groupBounds = selectedIds.length > 1 ? this.computeGroupBounds(selectedIds) : null;
+    const insideGroup = groupBounds ? this.isPointInRect(payload.world, groupBounds) : false;
+    if (selectedIds.length > 1 && insideGroup) {
+      if (multiSelect && hit?.id) {
+        const exists = selectedIds.includes(hit.id);
+        if (exists) store.removeFromSelection(hit.id);
+        else store.addToSelection(hit.id);
+        eventBus.emit('interaction:onSelectionChange', { selectedIds: store.selectedElementIds });
+      }
+      this.moveInteraction.start(store.selectedElementIds, payload.world);
+      this.moveStartPoint = { ...payload.world };
+      this.state = 'IdleButPotentialMove';
+      this.log('state-change', { to: this.state, reason: 'group-inside-click' });
+      return;
+    }
     if (hit) {
-      const store = useCanvasStore.getState();
-      if (payload.modifiers.shift) {
+      if (multiSelect) {
         const exists = store.selectedElementIds.includes(hit.id);
         if (exists) store.removeFromSelection(hit.id);
         else store.addToSelection(hit.id);
@@ -574,23 +585,52 @@ export class SelectInteraction {
       });
       eventBus.emit('interaction:onSelectionChange', { selectedIds: store.selectedElementIds });
       this.moveInteraction.start(store.selectedElementIds, payload.world);
-      this.state = 'DragMoving';
+      this.moveStartPoint = { ...payload.world };
+      this.state = 'IdleButPotentialMove';
       this.log('state-change', { to: this.state });
-    } else {
-      this.marqueeStartPoint = { ...payload.world };
-      this.log('marquee-start', { start: this.marqueeStartPoint, screen: payload.screen });
-      useCanvasStore.setState((state) => {
-        state.tool.tempElement = undefined;
-      });
-      this.state = 'DragMarqueeSelecting';
-      this.log('state-change', { to: this.state });
+      return;
     }
+    // 空白点击（不在 group AABB 内且未命中元素/手柄）：进入框选潜在态；在指针抬起未越阈值时清空选区
+    this.marqueeStartPoint = { ...payload.world };
+    this.log('marquee-start', { start: this.marqueeStartPoint, screen: payload.screen });
+    useCanvasStore.setState((state) => {
+      state.tool.tempElement = undefined;
+    });
+    this.state = 'IdleButPotentialMarquee';
+    this.log('state-change', { to: this.state });
   };
   private handlePointerMove = (payload: CanvasEvent): void => {
     if (this.debugEnabled) {
       this.log('pointermove', { world: payload.world, screen: payload.screen, state: this.state });
     }
     if (!this.isSelectTool()) return;
+    if (this.state === 'IdleButPotentialMove') {
+      const sp = this.moveStartPoint;
+      if (!sp) return;
+      const zoom = useCanvasStore.getState().viewport.zoom || 1;
+      const threshold = this.marqueeActivationThreshold / zoom;
+      const dist = Math.hypot(payload.world.x - sp.x, payload.world.y - sp.y);
+      if (dist >= threshold) {
+        this.state = 'DragMoving';
+        this.log('state-change', { to: this.state, dist, threshold });
+        this.moveInteraction.update(payload.world);
+      }
+      return;
+    }
+    if (this.state === 'IdleButPotentialMarquee') {
+      if (!this.marqueeStartPoint) return;
+      const zoom = useCanvasStore.getState().viewport.zoom || 1;
+      const threshold = this.marqueeActivationThreshold / zoom;
+      const dx = payload.world.x - this.marqueeStartPoint.x;
+      const dy = payload.world.y - this.marqueeStartPoint.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= threshold) {
+        this.state = 'DragMarqueeSelecting';
+        this.log('state-change', { to: this.state, dist, threshold });
+        this.updateMarqueeSelection(payload.world);
+      }
+      return;
+    }
     if (this.state === 'DragMoving') {
       this.moveInteraction.update(payload.world);
       return;
@@ -614,15 +654,54 @@ export class SelectInteraction {
       this.log('state-change', { to: this.state, handleInfo: hover });
       return;
     }
-    const hit = this.findTopHitElement(payload.world);
-    this.state = hit ? 'HoverElement' : 'Idle';
-    this.log('state-change', { to: this.state, hoverElementId: hit?.id });
+    if (hover?.type === 'element') {
+      this.state = 'HoverElement';
+      this.log('state-change', { to: this.state, hoverElementId: hover.elementId });
+      return;
+    }
+    if (hover?.type === 'group') {
+      this.state = 'HoverGroup';
+      this.log('state-change', { to: this.state });
+      return;
+    }
+    this.state = 'Idle';
+    this.log('state-change', { to: this.state });
   };
   private handlePointerUp = (payload: CanvasEvent): void => {
     if (this.debugEnabled) {
       this.log('pointerup', { world: payload.world, screen: payload.screen, state: this.state });
     }
     if (!this.isSelectTool()) return;
+    if (this.state === 'IdleButPotentialMove') {
+      // 点击但未触发拖拽：不做移动
+      this.moveInteraction.cancel();
+      this.moveStartPoint = null;
+      this.state = 'Idle';
+      this.log('state-change', { to: this.state });
+      return;
+    }
+    if (this.state === 'IdleButPotentialMarquee') {
+      const start = this.marqueeStartPoint;
+      const last = payload.world;
+      const zoom = useCanvasStore.getState().viewport.zoom || 1;
+      const threshold = this.marqueeActivationThreshold / zoom;
+      const moved = start ? Math.hypot(last.x - start.x, last.y - start.y) : 0;
+      const multiSelect = !!(
+        payload.modifiers.shift ||
+        payload.modifiers.ctrl ||
+        payload.modifiers.meta
+      );
+      if (!start || moved <= threshold) {
+        if (!multiSelect) {
+          useCanvasStore.getState().setSelectedElements([]);
+          eventBus.emit('interaction:onSelectionChange', { selectedIds: [] });
+        }
+      }
+      this.endMarqueeSelection();
+      this.state = 'Idle';
+      this.log('state-change', { to: this.state });
+      return;
+    }
     if (this.state === 'DragMoving') {
       this.moveInteraction.end(payload.world);
       eventBus.emit('interaction:onMoveEnd', {
@@ -636,13 +715,18 @@ export class SelectInteraction {
       const start = this.marqueeStartPoint;
       const last = this.marqueeLastPoint;
       const moved = start && last ? Math.hypot(last.x - start.x, last.y - start.y) : 0;
-      const threshold =
-        (useCanvasStore.getState().viewport.zoom || 1) >= 1
-          ? 2
-          : 2 / (useCanvasStore.getState().viewport.zoom || 1);
+      const zoom = useCanvasStore.getState().viewport.zoom || 1;
+      const threshold = this.marqueeActivationThreshold / zoom;
+      const multiSelect = !!(
+        payload.modifiers.shift ||
+        payload.modifiers.ctrl ||
+        payload.modifiers.meta
+      );
       if (!last || moved <= threshold) {
-        useCanvasStore.getState().setSelectedElements([]);
-        eventBus.emit('interaction:onSelectionChange', { selectedIds: [] });
+        if (!multiSelect) {
+          useCanvasStore.getState().setSelectedElements([]);
+          eventBus.emit('interaction:onSelectionChange', { selectedIds: [] });
+        }
       }
       this.endMarqueeSelection();
       this.state = 'Idle';
@@ -668,10 +752,8 @@ export class SelectInteraction {
       return;
     }
   };
-  private computeHoverInfo(
-    worldPoint: Point,
-  ): {
-    type: 'element' | 'handle' | null;
+  private computeHoverInfo(worldPoint: Point): {
+    type: 'element' | 'group' | 'handle' | null;
     elementId?: string;
     handleType?: ResizeHandleType | 'rotation';
     isGroup?: boolean;
@@ -732,6 +814,13 @@ export class SelectInteraction {
     }
     const element = this.findTopHitElement(worldPoint);
     if (element) return { type: 'element', elementId: element.id };
+    if (selectedIds.length > 1) {
+      const bounds = this.computeGroupBounds(selectedIds);
+      const insideGroup = this.isPointInRect(worldPoint, bounds);
+      if (insideGroup) {
+        return { type: 'group', isGroup: true };
+      }
+    }
     return null;
   }
   private isPointInRect(
@@ -858,6 +947,14 @@ export class SelectInteraction {
     this.log('hit-scan-start', { world: worldPoint, count: sorted.length });
     for (const el of sorted) {
       if (el.visibility === 'hidden') continue;
+      const aabb = this.computeElementAABB(el);
+      const expanded = {
+        x: aabb.x - this.selectionTolerance,
+        y: aabb.y - this.selectionTolerance,
+        width: aabb.width + this.selectionTolerance * 2,
+        height: aabb.height + this.selectionTolerance * 2,
+      };
+      if (!this.isPointInRect(worldPoint, expanded)) continue;
       const ok = this.pointInElement(worldPoint, el);
       if (ok) {
         this.log('top-hit', { world: worldPoint, elementId: el.id, zIndex: el.zIndex });
@@ -880,7 +977,9 @@ export class SelectInteraction {
     const start = this.marqueeStartPoint;
     const end = worldPoint;
     const dragDistance = Math.sqrt((start.x - end.x) ** 2 + (start.y - end.y) ** 2);
-    if (dragDistance < 5) {
+    const zoom = useCanvasStore.getState().viewport.zoom || 1;
+    const threshold = this.marqueeActivationThreshold / zoom;
+    if (dragDistance < threshold) {
       useCanvasStore.setState((state) => {
         state.tool.tempElement = undefined;
       });
