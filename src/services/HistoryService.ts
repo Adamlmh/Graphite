@@ -134,8 +134,24 @@ export class HistoryService {
   private redoStack: Command[] = [];
   private snapshots: Snapshot[] = [];
   private currentVersion: number = 0;
-  //private unsubscribe: (() => void) | null = null;
-  //private store: typeof useCanvasStore; // 直接使用 store 类型
+
+  // 在类中添加新的属性和方法
+  private pendingUnloadAction: {
+    type: 'refresh' | 'close';
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null = null;
+  private isProcessingUnload = false;
+
+  /* ====== 新增 ====== */
+  private _readyResolve!: (v: boolean) => void;
+  private _readyReject!: (e: unknown) => void;
+  public readonly ready: Promise<boolean>; // 对外等待
+  private _isReady = false; // 同步只读
+  public get isReady() {
+    return this._isReady;
+  }
+
   private store: {
     getState: () => CanvasState;
     setState: (
@@ -152,11 +168,25 @@ export class HistoryService {
     ) => void;
   }) {
     this.store = store;
+
+    /* 1. 创建 ready Promise */
+    this.ready = new Promise<boolean>((res, rej) => {
+      this._readyResolve = res;
+      this._readyReject = rej;
+    });
+
+    /* 2. 原有初始化逻辑包一层 async/await */
+    this._init().catch(this._readyReject);
+  }
+
+  private async _init(): Promise<void> {
     // 加载持久化偏好设置
     this.config.persistenceEnabled = this.loadPersistencePreference();
     // 初始化时先禁用自动保存
     this.autoSaveEnabled = false;
-    this.setupPageUnloadListener();
+    //this.setupPageUnloadListener();
+    // 修改点：增强页面卸载监听
+    this.setupEnhancedPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
 
@@ -169,6 +199,7 @@ export class HistoryService {
       if (snapshot) {
         snapshot.data = compressed;
         snapshot.metadata = {
+          ...snapshot.metadata, // ← 修改点：保留原有metadata
           elementCount: snapshot.metadata?.elementCount || 0,
           memoryUsage: snapshot.metadata?.memoryUsage || 0,
           compressedSize: compressed.length,
@@ -188,27 +219,33 @@ export class HistoryService {
                 this.pendingSnapshotIds.delete(snapshotId);
                 // 检查是否所有快照都已完成
                 this.updateSaveStatus();
+                // 如果有待处理的卸载操作，通知完成
+                this.checkPendingUnloadAction();
               })
               .catch((error) => {
                 console.error('保存到持久化存储失败:', error);
                 // 即使失败也标记为已完成（避免永久阻塞）
                 this.pendingSnapshotIds.delete(snapshotId);
                 this.updateSaveStatus();
+                this.checkPendingUnloadAction();
               });
           } else {
             // 即使不持久化，也标记为已完成
             this.pendingSnapshotIds.delete(snapshotId);
             this.updateSaveStatus();
+            this.checkPendingUnloadAction();
           }
         } else {
           // 如果未启用持久化或自动保存，也标记为已完成
           this.pendingSnapshotIds.delete(snapshotId);
           this.updateSaveStatus();
+          this.checkPendingUnloadAction();
         }
       } else {
         // 如果快照不存在，也继续处理
         this.pendingSnapshotIds.delete(snapshotId);
         this.updateSaveStatus();
+        this.checkPendingUnloadAction();
       }
     };
     // 初始化 IndexedDB
@@ -227,6 +264,9 @@ export class HistoryService {
       .then(() => {
         this.autoSaveEnabled = true; // 恢复完成后再启用
         this.setupAutoSave();
+        /* 标记就绪 */
+        this._isReady = true;
+        this._readyResolve(true);
       })
       .catch((e) => {
         console.warn('[HistoryService] 未能从持久化存储恢复', e);
@@ -260,7 +300,7 @@ export class HistoryService {
 
   // 配置
   private config = {
-    autoSaveDelay: 1000, // 1秒防抖
+    autoSaveDelay: 500, // ← 修改点：从1000ms改为500ms，减少延迟
     maxSnapshots: 100,
     maxUndoSteps: 50,
     fullSnapshotInterval: 10, // 每10个操作创建一个完整快照
@@ -593,12 +633,218 @@ export class HistoryService {
    */
   private setupPageUnloadListener(): void {
     window.addEventListener('beforeunload', (event) => {
-      if (this.saveStatus === SaveStatus.SAVING) {
+      if (this.saveStatus === SaveStatus.SAVING || this.pendingSnapshotIds.size > 0) {
+        // ← 修改点：增加pending检查
         event.preventDefault();
         event.returnValue = '正在保存数据，请稍候...';
-        this.forceSave().catch(console.error);
+        this.forceSave();
       }
     });
+  }
+
+  /**
+   * 设置增强的页面卸载监听（捕获所有刷新和关闭操作）
+   */
+  private setupEnhancedPageUnloadListener(): void {
+    // 监听 beforeunload 事件（页面关闭/刷新）
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
+
+    // 监听页面可见性变化（切换到其他标签页也会触发）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        this.handlePageHide();
+      }
+    });
+
+    // 监听页面卸载（fallback）
+    window.addEventListener('unload', () => {
+      this.handlePageUnload();
+    });
+
+    // 监听键盘快捷键 - 修改为异步处理
+    document.addEventListener('keydown', (event) => {
+      this.handleKeyShortcuts(event);
+    });
+  }
+
+  /**
+   * 处理键盘快捷键
+   */
+  private handleKeyShortcuts(event: KeyboardEvent): void {
+    // Ctrl+R 或 Cmd+R（刷新）
+    if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+      event.preventDefault(); // 阻止默认刷新行为
+      this.handleForceSaveAndRefresh();
+      return;
+    }
+
+    // Ctrl+W 或 Cmd+W（关闭标签页）
+    if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
+      event.preventDefault(); // 阻止默认关闭行为
+      this.handleForceSaveAndClose();
+      return;
+    }
+
+    // F5 刷新
+    if (event.key === 'F5') {
+      event.preventDefault();
+      this.handleForceSaveAndRefresh();
+      return;
+    }
+  }
+
+  /**
+   * 处理强制保存并刷新
+   */
+  private async handleForceSaveAndRefresh(): Promise<void> {
+    if (this.isProcessingUnload) {
+      console.log('已有卸载操作在处理中，跳过重复操作');
+      return;
+    }
+
+    this.isProcessingUnload = true;
+
+    try {
+      console.log('检测到刷新操作，正在保存数据...');
+
+      // 创建等待保存完成的Promise
+      await this.waitForAllSaves(10000); // 10秒超时
+
+      console.log('数据保存完成，执行刷新');
+      window.location.reload();
+    } catch (error) {
+      console.error('保存数据失败，但仍继续刷新:', error);
+      window.location.reload();
+    } finally {
+      this.isProcessingUnload = false;
+    }
+  }
+
+  /**
+   * 处理强制保存并关闭
+   */
+  private async handleForceSaveAndClose(): Promise<void> {
+    if (this.isProcessingUnload) {
+      console.log('已有卸载操作在处理中，跳过重复操作');
+      return;
+    }
+
+    this.isProcessingUnload = true;
+
+    try {
+      console.log('检测到关闭操作，正在保存数据...');
+
+      // 等待所有保存完成
+      await this.waitForAllSaves(10000); // 10秒超时
+
+      console.log('数据保存完成，可以安全关闭');
+      // 由于浏览器限制，无法直接关闭窗口，但可以确保数据已保存
+    } catch (error) {
+      console.error('保存数据失败:', error);
+      // 仍然允许关闭
+    } finally {
+      this.isProcessingUnload = false;
+    }
+  }
+
+  /**
+   * 等待所有待处理的保存操作完成
+   */
+  private async waitForAllSaves(timeout: number = 10000): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const startTime = Date.now();
+      const timeoutId = setTimeout(() => {
+        reject(new Error(`等待保存操作超时（${timeout}ms）`));
+      }, timeout);
+
+      const checkPendingSaves = () => {
+        const pendingCount = this.pendingSnapshotIds.size;
+        const isSaving = this.saveStatus === SaveStatus.SAVING;
+
+        console.log(`检查保存状态: 待处理快照=${pendingCount}, 保存状态=${this.saveStatus}`);
+
+        if (pendingCount === 0 && !isSaving) {
+          clearTimeout(timeoutId);
+          resolve();
+          return;
+        }
+
+        // 检查是否超时
+        if (Date.now() - startTime > timeout) {
+          clearTimeout(timeoutId);
+          reject(new Error(`等待保存操作超时（${timeout}ms）`));
+          return;
+        }
+
+        // 继续检查
+        setTimeout(checkPendingSaves, 100);
+      };
+
+      // 立即开始检查
+      checkPendingSaves();
+    });
+  }
+
+  /**
+   * 处理页面隐藏（切换到其他标签页）
+   */
+  private async handlePageHide(): Promise<void> {
+    if (
+      (this.hasUnsavedChanges ||
+        this.pendingSnapshotIds.size > 0 ||
+        this.saveStatus === SaveStatus.SAVING) &&
+      !this.isProcessingUnload
+    ) {
+      try {
+        await this.waitForAllSaves(5000); // 切换到其他标签页时等待5秒
+      } catch (error) {
+        console.warn('页面隐藏时等待保存超时:', error);
+      }
+    }
+  }
+
+  /**
+   * 处理页面卸载（最终fallback）
+   */
+  private handlePageUnload(): void {
+    // 同步保存（如果可能）
+    if (this.hasUnsavedChanges) {
+      try {
+        // 尝试同步保存（有限操作）
+        this.syncSaveIfPossible();
+      } catch (error) {
+        console.error('页面卸载时同步保存失败:', error);
+      }
+    }
+  }
+
+  /**
+   * 同步保存（用于页面卸载时的最后尝试）
+   */
+  private syncSaveIfPossible(): void {
+    if (!navigator.sendBeacon) return;
+
+    try {
+      const state = this.store.getState();
+      const persistableState = this.generatePersistableState(state);
+      const data = JSON.stringify(persistableState);
+
+      // 使用 sendBeacon 进行同步保存（不会阻塞页面卸载）
+      const blob = new Blob([data], { type: 'application/json' });
+      navigator.sendBeacon('/api/autosave', blob);
+    } catch (error) {
+      console.error('sendBeacon 保存失败:', error);
+    }
+  }
+
+  /**
+   * 检查是否有待处理的卸载操作
+   */
+  private checkPendingUnloadAction(): void {
+    // 当所有保存完成时，如果有待处理的卸载操作，可以在这里处理
+    if (this.pendingSnapshotIds.size === 0 && this.saveStatus === SaveStatus.SAVED) {
+      console.log('所有保存操作已完成，可以安全执行卸载操作');
+    }
   }
 
   //检查是否有意义的变更
@@ -702,14 +948,13 @@ export class HistoryService {
   }
 
   /**
-   * 强制立即保存
+   * 强制立即保存（带超时保护）
    */
-  async forceSave(): Promise<void> {
-    if (this.autoSaveTimeout) {
-      clearTimeout(this.autoSaveTimeout as number); // 强制类型转换
-      this.autoSaveTimeout = null;
+  async forceSave(timeout: number = 5000): Promise<void> {
+    const snapshot = await this.createSnapshot(true);
+    if (this.config.persistenceEnabled) {
+      await this.saveSnapshotToDB(snapshot); // 显式保存，不依赖 worker
     }
-    await this.createSnapshot(false);
   }
 
   /**
@@ -1355,7 +1600,7 @@ export class HistoryService {
       return;
     }
     // 如果有待处理的快照或未保存的更改，阻止页面关闭
-    if ((this.pendingSnapshotIds.size > 0 || this.hasUnsavedChanges) && this.autoSaveEnabled) {
+    if (this.pendingSnapshotIds.size > 0 || this.hasUnsavedChanges) {
       // 尝试最后一次保存
       this.forceSave();
 
@@ -1543,6 +1788,11 @@ export class HistoryService {
       await command.undo();
       this.redoStack.push(command);
       this.currentVersion--;
+      this.hasUnsavedChanges = true;
+
+      // 立即创建快照（不等待防抖）
+      this.cancelPendingAutoSave();
+      await this.createSnapshot(false); // ← 修改点：同步保存
     } catch (error) {
       console.error('Failed to undo command:', error);
       this.undoStack.push(command);

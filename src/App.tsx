@@ -1,7 +1,7 @@
 import './App.css';
 import './styles/themes.less';
 import { useState, useEffect } from 'react';
-import { Button, Modal } from 'antd';
+import { Button, Modal, Spin } from 'antd';
 import { QuestionCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import CanvasRenderer from './components/canvas/CanvasRenderer';
 import ToolBar from './components/ui/business/ToolBar/ToolBar';
@@ -14,6 +14,7 @@ import styles from './App.module.less';
 
 function App() {
   const [hotKeysModalVisible, setHotKeysModalVisible] = useState(false);
+  const [ready, setReady] = useState(historyService.isReady);
 
   // 检查保存状态，在页面刷新前提示
   useEffect(() => {
@@ -35,10 +36,31 @@ function App() {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
+    if (!ready) {
+      historyService.ready.then(() => setReady(true));
+    }
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
+
+  // 新增：加载中状态渲染
+  if (!ready) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          background: '#f0f2f5',
+        }}
+      >
+        <Spin size="large" tip="加载中..." style={{ fontSize: 18 }} />
+      </div>
+    );
+  }
 
   return (
     //下为ui组件展示
