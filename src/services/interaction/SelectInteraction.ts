@@ -1,6 +1,12 @@
 import { eventBus } from '../../lib/eventBus';
 import { useCanvasStore } from '../../stores/canvas-store';
 import type { Element, Point, Guideline } from '../../types/index';
+import { isGroupElement } from '../../types/index';
+import {
+  getGroupDeepChildren,
+  hitTestGroups,
+  computeGroupBounds as groupComputeGroupBounds,
+} from '../group-service';
 import type { HistoryService } from '../HistoryService';
 import { MoveCommand, ResizeCommand } from '../command/HistoryCommand';
 import type { ResizeHandleType } from './interactionTypes';
@@ -28,12 +34,27 @@ class MoveInteraction {
   private startPoint: Point | null = null;
   private originalPositions: Map<string, Point> = new Map();
   private isDragging = false;
+  private groupIds: Set<string> = new Set();
   constructor(private historyService?: HistoryService) {}
   start(selectedIds: string[], startPoint: Point): void {
     this.startPoint = { ...startPoint };
     this.originalPositions.clear();
+    this.groupIds.clear();
     const state = useCanvasStore.getState();
-    selectedIds.forEach((id) => {
+    const movementSet = new Set<string>();
+    selectedIds.forEach((sid) => {
+      const el = state.elements[sid];
+      if (!el) return;
+      if (isGroupElement(el)) {
+        this.groupIds.add(sid);
+        movementSet.add(sid); // group 本身也要移动
+        const children = getGroupDeepChildren(sid);
+        children.forEach((cid) => movementSet.add(cid));
+      } else {
+        movementSet.add(sid);
+      }
+    });
+    movementSet.forEach((id) => {
       const el = state.elements[id];
       if (el) this.originalPositions.set(id, { x: el.x, y: el.y });
     });
@@ -192,6 +213,19 @@ class MoveInteraction {
       }
     }
     eventBus.emit('element:operation-end', { type: 'move' });
+    if (this.groupIds.size > 0) {
+      this.groupIds.forEach((gid) => {
+        const gb = groupComputeGroupBounds(gid);
+        if (gb) {
+          const cb = useCanvasStore.getState().viewport.contentBounds;
+          const nx = Math.max(cb.x, Math.min(cb.x + cb.width - gb.width, gb.x));
+          const ny = Math.max(cb.y, Math.min(cb.y + cb.height - gb.height, gb.y));
+          useCanvasStore
+            .getState()
+            .updateElement(gid, { x: nx, y: ny, width: gb.width, height: gb.height });
+        }
+      });
+    }
     const vp = useCanvasStore.getState().viewport;
     const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
     useCanvasStore.getState().setViewport({ snapping: nextSnap });
@@ -217,11 +251,25 @@ class MoveInteraction {
   }
   private nudge(delta: Point): void {
     const store = useCanvasStore.getState();
-    const ids = store.selectedElementIds;
-    if (!ids.length) return;
+    const selectedIds = store.selectedElementIds;
+    if (!selectedIds.length) return;
+    const movementSet = new Set<string>();
+    const groupIds = new Set<string>();
+    selectedIds.forEach((sid) => {
+      const el = store.elements[sid];
+      if (!el) return;
+      if (isGroupElement(el)) {
+        groupIds.add(sid);
+        movementSet.add(sid);
+        const children = getGroupDeepChildren(sid);
+        children.forEach((cid) => movementSet.add(cid));
+      } else {
+        movementSet.add(sid);
+      }
+    });
     const movements: Array<{ elementId: string; oldPosition: Point; newPosition: Point }> = [];
     const updates: Array<{ id: string; updates: Partial<Element> }> = [];
-    ids.forEach((id) => {
+    movementSet.forEach((id) => {
       const el = store.elements[id];
       if (!el) return;
       const oldPos = { x: el.x, y: el.y };
@@ -231,6 +279,12 @@ class MoveInteraction {
     });
     if (updates.length) {
       store.updateElements(updates);
+      groupIds.forEach((gid) => {
+        const gb = groupComputeGroupBounds(gid);
+        if (gb) {
+          store.updateElement(gid, { x: gb.x, y: gb.y, width: gb.width, height: gb.height });
+        }
+      });
       if (this.historyService) {
         const cmd = new MoveCommand(movements, {
           updateElement: store.updateElement,
@@ -244,6 +298,7 @@ class MoveInteraction {
     this.startPoint = null;
     this.originalPositions.clear();
     this.isDragging = false;
+    this.groupIds.clear();
   }
 }
 
@@ -272,14 +327,23 @@ class ResizeInteraction {
     bounds: { x: number; y: number; width: number; height: number },
     startPoint: Point,
   ): void {
-    this.elementIds = [...elementIds];
+    const state = useCanvasStore.getState();
+    const expanded: string[] = [];
+    elementIds.forEach((id) => {
+      const el = state.elements[id];
+      if (el && isGroupElement(el)) {
+        getGroupDeepChildren(id).forEach((cid) => expanded.push(cid));
+      } else {
+        expanded.push(id);
+      }
+    });
+    this.elementIds = expanded;
     this.handleType = handleType;
     this.startPoint = { ...startPoint };
     this.startBounds = { ...bounds };
-    const store = useCanvasStore.getState();
     this.originalElements.clear();
     this.elementIds.forEach((id) => {
-      const el = store.elements[id];
+      const el = state.elements[id];
       if (el) this.originalElements.set(id, { ...el });
     });
     this.isDragging = true;
@@ -604,6 +668,21 @@ class ResizeInteraction {
         });
       });
       if (updates.length) store.updateElements(updates);
+      const selectedIds = useCanvasStore.getState().selectedElementIds;
+      selectedIds.forEach((sid) => {
+        const el = useCanvasStore.getState().elements[sid];
+        if (el && isGroupElement(el)) {
+          const gb = groupComputeGroupBounds(sid);
+          if (gb) {
+            const cb = useCanvasStore.getState().viewport.contentBounds;
+            const nx = Math.max(cb.x, Math.min(cb.x + cb.width - gb.width, gb.x));
+            const ny = Math.max(cb.y, Math.min(cb.y + cb.height - gb.height, gb.y));
+            useCanvasStore
+              .getState()
+              .updateElement(sid, { x: nx, y: ny, width: gb.width, height: gb.height });
+          }
+        }
+      });
       const nextSnap = { ...vp.snapping, guidelines: guides, showGuidelines: guides.length > 0 };
       useCanvasStore.getState().setViewport({ snapping: nextSnap });
     }
@@ -689,12 +768,21 @@ class RotateInteraction {
     // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   startGroup(elementIds: string[], boundsCenter: Point, startPoint: Point): void {
-    this.elementIds = [...elementIds];
-    this.center = { ...boundsCenter };
-    const store = useCanvasStore.getState();
-    this.startRotation.clear();
+    const state = useCanvasStore.getState();
+    const expanded: string[] = [];
     elementIds.forEach((id) => {
-      const el = store.elements[id];
+      const el = state.elements[id];
+      if (el && isGroupElement(el)) {
+        getGroupDeepChildren(id).forEach((cid) => expanded.push(cid));
+      } else {
+        expanded.push(id);
+      }
+    });
+    this.elementIds = expanded;
+    this.center = { ...boundsCenter };
+    this.startRotation.clear();
+    this.elementIds.forEach((id) => {
+      const el = state.elements[id];
       if (el) this.startRotation.set(id, el.rotation);
     });
     this.startPointerAngle =
@@ -711,6 +799,21 @@ class RotateInteraction {
     this.elementIds.forEach((id) => {
       const base = this.startRotation.get(id) ?? 0;
       store.updateElement(id, { rotation: base + delta });
+    });
+    const selectedIds = useCanvasStore.getState().selectedElementIds;
+    selectedIds.forEach((sid) => {
+      const el = useCanvasStore.getState().elements[sid];
+      if (el && isGroupElement(el)) {
+        const base = this.startRotation.get(sid) ?? el.rotation;
+        store.updateElement(sid, { rotation: (base ?? 0) + delta });
+        const gb = groupComputeGroupBounds(sid);
+        if (gb) {
+          const cb = useCanvasStore.getState().viewport.contentBounds;
+          const nx = Math.max(cb.x, Math.min(cb.x + cb.width - gb.width, gb.x));
+          const ny = Math.max(cb.y, Math.min(cb.y + cb.height - gb.height, gb.y));
+          store.updateElement(sid, { x: nx, y: ny, width: gb.width, height: gb.height });
+        }
+      }
     });
   }
   end(): void {
@@ -871,6 +974,7 @@ export class SelectInteraction {
       });
     }
     if (!this.isSelectTool()) return;
+    this.moveInteraction.cancel();
     if (
       this.state === 'DragMoving' ||
       this.state === 'DragResizing' ||
@@ -940,26 +1044,32 @@ export class SelectInteraction {
     const groupBounds = selectedIds.length > 1 ? this.computeGroupBounds(selectedIds) : null;
     const insideGroup = groupBounds ? this.isPointInRect(payload.world, groupBounds) : false;
     if (selectedIds.length > 1 && insideGroup) {
+      let newSelectedIds = selectedIds.slice();
       if (multiSelect && hit?.id) {
-        const exists = selectedIds.includes(hit.id);
-        if (exists) store.removeFromSelection(hit.id);
-        else store.addToSelection(hit.id);
-        eventBus.emit('interaction:onSelectionChange', { selectedIds: store.selectedElementIds });
+        const exists = newSelectedIds.includes(hit.id);
+        newSelectedIds = exists
+          ? newSelectedIds.filter((id) => id !== hit.id)
+          : [...newSelectedIds, hit.id];
+        store.setSelectedElements(newSelectedIds);
+        eventBus.emit('interaction:onSelectionChange', { selectedIds: newSelectedIds });
       }
-      this.moveInteraction.start(store.selectedElementIds, payload.world);
+      this.moveInteraction.start(newSelectedIds, payload.world);
       this.moveStartPoint = { ...payload.world };
       this.state = 'IdleButPotentialMove';
       this.log('state-change', { to: this.state, reason: 'group-inside-click' });
       return;
     }
     if (hit) {
+      let newSelectedIds: string[];
       if (multiSelect) {
-        const exists = store.selectedElementIds.includes(hit.id);
-        if (exists) store.removeFromSelection(hit.id);
-        else store.addToSelection(hit.id);
+        const exists = selectedIds.includes(hit.id);
+        newSelectedIds = exists
+          ? selectedIds.filter((id) => id !== hit.id)
+          : [...selectedIds, hit.id];
       } else {
-        store.setSelectedElements([hit.id]);
+        newSelectedIds = [hit.id];
       }
+      store.setSelectedElements(newSelectedIds);
       this.log('element-hit', {
         world: payload.world,
         screen: payload.screen,
@@ -972,8 +1082,8 @@ export class SelectInteraction {
         visibility: hit.visibility,
         selectedIds: store.selectedElementIds,
       });
-      eventBus.emit('interaction:onSelectionChange', { selectedIds: store.selectedElementIds });
-      this.moveInteraction.start(store.selectedElementIds, payload.world);
+      eventBus.emit('interaction:onSelectionChange', { selectedIds: newSelectedIds });
+      this.moveInteraction.start(newSelectedIds, payload.world);
       this.moveStartPoint = { ...payload.world };
       this.state = 'IdleButPotentialMove';
       this.log('state-change', { to: this.state });
@@ -1215,10 +1325,14 @@ export class SelectInteraction {
       ];
       for (const h of handles) {
         if (this.isPointInRect(worldPoint, h.rect)) {
+          const isGroupSingle =
+            selectedIds.length === 1 &&
+            !!store.elements[selectedIds[0]] &&
+            isGroupElement(store.elements[selectedIds[0]] as Element);
           return {
             type: 'handle',
             handleType: h.handleType,
-            isGroup: selectedIds.length > 1,
+            isGroup: selectedIds.length > 1 || isGroupSingle,
             elementId: selectedIds.length === 1 ? selectedIds[0] : undefined,
           };
         }
@@ -1247,16 +1361,28 @@ export class SelectInteraction {
     width: number;
     height: number;
   } {
+    const state = useCanvasStore.getState();
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
     ids.forEach((id) => {
-      const bounds = this.geometryService.getElementBoundsWorld(new ElementProvider(id));
-      minX = Math.min(minX, bounds.x);
-      minY = Math.min(minY, bounds.y);
-      maxX = Math.max(maxX, bounds.x + bounds.width);
-      maxY = Math.max(maxY, bounds.y + bounds.height);
+      const el = state.elements[id];
+      if (el && isGroupElement(el)) {
+        const gb = groupComputeGroupBounds(id);
+        if (gb) {
+          minX = Math.min(minX, gb.x);
+          minY = Math.min(minY, gb.y);
+          maxX = Math.max(maxX, gb.x + gb.width);
+          maxY = Math.max(maxY, gb.y + gb.height);
+        }
+      } else {
+        const bounds = this.geometryService.getElementBoundsWorld(new ElementProvider(id));
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
+      }
     });
     if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
       return { x: 0, y: 0, width: 0, height: 0 };
@@ -1305,24 +1431,6 @@ export class SelectInteraction {
       selectionTolerance: this.selectionTolerance,
       result: hit,
     });
-    if (!hit) {
-      const expanded = {
-        x: bounds.x - this.selectionTolerance,
-        y: bounds.y - this.selectionTolerance,
-        width: bounds.width + this.selectionTolerance * 2,
-        height: bounds.height + this.selectionTolerance * 2,
-      };
-      const approx = this.geometryService.rectIntersect(expanded, {
-        x: world.x,
-        y: world.y,
-        width: 0.001,
-        height: 0.001,
-      });
-      if (approx) {
-        this.log('hit-test-tolerance', { elementId: el.id, world, expanded });
-      }
-      return approx;
-    }
     return hit;
   }
 
@@ -1354,11 +1462,36 @@ export class SelectInteraction {
   }
 
   private findTopHitElement(worldPoint: Point): Element | null {
-    const elements = Object.values(useCanvasStore.getState().elements);
+    const state = useCanvasStore.getState();
+    const elements = Object.values(state.elements);
+    const candidates: Array<{ el: Element; z: number; minEdgeDist: number; centerDist: number }> =
+      [];
+    const hitGroupId = hitTestGroups(worldPoint, elements);
+    this.log('hit-scan-start', { world: worldPoint, count: elements.length });
+    if (hitGroupId) {
+      const gEl = state.elements[hitGroupId];
+      if (gEl) {
+        const gb = groupComputeGroupBounds(hitGroupId) || {
+          x: gEl.x,
+          y: gEl.y,
+          width: gEl.width,
+          height: gEl.height,
+        };
+        const cx = gb.x + gb.width / 2;
+        const cy = gb.y + gb.height / 2;
+        const distLeft = worldPoint.x - gb.x;
+        const distRight = gb.x + gb.width - worldPoint.x;
+        const distTop = worldPoint.y - gb.y;
+        const distBottom = gb.y + gb.height - worldPoint.y;
+        const minEdgeDist = Math.min(distLeft, distRight, distTop, distBottom);
+        const centerDist = Math.hypot(worldPoint.x - cx, worldPoint.y - cy);
+        candidates.push({ el: gEl, z: gEl.zIndex, minEdgeDist, centerDist });
+      }
+    }
     const sorted = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-    this.log('hit-scan-start', { world: worldPoint, count: sorted.length });
     for (const el of sorted) {
       if (el.visibility === 'hidden') continue;
+      if (hitGroupId && el.id === hitGroupId) continue;
       const aabb = this.computeElementAABB(el);
       const expanded = {
         x: aabb.x - this.selectionTolerance,
@@ -1368,12 +1501,26 @@ export class SelectInteraction {
       };
       if (!this.isPointInRect(worldPoint, expanded)) continue;
       const ok = this.pointInElement(worldPoint, el);
-      if (ok) {
-        this.log('top-hit', { world: worldPoint, elementId: el.id, zIndex: el.zIndex });
-        return el;
-      }
+      if (!ok) continue;
+      const cx = aabb.x + aabb.width / 2;
+      const cy = aabb.y + aabb.height / 2;
+      const distLeft = worldPoint.x - aabb.x;
+      const distRight = aabb.x + aabb.width - worldPoint.x;
+      const distTop = worldPoint.y - aabb.y;
+      const distBottom = aabb.y + aabb.height - worldPoint.y;
+      const minEdgeDist = Math.min(distLeft, distRight, distTop, distBottom);
+      const centerDist = Math.hypot(worldPoint.x - cx, worldPoint.y - cy);
+      candidates.push({ el, z: el.zIndex, minEdgeDist, centerDist });
     }
-    return null;
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => {
+      if (b.z !== a.z) return b.z - a.z;
+      if (b.minEdgeDist !== a.minEdgeDist) return b.minEdgeDist - a.minEdgeDist;
+      return a.centerDist - b.centerDist;
+    });
+    const top = candidates[0];
+    this.log('top-hit', { world: worldPoint, elementId: top.el.id, zIndex: top.z });
+    return top.el;
   }
 
   private marqueeStartPoint: Point | null = null;
