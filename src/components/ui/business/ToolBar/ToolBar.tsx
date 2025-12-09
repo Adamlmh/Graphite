@@ -11,7 +11,6 @@ import {
   RedoOutlined,
   ApartmentOutlined,
   UngroupOutlined,
-  SaveOutlined,
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
@@ -49,30 +48,85 @@ const ToolBar: React.FC = () => {
 
   // 监听历史状态变化
   useEffect(() => {
+    // 更新历史状态的函数
     const updateHistoryState = () => {
       setCanUndo(historyService.canUndo());
       setCanRedo(historyService.canRedo());
+      setPersistenceEnabled(historyService.isPersistenceEnabled());
 
       // 更新保存状态
       const status = historyService.getSaveStatus();
-      setSaveStatus(status.status);
-      // 检查是否有待处理的快照或保存错误
       const hasPending = historyService.hasPendingSnapshots();
-      setHasUnsavedChanges(
-        status.status === SaveStatus.SAVING || status.status === SaveStatus.ERROR || hasPending,
-      );
+      // 使用 HistoryService 的 getHasUnsavedChanges 方法检查版本比较
+      const hasUnsavedFromService = (
+        historyService as {
+          getHasUnsavedChanges: () => boolean;
+        }
+      ).getHasUnsavedChanges();
 
-      // 更新持久化状态
-      setPersistenceEnabled(historyService.isPersistenceEnabled());
+      setSaveStatus(status.status);
+      // 计算是否有未保存的更改
+      // 优先检查正在保存、错误、待处理快照，或版本不匹配
+      const hasUnsaved =
+        status.status === SaveStatus.SAVING ||
+        status.status === SaveStatus.ERROR ||
+        hasPending ||
+        hasUnsavedFromService;
+
+      setHasUnsavedChanges(hasUnsaved);
     };
 
     // 初始化时更新一次
     updateHistoryState();
 
-    // 监听 store 变化和保存状态
-    const interval = setInterval(updateHistoryState, 500);
+    // 监听保存状态变化事件（事件驱动，立即响应）
+    const handleSaveStatusChanged = (payload: unknown) => {
+      const data = payload as {
+        status: SaveStatus;
+        error: Error | null;
+        lastSaveTime: number;
+        hasPendingSnapshots: boolean;
+        hasUnsavedChanges: boolean;
+      };
+      setSaveStatus(data.status);
+      // 使用事件中的信息，优先考虑正在保存或错误状态
+      setHasUnsavedChanges(
+        data.status === SaveStatus.SAVING ||
+          data.status === SaveStatus.ERROR ||
+          data.hasPendingSnapshots ||
+          data.hasUnsavedChanges,
+      );
+    };
 
-    return () => clearInterval(interval);
+    eventBus.on('history:save-status-changed', handleSaveStatusChanged);
+
+    // 保留轮询作为后备方案（降低频率到 1 秒），用于更新撤销/重做状态和持久化状态
+    const interval = setInterval(() => {
+      setCanUndo(historyService.canUndo());
+      setCanRedo(historyService.canRedo());
+      setPersistenceEnabled(historyService.isPersistenceEnabled());
+
+      // 也更新保存状态（作为后备）
+      const status = historyService.getSaveStatus();
+      const hasPending = historyService.hasPendingSnapshots();
+      const hasUnsavedFromService =
+        typeof (historyService as { getHasUnsavedChanges?: () => boolean }).getHasUnsavedChanges ===
+        'function'
+          ? (historyService as { getHasUnsavedChanges: () => boolean }).getHasUnsavedChanges()
+          : false;
+      setSaveStatus(status.status);
+      setHasUnsavedChanges(
+        status.status === SaveStatus.SAVING ||
+          status.status === SaveStatus.ERROR ||
+          hasPending ||
+          hasUnsavedFromService,
+      );
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      eventBus.off('history:save-status-changed', handleSaveStatusChanged);
+    };
   }, []);
 
   // 监听选中状态变化，更新打组/解组按钮状态
@@ -95,7 +149,6 @@ const ToolBar: React.FC = () => {
   const handleUndo = async () => {
     try {
       await historyService.undo();
-      console.log('Undo successful');
     } catch (error) {
       message.error('撤销失败');
       console.error('Undo error:', error);
@@ -106,7 +159,6 @@ const ToolBar: React.FC = () => {
   const handleRedo = async () => {
     try {
       await historyService.redo();
-      console.log('Redo successful');
     } catch (error) {
       message.error('重做失败');
       console.error('Redo error:', error);
@@ -260,10 +312,10 @@ const ToolBar: React.FC = () => {
           {persistenceEnabled
             ? saveStatus === SaveStatus.SAVING
               ? '正在保存...'
-              : saveStatus === SaveStatus.SAVED
-                ? '已保存'
-                : saveStatus === SaveStatus.ERROR
-                  ? '保存失败'
+              : saveStatus === SaveStatus.ERROR
+                ? '保存失败'
+                : saveStatus === SaveStatus.SAVED && !hasUnsavedChanges
+                  ? '已保存'
                   : hasUnsavedChanges
                     ? '未保存'
                     : '已保存'
