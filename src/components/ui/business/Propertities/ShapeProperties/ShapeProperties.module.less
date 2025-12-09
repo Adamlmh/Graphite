@@ -147,10 +147,77 @@
   font-size: 12px;
   color: var(--text-secondary);
   text-align: right;
+  white-space: nowrap;
 }
 
 /* 使用主题变量控制颜色，无需单独覆盖暗色 */
 
 .colorPickerPopover {
   padding: 8px;
+}
+
+.borderRadiusControl {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 8px;
+  min-width: 160px;
+}
+
+.controlIcon {
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.65);
+  flex-shrink: 0;
+}
+
+[data-theme='dark'] .controlIcon {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.inlineSlider {
+  flex: 1;
+  margin: 0;
+  min-width: 80px;
+
+  :global {
+    .ant-slider-rail {
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .ant-slider-track {
+      background-color: #1890ff;
+    }
+
+    .ant-slider-handle {
+      border-color: #1890ff;
+
+      &:hover,
+      &:focus {
+        border-color: #40a9ff;
+        box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.12);
+      }
+    }
+  }
+}
+
+[data-theme='dark'] .inlineSlider {
+  :global {
+    .ant-slider-rail {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .ant-slider-track {
+      background-color: #177ddc;
+    }
+
+    .ant-slider-handle {
+      border-color: #177ddc;
+
+      &:hover,
+      &:focus {
+        border-color: #3c9ae8;
+        box-shadow: 0 0 0 4px rgba(23, 125, 220, 0.12);
+      }
+    }
+  }
 }

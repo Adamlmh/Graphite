@@ -1,5 +1,6 @@
 // services/interaction/ViewportInteraction.ts
 import { useCanvasStore } from '../../stores/canvas-store';
+import { eventBus } from '../../lib/eventBus';
 import type { Point, ViewportState } from '../../types';
 
 /**
@@ -65,15 +66,15 @@ export class ViewportInteraction {
       this.handlePointerDown(event);
     };
 
-    this.eventHandlers.pointerup = (event: PointerEvent) => {
-      this.handlePointerUp(event);
+    this.eventHandlers.pointerup = () => {
+      this.handlePointerUp();
     };
 
     this.eventHandlers.pointermove = (event: PointerEvent) => {
       this.handlePointerMove(event);
     };
 
-    this.eventHandlers.pointerenter = (event: PointerEvent) => {
+    this.eventHandlers.pointerenter = () => {
       // 鼠标进入画布时更新光标
       this.updateCursor();
     };
@@ -153,16 +154,22 @@ export class ViewportInteraction {
 
     // 设置拖拽光标
     this.container.style.cursor = 'grabbing';
+
+    // 触发画布拖动开始事件
+    eventBus.emit('viewport:pan-start');
   }
 
   /**
    * 处理指针释放
    */
-  private handlePointerUp(event: PointerEvent): void {
+  private handlePointerUp(): void {
     if (!this.isDragging) return;
 
     this.isDragging = false;
     this.startInertia();
+
+    // 触发画布拖动结束事件
+    eventBus.emit('viewport:pan-end');
 
     // 恢复光标样式
     this.updateCursor();
@@ -288,6 +295,14 @@ export class ViewportInteraction {
    * 更新光标样式
    */
   private updateCursor(): void {
+    // 检查容器是否有 important 光标样式（表示被 SelectInteraction 锁定）
+    const cursorValue = this.container.style.getPropertyValue('cursor');
+    const cursorPriority = this.container.style.getPropertyPriority('cursor');
+    if (cursorPriority === 'important') {
+      // 光标已被锁定，不要修改
+      return;
+    }
+
     const store = useCanvasStore.getState();
     const activeTool = store.tool.activeTool;
 
@@ -303,7 +318,7 @@ export class ViewportInteraction {
    */
   setupToolListener(): void {
     // 订阅store变化
-    this.unsubscribe = useCanvasStore.subscribe((state) => {
+    this.unsubscribe = useCanvasStore.subscribe(() => {
       this.updateCursor();
     });
   }
