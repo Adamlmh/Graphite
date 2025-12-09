@@ -45,6 +45,22 @@
   pointer-events: auto;
 }
 
+.persistenceSwitch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: var(--bg-primary);
+  backdrop-filter: blur(6px);
+  border-radius: 6px;
+  border: 1px solid var(--border-normal);
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--primary-color);
+  }
+}
+
 .saveStatus {
   font-size: 12px;
   color: var(--text-secondary);

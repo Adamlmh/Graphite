@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Tooltip, InputNumber, message } from 'antd';
+import { Button, Tooltip, InputNumber, message, Switch } from 'antd';
 import {
   DragOutlined,
   SelectOutlined,
@@ -11,6 +11,7 @@ import {
   RedoOutlined,
   ApartmentOutlined,
   UngroupOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
 import type { Tool } from '../../../../types/index';
 import { useCanvasStore } from '../../../../stores/canvas-store';
@@ -44,6 +45,7 @@ const ToolBar: React.FC = () => {
   const [canUngroup, setCanUngroup] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(SaveStatus.IDLE);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [persistenceEnabled, setPersistenceEnabled] = useState(true);
 
   // 监听历史状态变化
   useEffect(() => {
@@ -59,6 +61,9 @@ const ToolBar: React.FC = () => {
       setHasUnsavedChanges(
         status.status === SaveStatus.SAVING || status.status === SaveStatus.ERROR || hasPending,
       );
+
+      // 更新持久化状态
+      setPersistenceEnabled(historyService.isPersistenceEnabled());
     };
 
     // 初始化时更新一次
@@ -155,6 +160,13 @@ const ToolBar: React.FC = () => {
     });
   };
 
+  // 处理持久化开关变化
+  const handlePersistenceToggle = (checked: boolean) => {
+    historyService.setPersistenceEnabled(checked);
+    setPersistenceEnabled(checked);
+    message.success(`持久化已${checked ? '启用' : '禁用'}`);
+  };
+
   const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
     { id: 'hand', label: '移动', icon: <DragOutlined /> },
     { id: 'select', label: '光标', icon: <SelectOutlined /> },
@@ -234,17 +246,28 @@ const ToolBar: React.FC = () => {
         </Tooltip>
       </div>
       <div className={styles.rightSection}>
+        {/* 持久化开关 */}
+        <Tooltip
+          title={persistenceEnabled ? '禁用持久化（演示模式）' : '启用持久化'}
+          placement="bottom"
+        >
+          <div>
+            <Switch checked={persistenceEnabled} onChange={handlePersistenceToggle} size="small" />
+          </div>
+        </Tooltip>
         {/* 保存状态提示 */}
         <span className={styles.saveStatus}>
-          {saveStatus === SaveStatus.SAVING
-            ? '正在保存...'
-            : saveStatus === SaveStatus.SAVED
-              ? '已保存'
-              : saveStatus === SaveStatus.ERROR
-                ? '保存失败'
-                : hasUnsavedChanges
-                  ? '未保存'
-                  : '已保存'}
+          {persistenceEnabled
+            ? saveStatus === SaveStatus.SAVING
+              ? '正在保存...'
+              : saveStatus === SaveStatus.SAVED
+                ? '已保存'
+                : saveStatus === SaveStatus.ERROR
+                  ? '保存失败'
+                  : hasUnsavedChanges
+                    ? '未保存'
+                    : '已保存'
+            : '持久化已禁用'}
         </span>
         <Tooltip title="缩放比例" placement="bottom">
           <InputNumber

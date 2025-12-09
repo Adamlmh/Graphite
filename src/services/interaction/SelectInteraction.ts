@@ -1,6 +1,6 @@
 import { eventBus } from '../../lib/eventBus';
 import { useCanvasStore } from '../../stores/canvas-store';
-import type { Element, Point } from '../../types/index';
+import type { Element, Point, Guideline } from '../../types/index';
 import type { HistoryService } from '../HistoryService';
 import { MoveCommand, ResizeCommand } from '../command/HistoryCommand';
 import type { ResizeHandleType } from './interactionTypes';
@@ -41,8 +41,123 @@ class MoveInteraction {
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint) return;
-    const dx = currentPoint.x - this.startPoint.x;
-    const dy = currentPoint.y - this.startPoint.y;
+    const dx0 = currentPoint.x - this.startPoint.x;
+    const dy0 = currentPoint.y - this.startPoint.y;
+    const store = useCanvasStore.getState();
+    const selIds = Array.from(this.originalPositions.keys());
+    const others: Element[] = Object.values(store.elements).filter(
+      (el) => !selIds.includes(el.id) && el.visibility !== 'hidden',
+    );
+    let bounds: { x: number; y: number; width: number; height: number } | null = null;
+    if (selIds.length > 1) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      selIds.forEach((id) => {
+        const base = store.elements[id];
+        const pos = this.originalPositions.get(id)!;
+        const x = pos.x;
+        const y = pos.y;
+        const w = base.width;
+        const h = base.height;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
+      });
+      bounds = { x: minX + dx0, y: minY + dy0, width: maxX - minX, height: maxY - minY };
+    } else if (selIds.length === 1) {
+      const id = selIds[0];
+      const base = store.elements[id];
+      const pos = this.originalPositions.get(id)!;
+      bounds = { x: pos.x + dx0, y: pos.y + dy0, width: base.width, height: base.height };
+    }
+    const guidelines: Guideline[] = [];
+    let dx = dx0;
+    let dy = dy0;
+    if (bounds) {
+      const threshold = store.viewport.snapping.threshold || 4;
+      const snapToElements = store.viewport.snapping.snapToElements;
+      const snapToCanvas = store.viewport.snapping.snapToCanvas;
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      const left = bounds.x;
+      const right = bounds.x + bounds.width;
+      const top = bounds.y;
+      const bottom = bounds.y + bounds.height;
+      const vList: Array<{ x: number; source: Guideline['source']; elementId?: string }> = [];
+      const hList: Array<{ y: number; source: Guideline['source']; elementId?: string }> = [];
+      if (snapToCanvas) {
+        const cb = store.viewport.contentBounds;
+        const ccx = cb.x + cb.width / 2;
+        const ccy = cb.y + cb.height / 2;
+        vList.push({ x: ccx, source: 'canvas-center' });
+        hList.push({ y: ccy, source: 'canvas-center' });
+      }
+      if (snapToElements) {
+        others.forEach((el) => {
+          const ex = el.x;
+          const ey = el.y;
+          const ew = el.width;
+          const eh = el.height;
+          const ecx = ex + ew / 2;
+          const ecy = ey + eh / 2;
+          vList.push({ x: ecx, source: 'element-center', elementId: el.id });
+          hList.push({ y: ecy, source: 'element-center', elementId: el.id });
+          vList.push({ x: ex, source: 'element-edge', elementId: el.id });
+          vList.push({ x: ex + ew, source: 'element-edge', elementId: el.id });
+          hList.push({ y: ey, source: 'element-edge', elementId: el.id });
+          hList.push({ y: ey + eh, source: 'element-edge', elementId: el.id });
+        });
+      }
+      let bestAxis: 'x' | 'y' | null = null;
+      let bestDelta = 0;
+      let bestGuide: Guideline | null = null;
+      vList.forEach((c) => {
+        const deltas = [c.x - cx, c.x - left, c.x - right];
+        deltas.forEach((d) => {
+          const ad = Math.abs(d);
+          if (ad <= threshold) {
+            if (bestAxis === null || Math.abs(bestDelta) > ad) {
+              bestAxis = 'x';
+              bestDelta = d;
+              bestGuide = {
+                type: 'vertical',
+                position: c.x,
+                source: c.source,
+                strength: 'strong',
+                elementId: c.elementId,
+              };
+            }
+          }
+        });
+      });
+      hList.forEach((c) => {
+        const deltas = [c.y - cy, c.y - top, c.y - bottom];
+        deltas.forEach((d) => {
+          const ad = Math.abs(d);
+          if (ad <= threshold) {
+            if (bestAxis === null || Math.abs(bestDelta) > ad) {
+              bestAxis = 'y';
+              bestDelta = d;
+              bestGuide = {
+                type: 'horizontal',
+                position: c.y,
+                source: c.source,
+                strength: 'strong',
+                elementId: c.elementId,
+              };
+            }
+          }
+        });
+      });
+      if (bestAxis && bestGuide) {
+        if (bestAxis === 'x') dx = dx0 + bestDelta;
+        else dy = dy0 + bestDelta;
+        guidelines.push(bestGuide);
+      }
+    }
     const updates: Array<{ id: string; updates: Partial<Element> }> = [];
     this.originalPositions.forEach((pos, id) => {
       updates.push({ id, updates: { x: pos.x + dx, y: pos.y + dy } });
@@ -50,6 +165,9 @@ class MoveInteraction {
     if (updates.length) {
       useCanvasStore.getState().updateElements(updates);
     }
+    const vp = useCanvasStore.getState().viewport;
+    const nextSnap = { ...vp.snapping, guidelines, showGuidelines: guidelines.length > 0 };
+    useCanvasStore.getState().setViewport({ snapping: nextSnap });
   }
   end(endPoint: Point): void {
     if (!this.isDragging || !this.startPoint) return;
@@ -72,9 +190,15 @@ class MoveInteraction {
         void this.historyService.executeCommand(cmd);
       }
     }
+    const vp = useCanvasStore.getState().viewport;
+    const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
+    useCanvasStore.getState().setViewport({ snapping: nextSnap });
     this.reset();
   }
   cancel(): void {
+    const vp = useCanvasStore.getState().viewport;
+    const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
+    useCanvasStore.getState().setViewport({ snapping: nextSnap });
     this.reset();
   }
   nudgeLeft(fast = false): void {
@@ -237,7 +361,94 @@ class ResizeInteraction {
           height = newH;
         }
       }
+      const vp = useCanvasStore.getState().viewport;
+      const others: Element[] = Object.values(store.elements).filter(
+        (el) => el.id !== id && el.visibility !== 'hidden',
+      );
+      const threshold = vp.snapping.threshold || 4;
+      const snapToElements = vp.snapping.snapToElements;
+      const snapToCanvas = vp.snapping.snapToCanvas;
+      const cx = x + width / 2;
+      const cy = y + height / 2;
+      const left = x;
+      const right = x + width;
+      const top = y;
+      const bottom = y + height;
+      const vList: Array<{ x: number; source: Guideline['source']; elementId?: string }> = [];
+      const hList: Array<{ y: number; source: Guideline['source']; elementId?: string }> = [];
+      if (snapToCanvas) {
+        const cb = vp.contentBounds;
+        const ccx = cb.x + cb.width / 2;
+        const ccy = cb.y + cb.height / 2;
+        vList.push({ x: ccx, source: 'canvas-center' });
+        hList.push({ y: ccy, source: 'canvas-center' });
+      }
+      if (snapToElements) {
+        others.forEach((el) => {
+          const ex = el.x;
+          const ey = el.y;
+          const ew = el.width;
+          const eh = el.height;
+          const ecx = ex + ew / 2;
+          const ecy = ey + eh / 2;
+          vList.push({ x: ecx, source: 'element-center', elementId: el.id });
+          hList.push({ y: ecy, source: 'element-center', elementId: el.id });
+          vList.push({ x: ex, source: 'element-edge', elementId: el.id });
+          vList.push({ x: ex + ew, source: 'element-edge', elementId: el.id });
+          hList.push({ y: ey, source: 'element-edge', elementId: el.id });
+          hList.push({ y: ey + eh, source: 'element-edge', elementId: el.id });
+        });
+      }
+      let bestAxis: 'x' | 'y' | null = null;
+      let bestDelta = 0;
+      let bestGuide: Guideline | null = null;
+      vList.forEach((c) => {
+        const deltas = [c.x - cx, c.x - left, c.x - right];
+        deltas.forEach((d) => {
+          const ad = Math.abs(d);
+          if (ad <= threshold) {
+            if (bestAxis === null || Math.abs(bestDelta) > ad) {
+              bestAxis = 'x';
+              bestDelta = d;
+              bestGuide = {
+                type: 'vertical',
+                position: c.x,
+                source: c.source,
+                strength: 'strong',
+                elementId: c.elementId,
+              };
+            }
+          }
+        });
+      });
+      hList.forEach((c) => {
+        const deltas = [c.y - cy, c.y - top, c.y - bottom];
+        deltas.forEach((d) => {
+          const ad = Math.abs(d);
+          if (ad <= threshold) {
+            if (bestAxis === null || Math.abs(bestDelta) > ad) {
+              bestAxis = 'y';
+              bestDelta = d;
+              bestGuide = {
+                type: 'horizontal',
+                position: c.y,
+                source: c.source,
+                strength: 'strong',
+                elementId: c.elementId,
+              };
+            }
+          }
+        });
+      });
+      const guides: Guideline[] = [];
+      if (bestAxis && bestGuide) {
+        if (bestAxis === 'x') x += bestDelta;
+        else y += bestDelta;
+        guides.push(bestGuide);
+      }
       store.updateElement(id, { x, y, width, height });
+      const nextSnap = { ...vp.snapping, guidelines: guides, showGuidelines: guides.length > 0 };
+      useCanvasStore.getState().setViewport({ snapping: nextSnap });
     } else {
       const sb = this.startBounds;
       if (!sb) return;
@@ -283,33 +494,114 @@ class ResizeInteraction {
         newW = Math.max(1, sb.width * s);
         newH = Math.max(1, sb.height * s);
       }
+      const vp = useCanvasStore.getState().viewport;
+      const threshold = vp.snapping.threshold || 4;
+      const snapToElements = vp.snapping.snapToElements;
+      const snapToCanvas = vp.snapping.snapToCanvas;
+      let newX = cx - newW / 2;
+      let newY = cy - newH / 2;
+      const left = newX;
+      const right = newX + newW;
+      const top = newY;
+      const bottom = newY + newH;
+      const vList: Array<{ x: number; source: Guideline['source']; elementId?: string }> = [];
+      const hList: Array<{ y: number; source: Guideline['source']; elementId?: string }> = [];
+      if (snapToCanvas) {
+        const cb = vp.contentBounds;
+        const ccx = cb.x + cb.width / 2;
+        const ccy = cb.y + cb.height / 2;
+        vList.push({ x: ccx, source: 'canvas-center' });
+        hList.push({ y: ccy, source: 'canvas-center' });
+      }
+      const allOthers: Element[] = Object.values(useCanvasStore.getState().elements).filter(
+        (el) => !this.elementIds.includes(el.id) && el.visibility !== 'hidden',
+      );
+      if (snapToElements) {
+        allOthers.forEach((el) => {
+          const ex = el.x;
+          const ey = el.y;
+          const ew = el.width;
+          const eh = el.height;
+          const ecx = ex + ew / 2;
+          const ecy = ey + eh / 2;
+          vList.push({ x: ecx, source: 'element-center', elementId: el.id });
+          hList.push({ y: ecy, source: 'element-center', elementId: el.id });
+          vList.push({ x: ex, source: 'element-edge', elementId: el.id });
+          vList.push({ x: ex + ew, source: 'element-edge', elementId: el.id });
+          hList.push({ y: ey, source: 'element-edge', elementId: el.id });
+          hList.push({ y: ey + eh, source: 'element-edge', elementId: el.id });
+        });
+      }
+      let bestAxis: 'x' | 'y' | null = null;
+      let bestDelta = 0;
+      let bestGuide: Guideline | null = null;
+      vList.forEach((c) => {
+        const deltas = [c.x - left, c.x - right];
+        deltas.forEach((d) => {
+          const ad = Math.abs(d);
+          if (ad <= threshold) {
+            if (bestAxis === null || Math.abs(bestDelta) > ad) {
+              bestAxis = 'x';
+              bestDelta = d;
+              bestGuide = {
+                type: 'vertical',
+                position: c.x,
+                source: c.source,
+                strength: 'strong',
+                elementId: c.elementId,
+              };
+            }
+          }
+        });
+      });
+      hList.forEach((c) => {
+        const deltas = [c.y - top, c.y - bottom];
+        deltas.forEach((d) => {
+          const ad = Math.abs(d);
+          if (ad <= threshold) {
+            if (bestAxis === null || Math.abs(bestDelta) > ad) {
+              bestAxis = 'y';
+              bestDelta = d;
+              bestGuide = {
+                type: 'horizontal',
+                position: c.y,
+                source: c.source,
+                strength: 'strong',
+                elementId: c.elementId,
+              };
+            }
+          }
+        });
+      });
+      const guides: Guideline[] = [];
+      if (bestAxis && bestGuide) {
+        if (bestAxis === 'x') newX += bestDelta;
+        else newY += bestDelta;
+        guides.push(bestGuide);
+      }
       const scaleX = newW / sb.width;
       const scaleY = newH / sb.height;
-      const newX = cx - newW / 2;
-      const newY = cy - newH / 2;
       const updates: Array<{ id: string; updates: Partial<Element> }> = [];
       this.elementIds.forEach((id) => {
         const base = this.originalElements.get(id);
         if (!base) return;
-        const baseCX = base.x + base.width / 2;
-        const baseCY = base.y + base.height / 2;
-        const relCX = baseCX - cx;
-        const relCY = baseCY - cy;
+        const relX = base.x - sb.x;
+        const relY = base.y - sb.y;
         const childW = Math.max(1, base.width * scaleX);
         const childH = Math.max(1, base.height * scaleY);
-        const newChildCX = cx + relCX * scaleX;
-        const newChildCY = cy + relCY * scaleY;
         updates.push({
           id,
           updates: {
-            x: newChildCX - childW / 2,
-            y: newChildCY - childH / 2,
+            x: newX + relX * scaleX,
+            y: newY + relY * scaleY,
             width: childW,
             height: childH,
           },
         });
       });
       if (updates.length) store.updateElements(updates);
+      const nextSnap = { ...vp.snapping, guidelines: guides, showGuidelines: guides.length > 0 };
+      useCanvasStore.getState().setViewport({ snapping: nextSnap });
     }
   }
   end(): void {
@@ -352,9 +644,15 @@ class ResizeInteraction {
       });
       void this.historyService.executeCommand(cmd);
     }
+    const vp = useCanvasStore.getState().viewport;
+    const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
+    useCanvasStore.getState().setViewport({ snapping: nextSnap });
     this.reset();
   }
   cancel(): void {
+    const vp = useCanvasStore.getState().viewport;
+    const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
+    useCanvasStore.getState().setViewport({ snapping: nextSnap });
     this.reset();
   }
   private reset(): void {
@@ -371,17 +669,20 @@ class RotateInteraction {
   private elementIds: string[] = [];
   private center: Point | null = null;
   private startRotation: Map<string, number> = new Map();
+  private startPointerAngle: number | null = null;
   private isDragging = false;
   constructor(private historyService?: HistoryService) {}
-  startSingle(elementId: string, boundsCenter: Point): void {
+  startSingle(elementId: string, boundsCenter: Point, startPoint: Point): void {
     const el = useCanvasStore.getState().elements[elementId];
     if (!el) return;
     this.elementIds = [elementId];
     this.center = { ...boundsCenter };
     this.startRotation.set(elementId, el.rotation);
+    this.startPointerAngle =
+      Math.atan2(startPoint.y - boundsCenter.y, startPoint.x - boundsCenter.x) * (180 / Math.PI);
     this.isDragging = true;
   }
-  startGroup(elementIds: string[], boundsCenter: Point): void {
+  startGroup(elementIds: string[], boundsCenter: Point, startPoint: Point): void {
     this.elementIds = [...elementIds];
     this.center = { ...boundsCenter };
     const store = useCanvasStore.getState();
@@ -390,15 +691,19 @@ class RotateInteraction {
       const el = store.elements[id];
       if (el) this.startRotation.set(id, el.rotation);
     });
+    this.startPointerAngle =
+      Math.atan2(startPoint.y - boundsCenter.y, startPoint.x - boundsCenter.x) * (180 / Math.PI);
     this.isDragging = true;
   }
   update(currentPoint: Point): void {
-    if (!this.isDragging || !this.center) return;
-    const angle =
+    if (!this.isDragging || !this.center || this.startPointerAngle === null) return;
+    const currentAngle =
       Math.atan2(currentPoint.y - this.center.y, currentPoint.x - this.center.x) * (180 / Math.PI);
+    const delta = currentAngle - this.startPointerAngle;
     const store = useCanvasStore.getState();
     this.elementIds.forEach((id) => {
-      store.updateElement(id, { rotation: angle });
+      const base = this.startRotation.get(id) ?? 0;
+      store.updateElement(id, { rotation: base + delta });
     });
   }
   end(): void {
@@ -438,6 +743,7 @@ class RotateInteraction {
     this.elementIds = [];
     this.center = null;
     this.startRotation.clear();
+    this.startPointerAngle = null;
     this.isDragging = false;
   }
 }
@@ -518,12 +824,12 @@ export class SelectInteraction {
         if (handleInfo.isGroup) {
           const bounds = this.computeGroupBounds(selectedIds);
           const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-          this.rotateInteraction.startGroup(selectedIds, center);
+          this.rotateInteraction.startGroup(selectedIds, center, payload.world);
         } else if (handleInfo.elementId) {
           const el = store.elements[handleInfo.elementId];
           if (!el) return;
           const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
-          this.rotateInteraction.startSingle(handleInfo.elementId, center);
+          this.rotateInteraction.startSingle(handleInfo.elementId, center, payload.world);
         }
         this.state = 'DragRotating';
         this.log('state-change', { to: this.state });
