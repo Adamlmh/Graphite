@@ -1,8 +1,8 @@
 .properties-panel {
   display: flex;
   flex-direction: column;
-  min-width: 280px;
-  max-width: 320px;
+  min-width: 360px; // 增加最小宽度以适应更宽的工具栏
+  max-width: 420px;
   max-height: calc(100vh - 32px);
   background: var(--panel-bg);
   border: 1px solid var(--border-normal);
@@ -10,7 +10,7 @@
 
   // 重写 FloatingPanel 的默认样式
   padding: 0 !important;
-  min-width: 280px !important;
+  min-width: 360px !important; // 确保最小宽度足够
 
   // 添加平滑过渡动画
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

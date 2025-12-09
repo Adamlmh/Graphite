@@ -181,6 +181,20 @@ export const DEFAULT_HOTKEYS: Omit<HotKeyDescriptor, 'handler'>[] = [
     description: '框选工具',
     userAssignable: true,
   },
+  {
+    id: 'group',
+    key: ['Ctrl+G', 'Meta+G'],
+    context: 'global',
+    description: '打组',
+    userAssignable: true,
+  },
+  {
+    id: 'ungroup',
+    key: ['Ctrl+Shift+G', 'Meta+Shift+G'],
+    context: 'global',
+    description: '解组',
+    userAssignable: true,
+  },
 ];
 
 //用户自定义快捷键的持久化接口

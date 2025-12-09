@@ -1,0 +1,59 @@
+.conflictDetector {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.alert {
+  margin-bottom: 8px;
+}
+
+.conflictsList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.conflictCard {
+  :global(.ant-card-head) {
+    border-bottom: 1px solid var(--border-normal);
+  }
+
+  :global(.ant-card-body) {
+    padding: 16px;
+  }
+}
+
+.conflictItems {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conflictItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background-color: var(--btn-bg-normal);
+  border-radius: 6px;
+  border-left: 3px solid #ff4d4f;
+}
+
+.itemInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.description {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.noConflicts {
+  padding: 40px 20px;
+  text-align: center;
+}

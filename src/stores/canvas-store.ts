@@ -1,7 +1,7 @@
 // store/canvas-store.ts
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { Element, Tool, ViewportState, ToolState, Point } from '../types/index';
+import type { Element, Tool, ViewportState, ToolState, Point, ImageElement } from '../types/index';
 
 export interface CanvasState {
   // === 核心数据状态 ===
@@ -33,6 +33,13 @@ export interface CanvasState {
    * 对应【P0】各种交互工具需求
    */
   tool: ToolState;
+
+  /**
+   * 组合编辑栈，支持嵌套组合的编辑模式
+   * 当进入组合编辑模式时，将组合ID推入栈中
+   * 点击命中组合时，优先命中栈顶组合的子元素
+   */
+  groupEditStack: string[];
 
   // === 派生状态（纯计算，无副作用）===
 
@@ -228,6 +235,7 @@ export const useCanvasStore = create<CanvasState>()(
       drawing: false,
       isCreating: false,
     },
+    groupEditStack: [],
 
     // === 派生状态实现 ===
     get selectedElements() {
@@ -260,7 +268,17 @@ export const useCanvasStore = create<CanvasState>()(
 
     deleteElement: (id) =>
       set((state) => {
-        // 🎯 删除元素并清理选中状态
+        const element = state.elements[id];
+        if (element && element.type === 'image') {
+          const src = (element as ImageElement).src;
+          if (typeof src === 'string' && src.startsWith('blob:')) {
+            try {
+              URL.revokeObjectURL(src);
+            } catch {
+              void 0;
+            }
+          }
+        }
         delete state.elements[id];
         state.selectedElementIds = state.selectedElementIds.filter((elId: string) => elId !== id);
       }),
@@ -343,6 +361,20 @@ export const useCanvasStore = create<CanvasState>()(
 
     clearCanvas: () =>
       set((state) => {
+        // 释放图片对象URL
+        Object.values(state.elements).forEach((el) => {
+          if (el.type === 'image') {
+            const src = (el as ImageElement).src;
+            if (typeof src === 'string' && src.startsWith('blob:')) {
+              try {
+                URL.revokeObjectURL(src);
+              } catch {
+                void 0;
+              }
+            }
+          }
+        });
+
         // 🎯 重置画布状态
         state.elements = {};
         state.selectedElementIds = [];
@@ -365,6 +397,7 @@ export const useCanvasStore = create<CanvasState>()(
           drawing: false,
           isCreating: false,
         };
+        state.groupEditStack = [];
       }),
   })),
 );

@@ -8,7 +8,8 @@ import type { Tool } from '../types';
  */
 export const CURSOR_MAP: Record<Tool, string> = {
   select: 'default',
-  hand: 'move',
+  hand: 'grab',
+  transfor: 'default',
   rect: 'crosshair',
   'rounded-rect': 'crosshair',
   circle: 'crosshair',
@@ -23,12 +24,9 @@ export const CURSOR_MAP: Record<Tool, string> = {
 export type CursorState =
   | 'default' // 默认光标
   | 'pointer' // 手型（悬停可点击元素）
-  | 'move' // 移动光标
+  | 'grab' // 移动光标
   | 'crosshair' // 十字光标（绘制）
-  | 'text' // 文本光标
-  | 'grab' // 抓取光标
-  | 'grabbing'; // 抓取中
-
+  | 'text'; // 文本光标
 /**
  * 获取工具对应的光标样式
  */

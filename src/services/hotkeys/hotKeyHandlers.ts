@@ -4,8 +4,9 @@ import { useCanvasStore } from '../../stores/canvas-store';
 import {
   copyPasteInteraction,
   deleteInteraction,
-  moveInteraction,
   historyService,
+  groupInteraction,
+  moveInteraction,
 } from '../instances';
 
 export function bindCanvasHotKeys() {
@@ -91,6 +92,7 @@ export function bindCanvasHotKeys() {
   // });
 
   // // === 微移操作 ===
+  // // === 微移操作 ===
   hotKeyManager.setHandler('nudgeLeft', () => {
     console.log('向左微移');
     moveInteraction.nudgeLeft();
@@ -113,7 +115,7 @@ export function bindCanvasHotKeys() {
 
   hotKeyManager.setHandler('fastNudgeLeft', () => {
     console.log('快速向左微移');
-    moveInteraction.nudgeLeft(true); // true 表示快速模式
+    moveInteraction.nudgeLeft(true);
   });
 
   hotKeyManager.setHandler('fastNudgeRight', () => {
@@ -151,6 +153,21 @@ export function bindCanvasHotKeys() {
   //   // 如果没有框选工具，可以暂时切换到选择工具
   //   canvasStore.getState().setTool('select');
   // });
+
+  // === 打组/解组操作 ===
+  hotKeyManager.setHandler('group', async () => {
+    console.log('执行打组');
+    if (groupInteraction.canGroup()) {
+      await groupInteraction.groupSelectedElements();
+    }
+  });
+
+  hotKeyManager.setHandler('ungroup', async () => {
+    console.log('执行解组');
+    if (groupInteraction.canUngroup()) {
+      await groupInteraction.ungroupSelectedElements();
+    }
+  });
 
   // 你可以按需增加更多...
 }

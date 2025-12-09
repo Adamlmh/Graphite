@@ -72,3 +72,57 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* ============================================
+   Ant Design Select 全局主题支持
+   ============================================ */
+
+/* 亮色主题 Select 下拉菜单 */
+.ant-select-dropdown {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.12) !important;
+}
+
+.ant-select-item {
+  color: #111827 !important;
+}
+
+.ant-select-item:hover {
+  background: #f3f4f6 !important;
+}
+
+.ant-select-item-option-selected {
+  background: #dbeafe !important;
+  color: #2563eb !important;
+  font-weight: 500;
+}
+
+.ant-select-item-option-active {
+  background: #f3f4f6 !important;
+}
+
+/* 暗色主题 Select 下拉菜单 */
+[data-theme='dark'] .ant-select-dropdown {
+  background: #1f2937 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35) !important;
+}
+
+[data-theme='dark'] .ant-select-item {
+  color: #f9fafb !important;
+}
+
+[data-theme='dark'] .ant-select-item:hover {
+  background: #374151 !important;
+}
+
+[data-theme='dark'] .ant-select-item-option-selected {
+  background: #1e3a8a !important;
+  color: #3b82f6 !important;
+  font-weight: 500;
+}
+
+[data-theme='dark'] .ant-select-item-option-active {
+  background: #374151 !important;
+}

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ColorPicker, Slider, Popover, Button, Tooltip } from 'antd';
-import { BgColorsOutlined, BorderOutlined } from '@ant-design/icons';
-import type { Element } from '../../../../../types/index';
+import { BgColorsOutlined, BorderOutlined, RadiusSettingOutlined } from '@ant-design/icons';
+import type { Element, RectElement } from '../../../../../types/index';
 import {
   useElementCategory,
   useCommonStyle,
@@ -45,6 +45,11 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
   // 使用 Hook 获取公共样式
   const commonStyle = useCommonStyle(effectiveElements);
 
+  // 判断是否所有元素都是矩形类型（用于显示圆角控制）
+  const isAllRectangles = useMemo(() => {
+    return effectiveElements.every((el) => el.type === 'rect');
+  }, [effectiveElements]);
+
   // 状态管理 - 使用 commonStyle 的序列化版本作为依赖
   const styleKey = useMemo(() => JSON.stringify(commonStyle), [commonStyle]);
   const [shapeStyle, setShapeStyle] = useState<Partial<Element['style']> | undefined>(commonStyle);
@@ -82,6 +87,7 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
     stroke: shapeStyle?.stroke,
     strokeWidth: shapeStyle?.strokeWidth,
     strokeOpacity: shapeStyle?.strokeOpacity,
+    borderRadius: (shapeStyle as RectElement['style'])?.borderRadius,
   };
 
   const sliderStrokeWidth =
@@ -99,6 +105,25 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
         tooltip={{ open: false }}
       />
       <span className={styles.sliderValue}>{sliderStrokeWidth}px</span>
+    </div>
+  );
+
+  // 圆角滑块（仅矩形显示）
+  const sliderBorderRadius =
+    typeof currentStyle.borderRadius === 'number' ? currentStyle.borderRadius : 0;
+
+  const borderRadiusSlider = (
+    <div className={styles.sliderPopover}>
+      <Slider
+        min={0}
+        max={50}
+        step={1}
+        value={sliderBorderRadius}
+        onChange={(radius) => updateStyle({ borderRadius: radius })}
+        className={styles.popoverSlider}
+        tooltip={{ open: false }}
+      />
+      <span className={styles.sliderValue}>{sliderBorderRadius}px</span>
     </div>
   );
 
@@ -150,6 +175,24 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({
           />
         </ColorPicker>
       </Tooltip>
+
+      {/* 圆角控制 - 仅矩形元素显示 */}
+      {isAllRectangles && (
+        <>
+          <div className={styles.divider} />
+          <Popover
+            content={borderRadiusSlider}
+            trigger="hover"
+            placement="top"
+            mouseEnterDelay={0.1}
+            mouseLeaveDelay={0.2}
+          >
+            <Tooltip title="圆角" placement="bottom" mouseEnterDelay={0.3}>
+              <Button className={styles.toolButton} icon={<RadiusSettingOutlined />} />
+            </Tooltip>
+          </Popover>
+        </>
+      )}
     </div>
   );
 };

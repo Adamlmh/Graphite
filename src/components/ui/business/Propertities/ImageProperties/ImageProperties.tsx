@@ -6,6 +6,7 @@ import {
   BulbOutlined,
   FireOutlined,
   FilterOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import type { Element, ImageElement } from '../../../../../types/index';
 import styles from './ImageProperties.module.less';
@@ -23,10 +24,11 @@ type ImagePropertiesProps = {
   ) => void;
 };
 
-const FILTER_TYPES = ['grayscale', 'sepia', 'blur'] as const;
+const FILTER_TYPES = ['default', 'grayscale', 'sepia', 'blur'] as const;
 type FilterType = (typeof FILTER_TYPES)[number];
 
 const FILTER_LABEL: Record<FilterType, string> = {
+  default: '默认',
   grayscale: '黑白',
   sepia: '复古',
   blur: '模糊',
@@ -121,9 +123,15 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
   const handleFilterSelect = (type?: FilterType) => {
     let newAdjustments: Record<string, number>;
 
-    if (!type) {
-      // 清空调整，确保无滤镜状态完全移除滤镜
-      newAdjustments = {};
+    if (type === 'default') {
+      // 恢复默认状态，清空所有调整参数
+      newAdjustments = {
+        brightness: 100,
+        contrast: 100,
+        saturation: 100,
+        hue: 0,
+        blur: 0,
+      };
     } else if (type === 'grayscale') {
       newAdjustments = { ...imageAdjustments, saturation: 0 };
     } else if (type === 'sepia') {
@@ -296,7 +304,7 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
         mouseLeaveDelay={0.2}
       >
         <Tooltip title="模糊" placement="bottom" mouseEnterDelay={0.3}>
-          <Button className={styles.toolButton} icon={<FilterOutlined />} />
+          <Button className={styles.toolButton} icon={<EyeInvisibleOutlined />} />
         </Tooltip>
       </Popover>
 
