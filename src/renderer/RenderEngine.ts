@@ -873,23 +873,12 @@ export class RenderEngine {
     elementId: string,
     withHandles: boolean = true,
   ): void {
-    // 使用 GeometryService 计算元素的世界坐标边界框（正确考虑旋转、缩放、pivot）
-    // 对于圆形和三角形，会使用它们的实际形状点来计算边界框
-    const elementProvider = new ElementProvider(elementId);
-    const worldBounds = this.geometryService.getElementBoundsWorld(elementProvider);
-
-    // 将世界坐标转换为 camera 的本地坐标（selectionLayer 在 camera 中）
-    const topLeft = this.camera.toLocal(new PIXI.Point(worldBounds.x, worldBounds.y));
-    const bottomRight = this.camera.toLocal(
-      new PIXI.Point(worldBounds.x + worldBounds.width, worldBounds.y + worldBounds.height),
+    const pixiBounds = elementGraphics.getBounds() as unknown as PIXI.Rectangle;
+    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
+    const br = this.camera.toLocal(
+      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
     );
-
-    const bounds = {
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x - topLeft.x,
-      height: bottomRight.y - topLeft.y,
-    };
+    const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
 
     this.validateSelectionAlignment(elementId, bounds);
 
