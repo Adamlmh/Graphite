@@ -11,12 +11,12 @@ import type { HistoryService } from '../HistoryService';
 import { MoveCommand, ResizeCommand } from '../command/HistoryCommand';
 import type { ResizeHandleType } from './interactionTypes';
 import type { CanvasEvent } from '../../lib/EventBridge';
-import type { FederatedPointerEvent } from 'pixi.js';
 import { GeometryService } from '../../lib/Coordinate/GeometryService';
 import { CoordinateTransformer } from '../../lib/Coordinate/CoordinateTransformer';
 import { ElementProvider } from '../../lib/Coordinate/providers/ElementProvider';
 import { ElementFactory } from '../element-factory';
 import { SelectionManager } from '../SelectionManager';
+import { ViewportManager } from '../../lib/Coordinate/ViewportManager';
 
 type SelectSubState =
   | 'Idle'
@@ -35,6 +35,9 @@ class MoveInteraction {
   private originalPositions: Map<string, Point> = new Map();
   private isDragging = false;
   private groupIds: Set<string> = new Set();
+  private coordinateTransformer = new CoordinateTransformer();
+  private geometryService = new GeometryService(this.coordinateTransformer);
+  private viewportManager = new ViewportManager(this.coordinateTransformer);
   constructor(private historyService?: HistoryService) {}
   start(selectedIds: string[], startPoint: Point): void {
     this.startPoint = { ...startPoint };
@@ -66,8 +69,22 @@ class MoveInteraction {
     const dx0 = currentPoint.x - this.startPoint.x;
     const dy0 = currentPoint.y - this.startPoint.y;
     const store = useCanvasStore.getState();
+    if (!store.viewport.snapping.enabled) {
+      const updates: Array<{ id: string; updates: Partial<Element> }> = [];
+      this.originalPositions.forEach((pos, id) => {
+        updates.push({ id, updates: { x: pos.x + dx0, y: pos.y + dy0 } });
+      });
+      if (updates.length) {
+        useCanvasStore.getState().updateElements(updates);
+      }
+      const vp0 = useCanvasStore.getState().viewport;
+      const nextSnap0 = { ...vp0.snapping, guidelines: [], showGuidelines: false };
+      useCanvasStore.getState().setViewport({ snapping: nextSnap0 });
+      return;
+    }
     const selIds = Array.from(this.originalPositions.keys());
-    const others: Element[] = Object.values(store.elements).filter(
+    const visibleBounds = this.viewportManager.getVisibleWorldBounds();
+    const othersAll: Element[] = Object.values(store.elements).filter(
       (el) => !selIds.includes(el.id) && el.visibility !== 'hidden',
     );
     let bounds: { x: number; y: number; width: number; height: number } | null = null;
@@ -102,6 +119,20 @@ class MoveInteraction {
       const threshold = store.viewport.snapping.threshold || 4;
       const snapToElements = store.viewport.snapping.snapToElements;
       const snapToCanvas = store.viewport.snapping.snapToCanvas;
+      const intersect = (
+        a: { x: number; y: number; width: number; height: number },
+        b: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        },
+      ) =>
+        a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      const others = othersAll.filter((el) => {
+        const eb = this.geometryService.getElementBoundsWorld(new ElementProvider(el.id));
+        return intersect(eb, visibleBounds);
+      });
       const cx = bounds.x + bounds.width / 2;
       const cy = bounds.y + bounds.height / 2;
       const left = bounds.x;
@@ -309,6 +340,9 @@ class ResizeInteraction {
   private startBounds: { x: number; y: number; width: number; height: number } | null = null;
   private originalElements: Map<string, Element> = new Map();
   private isDragging = false;
+  private coordinateTransformer = new CoordinateTransformer();
+  private geometryService = new GeometryService(this.coordinateTransformer);
+  private viewportManager = new ViewportManager(this.coordinateTransformer);
   constructor(private historyService?: HistoryService) {}
   startSingle(elementId: string, handleType: ResizeHandleType, startPoint: Point): void {
     const el = useCanvasStore.getState().elements[elementId];
@@ -354,6 +388,88 @@ class ResizeInteraction {
     const dx = currentPoint.x - this.startPoint.x;
     const dy = currentPoint.y - this.startPoint.y;
     const store = useCanvasStore.getState();
+    if (!store.viewport.snapping.enabled) {
+      if (this.elementIds.length === 1) {
+        const id = this.elementIds[0];
+        const base = this.originalElements.get(id);
+        if (!base) return;
+        let x = base.x;
+        let y = base.y;
+        let width = base.width;
+        let height = base.height;
+        if (
+          this.handleType === 'right' ||
+          this.handleType === 'top-right' ||
+          this.handleType === 'bottom-right'
+        ) {
+          width = Math.max(1, base.width + dx);
+        }
+        if (
+          this.handleType === 'left' ||
+          this.handleType === 'top-left' ||
+          this.handleType === 'bottom-left'
+        ) {
+          width = Math.max(1, base.width - dx);
+          x = base.x + dx;
+        }
+        if (
+          this.handleType === 'bottom' ||
+          this.handleType === 'bottom-left' ||
+          this.handleType === 'bottom-right'
+        ) {
+          height = Math.max(1, base.height + dy);
+        }
+        if (
+          this.handleType === 'top' ||
+          this.handleType === 'top-left' ||
+          this.handleType === 'top-right'
+        ) {
+          height = Math.max(1, base.height - dy);
+          y = base.y + dy;
+        }
+        if (
+          this.handleType === 'top-left' ||
+          this.handleType === 'top-right' ||
+          this.handleType === 'bottom-left' ||
+          this.handleType === 'bottom-right'
+        ) {
+          const s = Math.max(width / base.width, height / base.height);
+          const newW = Math.max(1, base.width * s);
+          const newH = Math.max(1, base.height * s);
+          if (this.handleType === 'bottom-right') {
+            x = base.x;
+            y = base.y;
+            width = newW;
+            height = newH;
+          } else if (this.handleType === 'top-left') {
+            const anchorX = base.x + base.width;
+            const anchorY = base.y + base.height;
+            x = anchorX - newW;
+            y = anchorY - newH;
+            width = newW;
+            height = newH;
+          } else if (this.handleType === 'top-right') {
+            const anchorX = base.x;
+            const anchorY = base.y + base.height;
+            x = anchorX;
+            y = anchorY - newH;
+            width = newW;
+            height = newH;
+          } else if (this.handleType === 'bottom-left') {
+            const anchorX = base.x + base.width;
+            const anchorY = base.y;
+            x = anchorX - newW;
+            y = anchorY;
+            width = newW;
+            height = newH;
+          }
+        }
+        store.updateElement(id, { x, y, width, height });
+        const nextSnap0 = { ...store.viewport.snapping, guidelines: [], showGuidelines: false };
+        useCanvasStore.getState().setViewport({ snapping: nextSnap0 });
+        return;
+      }
+    }
     if (this.elementIds.length === 1) {
       const id = this.elementIds[0];
       const base = this.originalElements.get(id);
@@ -430,9 +546,23 @@ class ResizeInteraction {
         }
       }
       const vp = useCanvasStore.getState().viewport;
-      const others: Element[] = Object.values(store.elements).filter(
-        (el) => el.id !== id && el.visibility !== 'hidden',
-      );
+      const visibleBounds = this.viewportManager.getVisibleWorldBounds();
+      const intersect = (
+        a: { x: number; y: number; width: number; height: number },
+        b: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        },
+      ) =>
+        a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      const others: Element[] = Object.values(store.elements)
+        .filter((el) => el.id !== id && el.visibility !== 'hidden')
+        .filter((el) => {
+          const eb = this.geometryService.getElementBoundsWorld(new ElementProvider(el.id));
+          return intersect(eb, visibleBounds);
+        });
       const threshold = vp.snapping.threshold || 4;
       const snapToElements = vp.snapping.snapToElements;
       const snapToCanvas = vp.snapping.snapToCanvas;
@@ -581,9 +711,23 @@ class ResizeInteraction {
         vList.push({ x: ccx, source: 'canvas-center' });
         hList.push({ y: ccy, source: 'canvas-center' });
       }
-      const allOthers: Element[] = Object.values(useCanvasStore.getState().elements).filter(
-        (el) => !this.elementIds.includes(el.id) && el.visibility !== 'hidden',
-      );
+      const visibleBounds2 = this.viewportManager.getVisibleWorldBounds();
+      const intersect2 = (
+        a: { x: number; y: number; width: number; height: number },
+        b: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        },
+      ) =>
+        a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      const allOthers: Element[] = Object.values(useCanvasStore.getState().elements)
+        .filter((el) => !this.elementIds.includes(el.id) && el.visibility !== 'hidden')
+        .filter((el) => {
+          const eb = this.geometryService.getElementBoundsWorld(new ElementProvider(el.id));
+          return intersect2(eb, visibleBounds2);
+        });
       if (snapToElements) {
         allOthers.forEach((el) => {
           const ex = el.x;
