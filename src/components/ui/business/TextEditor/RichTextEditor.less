@@ -4,13 +4,21 @@
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   overflow: hidden;
+  transition: all 0.2s ease-in-out; // 平滑过渡效果
 
   // Tiptap 编辑器样式
   .ProseMirror {
     outline: none;
     min-height: 24px;
-    word-wrap: break-word;
+    height: auto; // 🎯 改为 auto，让内容擑开高度
+    padding: 0; // 移除内边距，由外层控制
+    box-sizing: border-box;
+    // 🎯 关键修复: 使用 pre-wrap 支持回车换行，同时保留空格
+    // pre-wrap: 保留空白符，在换行符处换行，不自动换行
     white-space: pre-wrap;
+    word-break: keep-all; // 🎯 不在单词内部换行
+    overflow-wrap: normal; // 🎯 不自动换行长单词
+    overflow: visible; // 允许文本溢出容器边界，与 PIXI 渲染一致
 
     // 占位符样式
     p.is-editor-empty:first-child::before {
@@ -24,6 +32,7 @@
     // 段落样式
     p {
       margin: 0;
+      line-height: inherit; // 继承全局行高
     }
 
     // 加粗
@@ -36,7 +45,7 @@
       font-style: italic;
     }
 
-    // 下划线（需要额外扩展支持）
+    // 下划线
     u {
       text-decoration: underline;
     }
@@ -45,10 +54,39 @@
     s {
       text-decoration: line-through;
     }
+
+    // 局部文本颜色和背景色
+    span[style] {
+      // 确保局部样式优先级最高
+      display: inline;
+    }
   }
 
   // 光标样式
   .ProseMirror-focused {
     outline: none;
+  }
+
+  // 编辑模式专属样式类
+  &.editing-mode {
+    border-color: #40a9ff; // 更亮的蓝色边框
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2); // 外发光效果
+  }
+
+  // 视图模式
+  &.view-mode {
+    border-color: transparent;
+    box-shadow: none;
+    pointer-events: none;
+  }
+}
+
+// 响应式布局：小屏幕下的调整
+@media (max-width: 768px) {
+  .rich-text-editor-overlay {
+    .ProseMirror {
+      padding: 2px 4px;
+      font-size: 14px; // 小屏幕下字体略小
+    }
   }
 }

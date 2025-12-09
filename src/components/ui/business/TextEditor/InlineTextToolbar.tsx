@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Tooltip, ColorPicker, Slider, Popover, Select } from 'antd';
 import {
   BoldOutlined,
@@ -9,6 +10,7 @@ import {
   BgColorsOutlined,
 } from '@ant-design/icons';
 import type { Editor } from '@tiptap/react';
+import { debounce } from '../../../../utils';
 import styles from '../Propertities/TextProperties/TextProperties.module.less';
 
 export interface InlineTextToolbarProps {
@@ -98,21 +100,22 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   }, [editor, visible, updateTrigger, lastSelection]);
 
   // === 选区辅助：在工具栏交互时恢复最近的有效选区，避免选区丢失导致工具栏闪退 ===
-  const runWithSelection = (
-    executor: (chain: ReturnType<typeof editor.chain>) => ReturnType<typeof editor.chain>,
-  ) => {
-    if (!editor) return;
-    const { from, to } = editor.state.selection;
+  const runWithSelection = useCallback(
+    (executor: (chain: ReturnType<typeof editor.chain>) => ReturnType<typeof editor.chain>) => {
+      if (!editor) return;
+      const { from, to } = editor.state.selection;
 
-    // 如果当前是空选区且有上次有效选区，先恢复选区
-    const needsRestore = from === to && lastSelection && lastSelection.from !== lastSelection.to;
-    let chain = editor.chain();
-    if (needsRestore) {
-      chain = chain.setTextSelection(lastSelection);
-    }
+      // 如果当前是空选区且有上次有效选区，先恢复选区
+      const needsRestore = from === to && lastSelection && lastSelection.from !== lastSelection.to;
+      let chain = editor.chain();
+      if (needsRestore) {
+        chain = chain.setTextSelection(lastSelection);
+      }
 
-    executor(chain.focus()).run();
-  };
+      executor(chain.focus()).run();
+    },
+    [editor, lastSelection],
+  );
 
   // === 样式操作处理函数 ===
   // 应用/取消加粗样式
@@ -146,35 +149,80 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
     console.log('[InlineTextToolbar] toggleStrike executed, active:', editor?.isActive('strike'));
   };
 
-  // 修改文本颜色
-  const handleTextColorChange = (color: string) => {
-    console.log('[InlineTextToolbar] Changing text color to:', color);
-    runWithSelection((chain) => chain.setColor(color));
-  };
+  // 🎯 性能优化: 使用useCallback保存防抖函数
+  const handleTextColorChangeInternal = useCallback(
+    (color: string) => {
+      console.log('[InlineTextToolbar] Applying text color:', color);
+      runWithSelection((chain) => chain.setColor(color));
+    },
+    [runWithSelection],
+  );
 
-  // 修改背景颜色
-  const handleBackgroundColorChange = (backgroundColor: string) => {
-    console.log('[InlineTextToolbar] Changing background color to:', backgroundColor);
-    runWithSelection((chain) => chain.setBackgroundColor(backgroundColor));
-  };
+  const handleBackgroundColorChangeInternal = useCallback(
+    (backgroundColor: string) => {
+      console.log('[InlineTextToolbar] Applying background color:', backgroundColor);
+      runWithSelection((chain) => chain.setBackgroundColor(backgroundColor));
+    },
+    [runWithSelection],
+  );
 
-  // 修改字号
-  const handleFontSizeChange = (fontSize: number) => {
-    console.log('[InlineTextToolbar] Changing font size to:', fontSize);
-    runWithSelection((chain) => chain.setFontSize(`${fontSize}px`));
-  };
+  // 使用useRef保存防抖函数，避免每次render重新创建
+  const debouncedTextColorChangeRef = useRef(
+    debounce((color: string, handler: (color: string) => void) => {
+      handler(color);
+    }, 100),
+  );
 
-  // 修改字体
-  const handleFontFamilyChange = (fontFamily: string) => {
-    console.log('[InlineTextToolbar] Changing font family to:', fontFamily);
-    runWithSelection((chain) => chain.setFontFamily(fontFamily));
-  };
+  const debouncedBackgroundColorChangeRef = useRef(
+    debounce((color: string, handler: (color: string) => void) => {
+      handler(color);
+    }, 100),
+  );
+
+  // 修改文本颜色 - 使用useCallback优化
+  const handleTextColorChange = useCallback(
+    (color: string) => {
+      console.log('[InlineTextToolbar] Text color changing to:', color);
+      debouncedTextColorChangeRef.current(color, handleTextColorChangeInternal);
+    },
+    [handleTextColorChangeInternal],
+  );
+
+  // 修改背景颜色 - 使用useCallback优化
+  const handleBackgroundColorChange = useCallback(
+    (backgroundColor: string) => {
+      console.log('[InlineTextToolbar] Background color changing to:', backgroundColor);
+      debouncedBackgroundColorChangeRef.current(
+        backgroundColor,
+        handleBackgroundColorChangeInternal,
+      );
+    },
+    [handleBackgroundColorChangeInternal],
+  );
+
+  // 修改字号 - 使用useCallback优化
+  const handleFontSizeChange = useCallback(
+    (fontSize: number) => {
+      console.log('[InlineTextToolbar] Changing font size to:', fontSize);
+      runWithSelection((chain) => chain.setFontSize(`${fontSize}px`));
+    },
+    [runWithSelection],
+  );
+
+  // 修改字体 - 使用useCallback优化
+  const handleFontFamilyChange = useCallback(
+    (fontFamily: string) => {
+      console.log('[InlineTextToolbar] Changing font family to:', fontFamily);
+      runWithSelection((chain) => chain.setFontFamily(fontFamily));
+    },
+    [runWithSelection],
+  );
 
   if (!visible) {
     return null;
   }
 
-  return (
+  const toolbarNode = (
     <div
       style={{
         position: 'fixed',
@@ -188,7 +236,6 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
       className="inline-text-toolbar-container"
       data-toolbar="inline-text"
       onMouseDown={(e) => {
-        // 阻止失焦事件，保证点击工具栏时选区不丢失
         e.preventDefault();
       }}
     >
@@ -252,18 +299,34 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         <Tooltip title="文本颜色">
           <ColorPicker
             value={textStyles.textColor}
-            onChange={(_, hex) => handleTextColorChange(hex)}
+            onChange={(color, hex) => {
+              console.log('[InlineTextToolbar] Text color changed:', { color, hex });
+              handleTextColorChange(hex);
+            }}
             className={styles.colorPicker}
             getPopupContainer={() => document.body}
             panelRender={(panel) => <div style={{ zIndex: 10001 }}>{panel}</div>}
+            showText
+            format="hex"
           >
             <Button
               className={styles.colorButton}
               style={{
                 background: textStyles.textColor || '#000000',
+                border: `2px solid ${textStyles.textColor || '#000000'}`,
               }}
             >
-              <span className={styles.colorButtonText}>A</span>
+              <span
+                className={styles.colorButtonText}
+                style={{
+                  color:
+                    textStyles.textColor === '#ffffff' || textStyles.textColor === '#fff'
+                      ? '#000000'
+                      : '#ffffff',
+                }}
+              >
+                A
+              </span>
             </Button>
           </ColorPicker>
         </Tooltip>
@@ -272,18 +335,34 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         <Tooltip title="背景色">
           <ColorPicker
             value={textStyles.backgroundColor || '#ffffff'}
-            onChange={(_, hex) => handleBackgroundColorChange(hex)}
+            onChange={(color, hex) => {
+              console.log('[InlineTextToolbar] Background color changed:', { color, hex });
+              handleBackgroundColorChange(hex);
+            }}
             className={styles.colorPicker}
             getPopupContainer={() => document.body}
             panelRender={(panel) => <div style={{ zIndex: 10001 }}>{panel}</div>}
+            showText
+            format="hex"
           >
             <Button
               className={styles.colorButton}
               style={{
                 background: textStyles.backgroundColor || '#ffffff',
+                border: `2px solid ${textStyles.backgroundColor || '#e0e0e0'}`,
               }}
             >
-              <BgColorsOutlined className={styles.colorButtonIcon} />
+              <BgColorsOutlined
+                className={styles.colorButtonIcon}
+                style={{
+                  color:
+                    textStyles.backgroundColor === '#ffffff' ||
+                    textStyles.backgroundColor === '#fff' ||
+                    !textStyles.backgroundColor
+                      ? '#666666'
+                      : '#ffffff',
+                }}
+              />
             </Button>
           </ColorPicker>
         </Tooltip>
@@ -324,6 +403,8 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(toolbarNode, document.body);
 };
 
 export default InlineTextToolbar;

@@ -128,6 +128,29 @@ export class RenderEngine {
     this.viewportInteraction = new ViewportInteraction(this.container);
     this.viewportInteraction.init();
     this.coordinateTransformer = new CoordinateTransformer();
+
+    // 监听编辑模式事件，用于控制选中框显示
+    eventBus.on('text-editor:edit-mode-enter', ((payload: { elementId: string }) => {
+      this.editingElementId = payload.elementId;
+      // 重新渲染选中状态，隐藏正在编辑的元素的选中框
+      this.updateSelection({
+        type: 'UPDATE_SELECTION',
+        selectedElementIds: this.currentSelectedElementIds,
+        priority: RenderPriority.HIGH,
+      });
+    }) as (p: unknown) => void);
+
+    eventBus.on('text-editor:edit-mode-exit', ((payload: { elementId: string }) => {
+      if (this.editingElementId === payload.elementId) {
+        this.editingElementId = null;
+        // 重新渲染选中状态，恢复选中框显示
+        this.updateSelection({
+          type: 'UPDATE_SELECTION',
+          selectedElementIds: this.currentSelectedElementIds,
+          priority: RenderPriority.HIGH,
+        });
+      }
+    }) as (p: unknown) => void);
   }
 
   /**
@@ -325,9 +348,16 @@ export class RenderEngine {
     const state = useCanvasStore.getState();
 
     // 过滤掉组合元素的子元素：如果选中了组合元素，不应该显示子元素的选中框
+    // 🎯 同时过滤掉正在编辑的文本元素，避免在编辑模式下显示选中框
     const filteredSelectedIds = selectedElementIds.filter((elementId) => {
       const element = state.elements[elementId];
       if (!element) {
+        return false;
+      }
+
+      // 🎯 如果元素正在编辑中，不显示选中框
+      if (this.editingElementId === elementId) {
+        console.log(`[RenderEngine] 过滤正在编辑的元素: ${elementId}`);
         return false;
       }
 
@@ -734,16 +764,17 @@ export class RenderEngine {
         { x: cameraBounds.x, y: cameraBounds.y + cameraBounds.height / 2 },
       ];
 
-      const handleTypes = [
-        'top-left',
-        'top',
-        'top-right',
-        'right',
-        'bottom-right',
-        'bottom',
-        'bottom-left',
-        'left',
-      ];
+      // handleTypes 变量未使用，已注释
+      // const handleTypes = [
+      //   'top-left',
+      //   'top',
+      //   'top-right',
+      //   'right',
+      //   'bottom-right',
+      //   'bottom',
+      //   'bottom-left',
+      //   'left',
+      // ];
 
       const handleCursors = [
         'nwse-resize', // top-left

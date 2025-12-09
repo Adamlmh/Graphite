@@ -1,4 +1,3 @@
-// interactions/CreateInteraction.ts
 import type { CanvasEvent } from '../../lib/EventBridge';
 import { eventBus } from '../../lib/eventBus';
 import type { CanvasState } from '../../stores/canvas-store';
@@ -16,6 +15,7 @@ import { ElementFactory } from '../element-factory';
 import { type CreationState, CreationEvent } from './interactionTypes';
 import { CreateCommand } from '../command/HistoryCommand';
 import type { HistoryService } from '../HistoryService';
+import { calculateTextElementSize } from '../../utils/textMeasurement';
 
 // 定义创建选项接口
 interface CreationOptions {
@@ -379,24 +379,34 @@ export class CreateInteraction {
    * 创建文本元素（特殊处理）
    */
   private createTextElement(point: Point): void {
+    const defaultContent = '请双击输入文本';
+    const defaultTextStyle = {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: 16,
+      fontWeight: 'normal' as const,
+      fontStyle: 'normal' as const,
+      textDecoration: 'none' as const,
+      textAlign: 'left' as const,
+      lineHeight: 1.2,
+      color: '#000000',
+    };
+
+    // 🎯 计算文本的理想尺寸
+    const textSize = calculateTextElementSize(defaultContent, undefined, defaultTextStyle, 200, {
+      minWidth: 100,
+      minHeight: 30,
+      padding: 8,
+    });
+
     const textElement = ElementFactory.createElement(
       'text',
       point.x,
       point.y,
-      120, // 默认宽度
-      40, // 默认高度
+      textSize.width,
+      textSize.height,
       {
-        content: '请双击输入文本',
-        textStyle: {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: 16,
-          fontWeight: 'normal',
-          fontStyle: 'normal',
-          textDecoration: 'none',
-          textAlign: 'left',
-          lineHeight: 1.2,
-          color: '#000000',
-        },
+        content: defaultContent,
+        textStyle: defaultTextStyle,
         baseStyle: {
           fill: 'transparent',
           stroke: 'none',

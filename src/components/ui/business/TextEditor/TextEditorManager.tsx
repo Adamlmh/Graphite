@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { CanvasTextMetrics, TextStyle } from 'pixi.js';
 import { eventBus } from '../../../../lib/eventBus';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import type { TextElement, RichTextSpan } from '../../../../types';
 import { getRenderEngine } from '../../../../lib/renderEngineManager';
 import { CoordinateTransformer } from '../../../../lib/Coordinate/index';
+import { calculateTextElementSize } from '../../../../utils/textMeasurement';
 import RichTextEditor from './RichTextEditor';
 
 interface EditorState {
@@ -19,6 +19,7 @@ const TextEditorManager: React.FC = () => {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const updateElement = useCanvasStore((state) => state.updateElement);
   const elements = useCanvasStore((state) => state.elements); // 监听元素变化
+  const viewport = useCanvasStore((state) => state.viewport); // 🎯 监听视口变化
   const coordinateTransformer = useMemo(() => new CoordinateTransformer(), []);
 
   useEffect(() => {
@@ -34,10 +35,17 @@ const TextEditorManager: React.FC = () => {
         renderEngine.setElementVisibility(data.element.id, false);
         renderEngine.setEditingElement(data.element.id);
       }
+
+      // 发射进入编辑模式事件，用于隐藏选中框
+      eventBus.emit('text-editor:edit-mode-enter', { elementId: data.element.id });
     };
 
     // 监听关闭编辑器事件
     const handleClose = () => {
+      if (editorState) {
+        // 发射退出编辑模式事件，用于恢复选中框显示
+        eventBus.emit('text-editor:edit-mode-exit', { elementId: editorState.element.id });
+      }
       setEditorState(null);
     };
 
@@ -76,7 +84,10 @@ const TextEditorManager: React.FC = () => {
     }
     // 使用 CoordinateTransformer 将世界坐标转换为屏幕坐标
     return coordinateTransformer.worldToScreen(currentElement.x, currentElement.y);
-  }, [currentElement, coordinateTransformer]);
+  }, [currentElement, coordinateTransformer, viewport]); // 🎯 添加 viewport 依赖确保视口变化时重新计算
+
+  // 🎯 获取当前视口缩放级别，用于统一编辑态和查看态的尺寸
+  const currentZoom = viewport.zoom;
 
   // 处理内容更新
   const handleUpdate = (content: string, richText?: RichTextSpan[]) => {
@@ -84,36 +95,32 @@ const TextEditorManager: React.FC = () => {
       return;
     }
 
-    const { element } = editorState;
-    const { textStyle } = element;
+    console.log('[TextEditorManager] Updating content:', { content, richText });
 
-    console.log('[TextEditorManager] Updating content:', { content, richText, textStyle });
+    // 🎯 关键修复: 根据新内容计算文本实际尺寸
+    const currentElement = elements[editorState.element.id] as TextElement;
+    if (!currentElement) {
+      return;
+    }
 
-    // 测量文本尺寸
-    const style = new TextStyle({
-      fontFamily: textStyle.fontFamily,
-      fontSize: textStyle.fontSize,
-      fontWeight: textStyle.fontWeight === 'bold' ? 'bold' : 'normal',
-      fontStyle: textStyle.fontStyle === 'italic' ? 'italic' : 'normal',
-      fill: textStyle.color,
-      align: textStyle.textAlign,
-      lineHeight: textStyle.fontSize * textStyle.lineHeight,
-      wordWrap: true, // 启用换行计算
-      wordWrapWidth: element.width, // 使用当前宽度作为基准
-    });
+    const newSize = calculateTextElementSize(
+      content,
+      richText,
+      currentElement.textStyle,
+      currentElement.width,
+      {
+        minWidth: 60,
+        minHeight: 24,
+        padding: 8,
+      },
+    );
 
-    const naturalStyle = new TextStyle({
-      ...style,
-      wordWrap: false, // 不强制换行，测量自然宽度
-    });
-    const metrics = CanvasTextMetrics.measureText(content, naturalStyle);
-
-    // 更新元素，同时更新宽高
+    // 更新内容、富文本和尺寸
     updateElement(editorState.element.id, {
       content,
-      width: metrics.width + 20, // 增加一点 padding 防止边缘裁剪
-      height: metrics.height,
       richText,
+      width: newSize.width,
+      height: newSize.height,
       updatedAt: Date.now(),
     });
   };
@@ -133,6 +140,8 @@ const TextEditorManager: React.FC = () => {
         renderEngine.setElementVisibility(editorState.element.id, true);
         renderEngine.setEditingElement(null);
       }
+      // 发射退出编辑模式事件
+      eventBus.emit('text-editor:edit-mode-exit', { elementId: editorState.element.id });
     }
     eventBus.emit('text-editor:close');
     setEditorState(null);
@@ -141,12 +150,28 @@ const TextEditorManager: React.FC = () => {
   // 处理样式变化（预留接口，用于局部文本样式）
   const handleStyleChange = (style: Partial<TextElement['textStyle']>) => {
     if (!editorState) return;
+    const prev = elements[editorState.element.id] as TextElement;
+    if (!prev) return;
+    const nextStyle = {
+      ...prev.textStyle,
+      ...style,
+    };
+    const newSize = calculateTextElementSize(
+      prev.content || '',
+      prev.richText,
+      nextStyle,
+      prev.width,
+      {
+        minWidth: 60,
+        minHeight: 24,
+        padding: 8,
+      },
+    );
 
     updateElement(editorState.element.id, {
-      textStyle: {
-        ...editorState.element.textStyle,
-        ...style,
-      },
+      textStyle: nextStyle,
+      width: newSize.width,
+      height: newSize.height,
       updatedAt: Date.now(),
     });
   };
@@ -159,6 +184,7 @@ const TextEditorManager: React.FC = () => {
     <RichTextEditor
       element={currentElement} // 使用最新的元素数据
       position={editorPosition}
+      zoom={currentZoom} // 🎯 传递视口缩放级别
       onUpdate={handleUpdate}
       onBlur={handleBlur}
       onStyleChange={handleStyleChange}

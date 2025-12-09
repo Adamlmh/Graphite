@@ -15,6 +15,7 @@ import './RichTextEditor.less';
 export interface RichTextEditorProps {
   element: TextElement;
   position: { x: number; y: number }; // 屏幕坐标
+  zoom?: number; // 🎯 视口缩放级别，用于统一编辑态和查看态的尺寸
   onUpdate: (content: string, richText?: RichTextSpan[]) => void;
   onBlur: (e: React.FocusEvent) => void;
   onStyleChange?: (style: Partial<TextElement['textStyle']>) => void; // 用于局部文本样式处理
@@ -24,7 +25,13 @@ export interface RichTextEditorProps {
  * 富文本编辑器组件
  * 基于 Tiptap 实现，作为 DOM Overlay 层显示在画布上方
  */
-const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUpdate, onBlur }) => {
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
+  element,
+  position,
+  zoom = 1,
+  onUpdate,
+  onBlur,
+}) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const { content, textStyle, width, height, richText } = element;
 
@@ -77,13 +84,23 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
           // 记录最近一次有效选区
           setLastSelectionRange({ from, to });
 
-          // 获取编辑器容器的位置
-          const editorContainer = editorRef.current?.querySelector('.ProseMirror');
-          if (editorContainer) {
-            const containerRect = editorContainer.getBoundingClientRect();
+          // 🎯 关键修复: 使用浏览器原生选区获取选中文本的实际屏幕位置
+          // 这样可以正确获取选中文本的边界，而不是整个编辑器容器
+          const domSelection = window.getSelection();
+          if (domSelection && domSelection.rangeCount > 0) {
+            const range = domSelection.getRangeAt(0);
+            // 获取选中文本的边界矩形（屏幕坐标，已包含所有 transform 效果）
+            const selectionRect = range.getBoundingClientRect();
 
-            // 计算工具栏位置
-            const toolbarPosition = calculateToolbarPosition(containerRect, {
+            console.log('[RichTextEditor] Selection rect:', {
+              top: selectionRect.top,
+              left: selectionRect.left,
+              width: selectionRect.width,
+              height: selectionRect.height,
+            });
+
+            // 计算工具栏位置 - 基于选中文本的实际位置
+            const toolbarPosition = calculateToolbarPosition(selectionRect, {
               width: 280,
               height: 60,
               gap: 8,
@@ -237,12 +254,9 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         contentEl.style.lineHeight = `${textStyle.lineHeight}`;
         contentEl.style.textDecoration = 'none';
 
-        // 应用背景色（保留）
-        if (textStyle.backgroundColor) {
-          contentEl.style.backgroundColor = textStyle.backgroundColor;
-        } else {
-          contentEl.style.backgroundColor = '';
-        }
+        // 🎯 不在编辑器DOM上应用背景色，背景色只在PIXI渲染层显示
+        // 编辑器始终保持透明背景，确保用户可以看到下方的画布内容
+        contentEl.style.backgroundColor = 'transparent';
       }
 
       // 🎯 关键修复: 当全局样式变化时,重新构建编辑器内容以应用新样式
@@ -297,10 +311,16 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         position: 'fixed',
         left: `${position.x}px`,
         top: `${position.y}px`,
+        // 🎯 关键修复: 使用 transform: scale(zoom) 统一编辑态和查看态的尺寸
+        // 原始尺寸乘以缩放级别，使 DOM 编辑器与 PIXI 渲染的文本大小一致
         width: `${width}px`,
-        minHeight: `${height}px`,
+        height: `${height}px`,
+        transform: `scale(${zoom})`,
+        transformOrigin: 'top left', // 从左上角开始缩放，与坐标系对齐
         zIndex: 9999,
         pointerEvents: 'auto',
+        boxSizing: 'border-box',
+        overflow: 'visible', // 🎯 允许内容溢出，与 PIXI 渲染一致
       }}
     >
       <EditorContent editor={editor} />

@@ -80,6 +80,12 @@ export class TextRenderer implements IElementRenderer {
     container.addChild(background);
     this.drawBackground(background, textElement);
 
+    // 设置容器为交互式，并设置hitArea确保可以被点击
+    container.eventMode = 'static';
+    container.hitArea = new PIXI.Rectangle(0, 0, width, height);
+    // 设置光标样式
+    container.cursor = 'move';
+
     // 2. 创建文本层
     // 检查是否包含富文本
     if (richText && richText.length > 0) {
@@ -165,6 +171,21 @@ export class TextRenderer implements IElementRenderer {
       container.y = newY + transform.pivotY * height;
       container.scale.set(transform.scaleX, transform.scaleY);
       container.pivot.set(transform.pivotX * width, transform.pivotY * height);
+
+      // 🎯 关键修复: 始终更新 hitArea 确保点击区域与文本内容匹配
+      // 即使width/height没有直接改变，也需要更新hitArea以反映最新的尺寸
+      container.hitArea = new PIXI.Rectangle(0, 0, width, height);
+      console.log(`[TextRenderer] 更新hitArea:`, {
+        width,
+        height,
+        elementId: (container as any).elementId,
+        changes: {
+          x: textChanges.x,
+          y: textChanges.y,
+          width: textChanges.width,
+          height: textChanges.height,
+        },
+      });
 
       // 更新缓存
       (container as any).lastX = newX;
@@ -274,10 +295,20 @@ export class TextRenderer implements IElementRenderer {
 
         (container as any).lastWidth = width;
         (container as any).lastHeight = height;
+
+        // 🎯 关键修复: 确保在内容或样式变化时也更新hitArea
+        container.hitArea = new PIXI.Rectangle(0, 0, width, height);
+        console.log(`[TextRenderer] 更新hitArea (内容/样式变化):`, {
+          width,
+          height,
+          elementId: (container as any).elementId,
+          contentChanged,
+          styleChanged,
+        });
       }
     }
 
-    // 更新背景
+    // 🎯 关键修复: 更新背景 - 确保背景区域与文本内容尺寸匹配
     if (
       textChanges.width !== undefined ||
       textChanges.height !== undefined ||
@@ -289,6 +320,15 @@ export class TextRenderer implements IElementRenderer {
         textStyle,
       } as TextElement;
       this.drawBackground(backgroundNode, syntheticElement);
+
+      // 🎯 关键修复: 始终在尺寸变化时更新 hitArea，确保点击区域正确
+      container.hitArea = new PIXI.Rectangle(0, 0, width, height);
+      console.log(`[TextRenderer] 更新背景和hitArea:`, {
+        width,
+        height,
+        backgroundColor: textStyle.backgroundColor,
+        elementId: (container as any).elementId,
+      });
     }
 
     console.log(`TextRenderer: 更新文本元素`, changes);
@@ -592,6 +632,10 @@ export class TextRenderer implements IElementRenderer {
       const color = this.parseColor(textStyle.backgroundColor);
       graphics.rect(0, 0, width, height);
       graphics.fill(color);
+    } else {
+      // 即使没有背景色，也绘制一个透明矩形以确保 hitArea 有效
+      graphics.rect(0, 0, width, height);
+      graphics.fill({ color: 0x000000, alpha: 0.001 }); // 几乎透明但保证点击检测
     }
   }
 

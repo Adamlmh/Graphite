@@ -5,7 +5,6 @@ import type { HistoryService } from '../HistoryService';
 import { MoveCommand, ResizeCommand } from '../command/HistoryCommand';
 import type { ResizeHandleType } from './interactionTypes';
 import type { CanvasEvent } from '../../lib/EventBridge';
-import type { FederatedPointerEvent } from 'pixi.js';
 import { GeometryService } from '../../lib/Coordinate/GeometryService';
 import { CoordinateTransformer } from '../../lib/Coordinate/CoordinateTransformer';
 import { ElementProvider } from '../../lib/Coordinate/providers/ElementProvider';
@@ -446,7 +445,25 @@ class ResizeInteraction {
         else y += bestDelta;
         guides.push(bestGuide);
       }
-      store.updateElement(id, { x, y, width, height });
+
+      // 🎯 关键修复: 对于文本元素，实时调整字体大小
+      const updates: Partial<Element> = { x, y, width, height };
+      if (base.type === 'text') {
+        const textEl = base as import('../../types').TextElement;
+        const scaleX = width / base.width;
+        const scaleY = height / base.height;
+        const scaleFactor = Math.sqrt(scaleX * scaleY); // 使用几何平均值
+
+        if (scaleFactor !== 1 && textEl.textStyle?.fontSize) {
+          const newFontSize = Math.max(8, Math.round(textEl.textStyle.fontSize * scaleFactor));
+          (updates as Partial<import('../../types').TextElement>).textStyle = {
+            ...textEl.textStyle,
+            fontSize: newFontSize,
+          };
+        }
+      }
+
+      store.updateElement(id, updates);
       const nextSnap = { ...vp.snapping, guidelines: guides, showGuidelines: guides.length > 0 };
       useCanvasStore.getState().setViewport({ snapping: nextSnap });
     } else {
@@ -589,15 +606,32 @@ class ResizeInteraction {
         const relY = base.y - sb.y;
         const childW = Math.max(1, base.width * scaleX);
         const childH = Math.max(1, base.height * scaleY);
-        updates.push({
-          id,
-          updates: {
-            x: newX + relX * scaleX,
-            y: newY + relY * scaleY,
-            width: childW,
-            height: childH,
-          },
-        });
+
+        let elementUpdates: Partial<Element> = {
+          x: newX + relX * scaleX,
+          y: newY + relY * scaleY,
+          width: childW,
+          height: childH,
+        };
+
+        // 🎯 关键修复: 对于文本元素，实时调整字体大小
+        if (base.type === 'text') {
+          const textEl = base as import('../../types').TextElement;
+          const scaleFactor = Math.sqrt(scaleX * scaleY); // 使用几何平均值
+
+          if (scaleFactor !== 1 && textEl.textStyle?.fontSize) {
+            const newFontSize = Math.max(8, Math.round(textEl.textStyle.fontSize * scaleFactor));
+            elementUpdates = {
+              ...elementUpdates,
+              textStyle: {
+                ...textEl.textStyle,
+                fontSize: newFontSize,
+              },
+            } as Partial<import('../../types').TextElement>;
+          }
+        }
+
+        updates.push({ id, updates: elementUpdates });
       });
       if (updates.length) store.updateElements(updates);
       const nextSnap = { ...vp.snapping, guidelines: guides, showGuidelines: guides.length > 0 };
@@ -619,6 +653,38 @@ class ResizeInteraction {
       const oldEl = this.originalElements.get(id);
       const newEl = store.elements[id];
       if (!oldEl || !newEl) return;
+
+      // 🎯 对于文本元素，根据宽高缩放比例调整字体大小
+      if (newEl.type === 'text' && oldEl.width > 0 && oldEl.height > 0) {
+        const scaleX = newEl.width / oldEl.width;
+        const scaleY = newEl.height / oldEl.height;
+        const scaleFactor = Math.sqrt(scaleX * scaleY); // 使用几何平均值
+
+        const textEl = newEl as import('../../types').TextElement;
+        const oldTextEl = oldEl as import('../../types').TextElement;
+
+        if (scaleFactor !== 1 && oldTextEl.textStyle?.fontSize) {
+          const newFontSize = Math.max(8, Math.round(oldTextEl.textStyle.fontSize * scaleFactor));
+
+          // 更新字体大小
+          store.updateElement(id, {
+            textStyle: {
+              ...textEl.textStyle,
+              fontSize: newFontSize,
+            },
+          });
+
+          console.log(`[ResizeInteraction] 文本元素缩放调整字体:`, {
+            elementId: id,
+            oldFontSize: oldTextEl.textStyle.fontSize,
+            newFontSize,
+            scaleFactor,
+            scaleX,
+            scaleY,
+          });
+        }
+      }
+
       resizes.push({
         elementId: id,
         oldState: {
