@@ -13,7 +13,7 @@ import { useCanvasStore } from '../../stores/canvas-store';
 import TextEditorManager from '../ui/business/TextEditor/TextEditorManager';
 import './CanvasRenderer.less';
 import Minimap from './Minimap';
-import { historyService } from '../../services/instances';
+import { historyService, selectInteraction } from '../../services/instances';
 /**
  * CanvasRenderer 组件
  */
@@ -84,7 +84,11 @@ const CanvasRenderer: React.FC = () => {
         bridge.start();
         bridgeRef.current = bridge;
 
-        console.log('CanvasRenderer: CanvasBridge 启动完成，初始化选择交互系统');
+        console.log('CanvasRenderer: CanvasBridge 启动完成，设置 SelectInteraction 容器');
+        // 设置 SelectInteraction 的容器，用于光标管理
+        selectInteraction.setContainer(container);
+
+        console.log('CanvasRenderer: 初始化选择交互系统');
         // 初始化选择交互（使用默认 Provider，无需传入参数）
         // const selectionInteraction = new SelectionInteraction();
         // selectionInteractionRef.current = selectionInteraction;

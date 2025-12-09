@@ -1,6 +1,5 @@
 // renderer/RenderEngine.ts
 import * as PIXI from 'pixi.js';
-import { eventBus } from '../lib/eventBus';
 // import type { CanvasEvent } from '../lib/EventBridge';
 import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
 import type { Element, ElementType, ViewportState } from '../types';
@@ -734,17 +733,6 @@ export class RenderEngine {
         { x: cameraBounds.x, y: cameraBounds.y + cameraBounds.height / 2 },
       ];
 
-      const handleTypes = [
-        'top-left',
-        'top',
-        'top-right',
-        'right',
-        'bottom-right',
-        'bottom',
-        'bottom-left',
-        'left',
-      ];
-
       const handleCursors = [
         'nwse-resize', // top-left
         'ns-resize', // top
@@ -1002,7 +990,7 @@ export class RenderEngine {
       rotationHandle.interactive = true;
       rotationHandle.scale.set(1 / zoom);
       rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
-      rotationHandle.cursor = 'move';
+      rotationHandle.cursor = 'pointer';
       // 使用静态事件模式，确保可以接收事件
       rotationHandle.eventMode = 'static';
       (

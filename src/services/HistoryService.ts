@@ -651,17 +651,19 @@ export class HistoryService {
   /**
    * 调度自动保存
    */
-  private scheduleAutoSave(): void {
+  private scheduleAutoSave(customDelay?: number): void {
     // 清理定时器
     if (this.autoSaveTimeout) {
       clearTimeout(this.autoSaveTimeout as number); // 强制类型转换
       this.autoSaveTimeout = null;
     }
 
+    const delay = customDelay ?? this.config.autoSaveDelay;
     this.autoSaveTimeout = setTimeout(() => {
       this.autoSaveTimeout = null;
+      // 确保保存时读取的是最新状态
       this.createSnapshot(false).catch(console.error);
-    }, this.config.autoSaveDelay);
+    }, delay);
   }
 
   /**
@@ -965,17 +967,54 @@ export class HistoryService {
    * 创建快照
    */
   async createSnapshot(isFullSnapshot: boolean = false): Promise<Snapshot> {
-    console.log('尝试创建快照');
+    console.log('尝试创建快照', {
+      isFullSnapshot,
+      currentVersion: this.currentVersion,
+      saveStatus: this.saveStatus,
+      pendingSnapshots: this.pendingSnapshotIds.size,
+    });
+
+    // 如果有正在保存的操作，等待它完成
     if (this.saveStatus === SaveStatus.SAVING) {
-      throw new Error('Another save operation is in progress');
+      // 等待当前保存完成（最多等待2秒）
+      const maxWait = 2000;
+      const startTime = Date.now();
+      while (this.saveStatus === SaveStatus.SAVING && Date.now() - startTime < maxWait) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      // 如果仍然在保存，抛出错误
+      if (this.saveStatus === SaveStatus.SAVING) {
+        console.warn('保存操作超时，跳过本次保存');
+        throw new Error('Save operation timeout');
+      }
     }
 
     this.saveStatus = SaveStatus.SAVING;
 
     let snapshot: Snapshot | null = null;
     try {
+      // 确保读取最新的完整状态
       const currentState = this.store.getState();
+      const elementCount = Object.keys(currentState.elements).length;
+
+      console.log('创建快照时读取的状态:', {
+        elementCount,
+        elementIds: Object.keys(currentState.elements).slice(0, 10), // 只显示前10个
+        selectedElementIds: currentState.selectedElementIds,
+        currentVersion: this.currentVersion,
+      });
+
       const state = this.generatePersistableState(currentState); // 同步生成对象，不做 stringify/compress/Blob 转换
+
+      // 验证状态完整性
+      const persistedElementCount = Object.keys(state.elements).length;
+      if (persistedElementCount !== elementCount) {
+        console.error('⚠️ 警告：保存时元素数量不匹配！', {
+          originalCount: elementCount,
+          persistedCount: persistedElementCount,
+        });
+      }
 
       snapshot = {
         id: uuidv4(),
@@ -984,7 +1023,7 @@ export class HistoryService {
         isFullSnapshot: isFullSnapshot || this.shouldCreateFullSnapshot(),
         version: this.currentVersion,
         metadata: {
-          elementCount: Object.keys(state.elements).length,
+          elementCount: persistedElementCount,
           compressedSize: 0,
           memoryUsage: 0,
         },
@@ -1205,11 +1244,18 @@ export class HistoryService {
       // 标记有未保存的更改
       this.hasUnsavedChanges = true;
 
+      // 对于频繁操作（如移动、调整大小），使用更长的防抖延迟
+      const isFrequentOperation =
+        command.type === 'move-elements' || command.type === 'resize-elements';
+      const debounceDelay = isFrequentOperation
+        ? this.config.autoSaveDelay * 2 // 频繁操作使用2倍延迟
+        : this.config.autoSaveDelay;
+
       // 取消之前的自动保存定时器，确保保存的是最新状态
       this.cancelPendingAutoSave();
 
       // 重新调度自动保存（防抖）
-      this.scheduleAutoSave();
+      this.scheduleAutoSave(debounceDelay);
     } catch (error) {
       console.error('Failed to execute command:', error);
       throw error;
