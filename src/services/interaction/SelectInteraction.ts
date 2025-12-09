@@ -59,6 +59,7 @@ class MoveInteraction {
       if (el) this.originalPositions.set(id, { x: el.x, y: el.y });
     });
     this.isDragging = true;
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint) return;
@@ -211,6 +212,7 @@ class MoveInteraction {
         void this.historyService.executeCommand(cmd);
       }
     }
+    eventBus.emit('element:operation-end', { type: 'move' });
     if (this.groupIds.size > 0) {
       this.groupIds.forEach((gid) => {
         const gb = groupComputeGroupBounds(gid);
@@ -317,6 +319,7 @@ class ResizeInteraction {
     this.startBounds = { x: el.x, y: el.y, width: el.width, height: el.height };
     this.originalElements.set(elementId, { ...el });
     this.isDragging = true;
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   startGroup(
     elementIds: string[],
@@ -344,6 +347,7 @@ class ResizeInteraction {
       if (el) this.originalElements.set(id, { ...el });
     });
     this.isDragging = true;
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.startPoint || !this.startBounds) return;
@@ -723,6 +727,7 @@ class ResizeInteraction {
       });
       void this.historyService.executeCommand(cmd);
     }
+    eventBus.emit('element:operation-end', { type: 'resize' });
     const vp = useCanvasStore.getState().viewport;
     const nextSnap = { ...vp.snapping, guidelines: [], showGuidelines: false };
     useCanvasStore.getState().setViewport({ snapping: nextSnap });
@@ -760,6 +765,7 @@ class RotateInteraction {
     this.startPointerAngle =
       Math.atan2(startPoint.y - boundsCenter.y, startPoint.x - boundsCenter.x) * (180 / Math.PI);
     this.isDragging = true;
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   startGroup(elementIds: string[], boundsCenter: Point, startPoint: Point): void {
     const state = useCanvasStore.getState();
@@ -782,6 +788,7 @@ class RotateInteraction {
     this.startPointerAngle =
       Math.atan2(startPoint.y - boundsCenter.y, startPoint.x - boundsCenter.x) * (180 / Math.PI);
     this.isDragging = true;
+    // 注意：operation-start 事件改为在 SelectInteraction 中真正开始拖动时触发
   }
   update(currentPoint: Point): void {
     if (!this.isDragging || !this.center || this.startPointerAngle === null) return;
@@ -837,6 +844,7 @@ class RotateInteraction {
       });
       void this.historyService.executeCommand(cmd);
     }
+    eventBus.emit('element:operation-end', { type: 'rotate' });
     this.reset();
   }
   cancel(): void {
@@ -980,6 +988,7 @@ export class SelectInteraction {
       const selectedIds = store.selectedElementIds;
       this.log('handle-detected', { handleInfo, selectedIds });
       if (handleInfo.handleType === 'rotation') {
+        eventBus.emit('element:operation-start', { type: 'rotate' });
         // 锁定旋转光标
         this.lockCursor('pointer');
 
@@ -998,6 +1007,7 @@ export class SelectInteraction {
         return;
       }
       const handleType = handleInfo.handleType as ResizeHandleType;
+      eventBus.emit('element:operation-start', { type: 'resize' });
 
       // 锁定对应的 resize 光标（排除 rotation）
       const resizeCursors: Partial<Record<ResizeHandleType, string>> = {
@@ -1102,6 +1112,7 @@ export class SelectInteraction {
       if (dist >= threshold) {
         this.state = 'DragMoving';
         this.log('state-change', { to: this.state, dist, threshold });
+        eventBus.emit('element:operation-start', { type: 'move' });
         this.moveInteraction.update(payload.world);
       }
       return;
