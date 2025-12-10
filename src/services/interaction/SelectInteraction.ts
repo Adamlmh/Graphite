@@ -420,79 +420,48 @@ class ResizeInteraction {
       if (this.elementIds.length === 1) {
         const id = this.elementIds[0];
         const base = this.originalElements.get(id);
-        if (!base) return;
-        let x = base.x;
-        let y = base.y;
-        let width = base.width;
-        let height = base.height;
-        if (
-          this.handleType === 'right' ||
-          this.handleType === 'top-right' ||
-          this.handleType === 'bottom-right'
-        ) {
-          width = Math.max(1, base.width + dx);
+        if (!base || !this.handleType) return;
+        const rad = (base.rotation || 0) * (Math.PI / 180);
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const dxLocal = dx * cos + dy * sin;
+        const dyLocal = -dx * sin + dy * cos;
+        const signMap: Record<string, { sx: number; sy: number }> = {
+          'top-left': { sx: -1, sy: -1 },
+          top: { sx: 0, sy: -1 },
+          'top-right': { sx: 1, sy: -1 },
+          right: { sx: 1, sy: 0 },
+          'bottom-right': { sx: 1, sy: 1 },
+          bottom: { sx: 0, sy: 1 },
+          'bottom-left': { sx: -1, sy: 1 },
+          left: { sx: -1, sy: 0 },
+        };
+        const sgn = signMap[this.handleType];
+        let newW1 = base.width;
+        let newH1 = base.height;
+        if (sgn.sx !== 0) newW1 = Math.max(1, base.width + sgn.sx * dxLocal);
+        if (sgn.sy !== 0) newH1 = Math.max(1, base.height + sgn.sy * dyLocal);
+        let newW = newW1;
+        let newH = newH1;
+        const isCorner = sgn.sx !== 0 && sgn.sy !== 0;
+        if (isCorner) {
+          const s = Math.max(newW1 / base.width, newH1 / base.height);
+          newW = Math.max(1, base.width * s);
+          newH = Math.max(1, base.height * s);
         }
-        if (
-          this.handleType === 'left' ||
-          this.handleType === 'top-left' ||
-          this.handleType === 'bottom-left'
-        ) {
-          width = Math.max(1, base.width - dx);
-          x = base.x + dx;
-        }
-        if (
-          this.handleType === 'bottom' ||
-          this.handleType === 'bottom-left' ||
-          this.handleType === 'bottom-right'
-        ) {
-          height = Math.max(1, base.height + dy);
-        }
-        if (
-          this.handleType === 'top' ||
-          this.handleType === 'top-left' ||
-          this.handleType === 'top-right'
-        ) {
-          height = Math.max(1, base.height - dy);
-          y = base.y + dy;
-        }
-        if (
-          this.handleType === 'top-left' ||
-          this.handleType === 'top-right' ||
-          this.handleType === 'bottom-left' ||
-          this.handleType === 'bottom-right'
-        ) {
-          const s = Math.max(width / base.width, height / base.height);
-          const newW = Math.max(1, base.width * s);
-          const newH = Math.max(1, base.height * s);
-          if (this.handleType === 'bottom-right') {
-            x = base.x;
-            y = base.y;
-            width = newW;
-            height = newH;
-          } else if (this.handleType === 'top-left') {
-            const anchorX = base.x + base.width;
-            const anchorY = base.y + base.height;
-            x = anchorX - newW;
-            y = anchorY - newH;
-            width = newW;
-            height = newH;
-          } else if (this.handleType === 'top-right') {
-            const anchorX = base.x;
-            const anchorY = base.y + base.height;
-            x = anchorX;
-            y = anchorY - newH;
-            width = newW;
-            height = newH;
-          } else if (this.handleType === 'bottom-left') {
-            const anchorX = base.x + base.width;
-            const anchorY = base.y;
-            x = anchorX - newW;
-            y = anchorY;
-            width = newW;
-            height = newH;
-          }
-        }
-        store.updateElement(id, { x, y, width, height });
+        const dW = newW - base.width;
+        const dH = newH - base.height;
+        const shiftLocalX = sgn.sx !== 0 ? (sgn.sx * dW) / 2 : 0;
+        const shiftLocalY = sgn.sy !== 0 ? (sgn.sy * dH) / 2 : 0;
+        const shiftWorldX = shiftLocalX * cos - shiftLocalY * sin;
+        const shiftWorldY = shiftLocalX * sin + shiftLocalY * cos;
+        const cx = base.x + base.width / 2;
+        const cy = base.y + base.height / 2;
+        const ncx = cx + shiftWorldX;
+        const ncy = cy + shiftWorldY;
+        const nx = ncx - newW / 2;
+        const ny = ncy - newH / 2;
+        store.updateElement(id, { x: nx, y: ny, width: newW, height: newH });
         const nextSnap0 = { ...store.viewport.snapping, guidelines: [], showGuidelines: false };
         useCanvasStore.getState().setViewport({ snapping: nextSnap0 });
         return;
@@ -502,77 +471,44 @@ class ResizeInteraction {
       const id = this.elementIds[0];
       const base = this.originalElements.get(id);
       if (!base) return;
-      let x = base.x;
-      let y = base.y;
-      let width = base.width;
-      let height = base.height;
-      if (
-        this.handleType === 'right' ||
-        this.handleType === 'top-right' ||
-        this.handleType === 'bottom-right'
-      ) {
-        width = Math.max(1, base.width + dx);
+      const rad = (base.rotation || 0) * (Math.PI / 180);
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const dxLocal = dx * cos + dy * sin;
+      const dyLocal = -dx * sin + dy * cos;
+      const signMap: Record<string, { sx: number; sy: number }> = {
+        'top-left': { sx: -1, sy: -1 },
+        top: { sx: 0, sy: -1 },
+        'top-right': { sx: 1, sy: -1 },
+        right: { sx: 1, sy: 0 },
+        'bottom-right': { sx: 1, sy: 1 },
+        bottom: { sx: 0, sy: 1 },
+        'bottom-left': { sx: -1, sy: 1 },
+        left: { sx: -1, sy: 0 },
+      };
+      const sgn = signMap[this.handleType!];
+      let newW1 = base.width;
+      let newH1 = base.height;
+      if (sgn.sx !== 0) newW1 = Math.max(1, base.width + sgn.sx * dxLocal);
+      if (sgn.sy !== 0) newH1 = Math.max(1, base.height + sgn.sy * dyLocal);
+      let width = newW1;
+      let height = newH1;
+      const isCorner = sgn.sx !== 0 && sgn.sy !== 0;
+      if (isCorner) {
+        const s = Math.max(newW1 / base.width, newH1 / base.height);
+        width = Math.max(1, base.width * s);
+        height = Math.max(1, base.height * s);
       }
-      if (
-        this.handleType === 'left' ||
-        this.handleType === 'top-left' ||
-        this.handleType === 'bottom-left'
-      ) {
-        width = Math.max(1, base.width - dx);
-        x = base.x + dx;
-      }
-      if (
-        this.handleType === 'bottom' ||
-        this.handleType === 'bottom-left' ||
-        this.handleType === 'bottom-right'
-      ) {
-        height = Math.max(1, base.height + dy);
-      }
-      if (
-        this.handleType === 'top' ||
-        this.handleType === 'top-left' ||
-        this.handleType === 'top-right'
-      ) {
-        height = Math.max(1, base.height - dy);
-        y = base.y + dy;
-      }
-      if (
-        this.handleType === 'top-left' ||
-        this.handleType === 'top-right' ||
-        this.handleType === 'bottom-left' ||
-        this.handleType === 'bottom-right'
-      ) {
-        const s = Math.max(width / base.width, height / base.height);
-        const newW = Math.max(1, base.width * s);
-        const newH = Math.max(1, base.height * s);
-        if (this.handleType === 'bottom-right') {
-          x = base.x;
-          y = base.y;
-          width = newW;
-          height = newH;
-        } else if (this.handleType === 'top-left') {
-          const anchorX = base.x + base.width;
-          const anchorY = base.y + base.height;
-          x = anchorX - newW;
-          y = anchorY - newH;
-          width = newW;
-          height = newH;
-        } else if (this.handleType === 'top-right') {
-          const anchorX = base.x;
-          const anchorY = base.y + base.height;
-          x = anchorX;
-          y = anchorY - newH;
-          width = newW;
-          height = newH;
-        } else if (this.handleType === 'bottom-left') {
-          const anchorX = base.x + base.width;
-          const anchorY = base.y;
-          x = anchorX - newW;
-          y = anchorY;
-          width = newW;
-          height = newH;
-        }
-      }
+      const dW = width - base.width;
+      const dH = height - base.height;
+      const shiftLocalX = sgn.sx !== 0 ? (sgn.sx * dW) / 2 : 0;
+      const shiftLocalY = sgn.sy !== 0 ? (sgn.sy * dH) / 2 : 0;
+      const shiftWorldX = shiftLocalX * cos - shiftLocalY * sin;
+      const shiftWorldY = shiftLocalX * sin + shiftLocalY * cos;
+      const cx0 = base.x + base.width / 2;
+      const cy0 = base.y + base.height / 2;
+      let x = cx0 + shiftWorldX - width / 2;
+      let y = cy0 + shiftWorldY - height / 2;
       const vp = useCanvasStore.getState().viewport;
       const visibleBounds = this.viewportManager.getVisibleWorldBounds();
       const intersect = (
