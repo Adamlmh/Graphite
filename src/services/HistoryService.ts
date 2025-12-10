@@ -243,7 +243,6 @@ export class HistoryService {
           } else {
             // 不需要立即持久化到 DB（增量快照且距离上次 DB 保存不到 60 秒）
             // Worker 处理已完成，数据已在内存中（snapshot.data 已填充）
-            // 可以标记为完成，因为完整快照应该已经保存到 DB
             this.pendingSnapshotIds.delete(snapshotId);
             this.updateSaveStatus();
             this.checkPendingUnloadAction();
