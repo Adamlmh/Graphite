@@ -81,15 +81,15 @@ export function bindCanvasHotKeys() {
   // });
 
   // === 平移操作 ===
-  // hotKeyManager.setHandler('panToggle', () => {
-  //   console.log('切换平移模式');
-  //   const currentTool = canvasStore.getState().tool.activeTool;
-  //   if (currentTool === 'hand') {
-  //     canvasStore.getState().setTool('select');
-  //   } else {
-  //     canvasStore.getState().setTool('hand');
-  //   }
-  // });
+  hotKeyManager.setHandler('changeTool', () => {
+    console.log('切换平移模式');
+    const currentTool = canvasStore.getState().tool.activeTool;
+    if (currentTool === 'hand') {
+      canvasStore.getState().setTool('select');
+    } else {
+      canvasStore.getState().setTool('hand');
+    }
+  });
 
   // // === 微移操作 ===
   // // === 微移操作 ===

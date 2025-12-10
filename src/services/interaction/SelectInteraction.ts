@@ -35,6 +35,8 @@ class MoveInteraction {
   private originalPositions: Map<string, Point> = new Map();
   private isDragging = false;
   private groupIds: Set<string> = new Set();
+  private snapAxis: 'x' | 'y' | null = null;
+  private snapValue: number | null = null;
   private coordinateTransformer = new CoordinateTransformer();
   private geometryService = new GeometryService(this.coordinateTransformer);
   private viewportManager = new ViewportManager(this.coordinateTransformer);
@@ -43,6 +45,8 @@ class MoveInteraction {
     this.startPoint = { ...startPoint };
     this.originalPositions.clear();
     this.groupIds.clear();
+    this.snapAxis = null;
+    this.snapValue = null;
     const state = useCanvasStore.getState();
     const movementSet = new Set<string>();
     selectedIds.forEach((sid) => {
@@ -167,6 +171,7 @@ class MoveInteraction {
       let bestAxis: 'x' | 'y' | null = null;
       let bestDelta = 0;
       let bestGuide: Guideline | null = null;
+      let bestGuidePos: number | null = null;
       vList.forEach((c) => {
         const deltas = [c.x - cx, c.x - left, c.x - right];
         deltas.forEach((d) => {
@@ -182,6 +187,7 @@ class MoveInteraction {
                 strength: 'strong',
                 elementId: c.elementId,
               };
+              bestGuidePos = c.x;
             }
           }
         });
@@ -201,13 +207,33 @@ class MoveInteraction {
                 strength: 'strong',
                 elementId: c.elementId,
               };
+              bestGuidePos = c.y;
             }
           }
         });
       });
-      if (bestAxis && bestGuide) {
+      const releaseThreshold = threshold * 1.5;
+      if (this.snapAxis && this.snapValue != null) {
+        const dist = this.snapAxis === 'x' ? this.snapValue - cx : this.snapValue - cy;
+        if (Math.abs(dist) <= releaseThreshold) {
+          if (this.snapAxis === 'x') dx = dx0 + dist;
+          else dy = dy0 + dist;
+          guidelines.push({
+            type: this.snapAxis === 'x' ? 'vertical' : 'horizontal',
+            position: this.snapValue,
+            source: 'element-edge',
+            strength: 'strong',
+          });
+        } else {
+          this.snapAxis = null;
+          this.snapValue = null;
+        }
+      }
+      if (!this.snapAxis && bestAxis && bestGuide && bestGuidePos != null) {
         if (bestAxis === 'x') dx = dx0 + bestDelta;
         else dy = dy0 + bestDelta;
+        this.snapAxis = bestAxis;
+        this.snapValue = bestGuidePos;
         guidelines.push(bestGuide);
       }
     }
@@ -330,6 +356,8 @@ class MoveInteraction {
     this.originalPositions.clear();
     this.isDragging = false;
     this.groupIds.clear();
+    this.snapAxis = null;
+    this.snapValue = null;
   }
 }
 
