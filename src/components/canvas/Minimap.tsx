@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useCanvasStore } from '../../stores/canvas-store';
+import type { TextElement, RectElementStyle } from '../../types';
 
 type MinimapProps = {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -101,24 +102,33 @@ const Minimap: React.FC<MinimapProps> = ({ containerRef, width = 180, height = 1
       const localX = -pivotX * e.width;
       const localY = -pivotY * e.height;
 
-      const fill = parseColor(e.style?.fill);
-      const stroke = parseColor(e.style?.stroke);
-      const fillOpacity = e.style?.fillOpacity ?? 1;
-      const strokeOpacity = e.style?.strokeOpacity ?? 1;
-      const strokeWidth = e.style?.strokeWidth ?? 0;
+      const isText = e.type === 'text';
+      const te = isText ? (e as TextElement) : undefined;
+      const textColor = isText ? te?.textStyle?.color : undefined;
+      const textBg = isText ? te?.textStyle?.backgroundColor : undefined;
+
+      const fill = isText ? parseColor(textBg) : parseColor(e.style?.fill);
+      const stroke = isText ? parseColor(textColor) : parseColor(e.style?.stroke);
+      const fillOpacity = isText ? (textBg ? 1 : 0) : (e.style?.fillOpacity ?? 1);
+      const strokeOpacity = isText ? 1 : (e.style?.strokeOpacity ?? 1);
+      const strokeWidth = isText ? 1 : (e.style?.strokeWidth ?? 0);
 
       // fill
-      if (e.style?.fill && fillOpacity > 0) {
+      if (!isText && e.style?.fill && fillOpacity > 0) {
         ctx.globalAlpha = fillOpacity;
         ctx.fillStyle = fill;
       } else {
-        ctx.globalAlpha = 0;
+        ctx.globalAlpha = isText && fillOpacity > 0 ? fillOpacity : 0;
+        if (isText && fillOpacity > 0) {
+          ctx.fillStyle = fill;
+        }
       }
 
       // draw shape path
       ctx.beginPath();
-      if (e.type === 'rect') {
-        const r = (e.style?.borderRadius ?? 0) * scale; // radius scaled with minimap scale
+      if (e.type === 'rect' || e.type === 'text') {
+        const r =
+          (e.type === 'rect' ? ((e.style as RectElementStyle).borderRadius ?? 0) : 0) * scale; // radius scaled with minimap scale
         const w = e.width * scale;
         const h = e.height * scale;
         const x = localX * scale;
@@ -168,13 +178,13 @@ const Minimap: React.FC<MinimapProps> = ({ containerRef, width = 180, height = 1
       }
 
       // fill
-      if (e.style?.fill && fillOpacity > 0) {
+      if (fillOpacity > 0) {
         ctx.fillStyle = fill;
         ctx.globalAlpha = fillOpacity;
         ctx.fill();
       }
       // stroke
-      if (strokeWidth > 0 && e.style?.stroke && strokeOpacity > 0) {
+      if (strokeWidth > 0 && stroke && strokeOpacity > 0) {
         ctx.strokeStyle = stroke;
         ctx.lineWidth = Math.max(1, strokeWidth * scale);
         ctx.globalAlpha = strokeOpacity;
