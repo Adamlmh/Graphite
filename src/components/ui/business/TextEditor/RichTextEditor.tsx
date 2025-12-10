@@ -84,7 +84,44 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           // 记录最近一次有效选区
           setLastSelectionRange({ from, to });
 
-          // 获取编辑器容器的位置
+          // 🎯 关键修复：获取选区的实际 DOM 位置，而非编辑器容器位置
+          // 使用 window.getSelection() 获取选区的精确边界
+          const domSelection = window.getSelection();
+          if (domSelection && domSelection.rangeCount > 0) {
+            const range = domSelection.getRangeAt(0);
+            const selectionRect = range.getBoundingClientRect();
+
+            // 如果选区有效（有宽高），使用选区位置
+            if (selectionRect.width > 0 && selectionRect.height > 0) {
+              // 计算工具栏位置 - 基于选区位置
+              const toolbarPosition = calculateToolbarPosition(selectionRect as DOMRect, {
+                width: 280,
+                height: 60,
+                gap: 8,
+                viewportPadding: 16,
+              });
+
+              console.log('[RichTextEditor] Toolbar position calculated from selection:', {
+                selectionRect: {
+                  top: selectionRect.top,
+                  left: selectionRect.left,
+                  width: selectionRect.width,
+                  height: selectionRect.height,
+                },
+                toolbarPosition,
+              });
+
+              setSelection({
+                visible: true,
+                position: toolbarPosition,
+              });
+              setLastToolbarPosition(toolbarPosition);
+              eventBus.emit('text-editor:selection-change', { hasSelection: true });
+              return;
+            }
+          }
+
+          // 降级方案：如果获取选区失败，使用编辑器容器位置
           const editorContainer = editorRef.current?.querySelector('.ProseMirror');
           if (editorContainer) {
             const containerRect = editorContainer.getBoundingClientRect();
@@ -97,7 +134,10 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
               viewportPadding: 16,
             });
 
-            console.log('[RichTextEditor] Toolbar position calculated:', toolbarPosition); // 调试信息
+            console.log(
+              '[RichTextEditor] Toolbar position calculated from container (fallback):',
+              toolbarPosition,
+            );
 
             setSelection({
               visible: true,
