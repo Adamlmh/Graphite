@@ -268,7 +268,7 @@ const ToolBar: React.FC = () => {
             type="text"
             className={styles.toolButton}
             icon={<SaveOutlined />}
-            onClick={handleSave()}
+            onClick={handleSave}
           />
         </Tooltip>
       </div>
