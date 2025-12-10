@@ -845,12 +845,14 @@ export class RenderEngine {
     elementId: string,
     withHandles: boolean = true,
   ): void {
-    const pixiBounds = elementGraphics.getBounds() as unknown as PIXI.Rectangle;
-    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
-    const br = this.camera.toLocal(
-      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
-    );
-    const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+    const provider = new ElementProvider(elementId);
+    const worldBounds = this.geometryService.getElementBoundsWorld(provider);
+    const bounds = {
+      x: worldBounds.x,
+      y: worldBounds.y,
+      width: worldBounds.width,
+      height: worldBounds.height,
+    };
 
     this.validateSelectionAlignment(elementId, bounds);
 
@@ -1004,7 +1006,7 @@ export class RenderEngine {
 
     const provider = new ElementProvider(elementId);
     const worldCorners = this.geometryService.getElementWorldCorners(provider);
-    const cameraCorners = worldCorners.map((p) => this.camera.toLocal(new PIXI.Point(p.x, p.y)));
+    const cameraCorners = worldCorners.map((p) => new PIXI.Point(p.x, p.y));
 
     const dashedBox = new PIXI.Graphics();
     dashedBox.lineStyle(3 / zoom, 0x007bff, 1);
