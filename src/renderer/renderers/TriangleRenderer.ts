@@ -53,6 +53,8 @@ export class TriangleRenderer implements IElementRenderer {
     (graphics as any).lastHeight = height;
     (graphics as any).lastStyle = style;
     (graphics as any).lastTransform = transform;
+    (graphics as any).lastX = x;
+    (graphics as any).lastY = y;
 
     console.log(`TriangleRenderer: 创建三角形元素 ${element.id}`, { x, y, width, height });
 
@@ -77,6 +79,8 @@ export class TriangleRenderer implements IElementRenderer {
     if (triangleChanges.y !== undefined && transform) {
       graphics.y = triangleChanges.y + transform.pivotY * height;
     }
+    if (triangleChanges.x !== undefined) (graphics as any).lastX = triangleChanges.x;
+    if (triangleChanges.y !== undefined) (graphics as any).lastY = triangleChanges.y;
 
     // 更新透明度
     if (triangleChanges.opacity !== undefined) graphics.alpha = triangleChanges.opacity;
@@ -96,6 +100,10 @@ export class TriangleRenderer implements IElementRenderer {
       const height = triangleChanges.height ?? (graphics as any).lastHeight;
       if (width !== undefined && height !== undefined) {
         graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+        const baseX = (graphics as any).lastX ?? 0;
+        const baseY = (graphics as any).lastY ?? 0;
+        graphics.x = baseX + transform.pivotX * width;
+        graphics.y = baseY + transform.pivotY * height;
       }
     }
 
@@ -121,9 +129,13 @@ export class TriangleRenderer implements IElementRenderer {
       (graphics as any).lastStyle = style;
 
       // 如果有变换，需要重新设置变换中心
-      const transform = triangleChanges.transform ?? (graphics as any).lastTransform;
-      if (transform) {
-        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      const transform2 = triangleChanges.transform ?? (graphics as any).lastTransform;
+      if (transform2) {
+        graphics.pivot.set(transform2.pivotX * width, transform2.pivotY * height);
+        const baseX = (graphics as any).lastX ?? 0;
+        const baseY = (graphics as any).lastY ?? 0;
+        graphics.x = baseX + transform2.pivotX * width;
+        graphics.y = baseY + transform2.pivotY * height;
       }
     }
 

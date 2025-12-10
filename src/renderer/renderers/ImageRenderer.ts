@@ -45,20 +45,22 @@ export class ImageRenderer implements IElementRenderer {
     // 启用交互
     sprite.interactive = true;
 
-    // 设置尺寸
-    sprite.width = width;
-    sprite.height = height;
+    // 计算基础缩放以匹配元素尺寸
+    const texW = sprite.texture.width || 1;
+    const texH = sprite.texture.height || 1;
+    const baseScaleX = (width || 1) / texW;
+    const baseScaleY = (height || 1) / texH;
 
     // 设置位置和变换
     sprite.x = x + transform.pivotX * width;
     sprite.y = y + transform.pivotY * height;
     sprite.alpha = opacity;
 
-    // 设置缩放
-    sprite.scale.set(transform.scaleX, transform.scaleY);
+    // 设置缩放（基础缩放 * 变换缩放）
+    sprite.scale.set(baseScaleX * transform.scaleX, baseScaleY * transform.scaleY);
 
-    // 设置变换中心
-    sprite.pivot.set(transform.pivotX * width, transform.pivotY * height);
+    // 设置变换中心（以纹理局部坐标为基准）
+    sprite.pivot.set(transform.pivotX * texW, transform.pivotY * texH);
 
     // 设置旋转
     sprite.rotation = rotation * (Math.PI / 180);
@@ -72,6 +74,8 @@ export class ImageRenderer implements IElementRenderer {
     (sprite as any).lastWidth = width;
     (sprite as any).lastHeight = height;
     (sprite as any).lastTransform = transform;
+    (sprite as any).lastX = x;
+    (sprite as any).lastY = y;
 
     return sprite;
   }
@@ -94,6 +98,8 @@ export class ImageRenderer implements IElementRenderer {
     if (imageChanges.y !== undefined && transform) {
       sprite.y = imageChanges.y + transform.pivotY * height;
     }
+    if (imageChanges.x !== undefined) (sprite as any).lastX = imageChanges.x;
+    if (imageChanges.y !== undefined) (sprite as any).lastY = imageChanges.y;
 
     // 更新透明度
     if (imageChanges.opacity !== undefined) sprite.alpha = imageChanges.opacity;
@@ -106,19 +112,43 @@ export class ImageRenderer implements IElementRenderer {
     // 更新变换
     if (imageChanges.transform !== undefined) {
       const transform = imageChanges.transform;
-      sprite.scale.set(transform.scaleX, transform.scaleY);
+      const texW = sprite.texture.width || 1;
+      const texH = sprite.texture.height || 1;
+      const curW = (sprite as any).lastWidth ?? texW;
+      const curH = (sprite as any).lastHeight ?? texH;
+      const baseScaleX = (curW || 1) / texW;
+      const baseScaleY = (curH || 1) / texH;
+      sprite.scale.set(baseScaleX * transform.scaleX, baseScaleY * transform.scaleY);
 
       // 如果有尺寸变化，需要重新计算变换中心
       const width = imageChanges.width ?? (sprite as any).lastWidth;
       const height = imageChanges.height ?? (sprite as any).lastHeight;
       if (width !== undefined && height !== undefined) {
-        sprite.pivot.set(transform.pivotX * width, transform.pivotY * height);
+        const texW2 = sprite.texture.width || 1;
+        const texH2 = sprite.texture.height || 1;
+        sprite.pivot.set(transform.pivotX * texW2, transform.pivotY * texH2);
+        const baseX = (sprite as any).lastX ?? 0;
+        const baseY = (sprite as any).lastY ?? 0;
+        sprite.x = baseX + transform.pivotX * width;
+        sprite.y = baseY + transform.pivotY * height;
       }
     }
 
-    // 更新尺寸
-    if (imageChanges.width !== undefined) sprite.width = imageChanges.width;
-    if (imageChanges.height !== undefined) sprite.height = imageChanges.height;
+    // 尺寸更新时，重新计算缩放（避免直接设置 width/height 影响 scale）
+    if (imageChanges.width !== undefined || imageChanges.height !== undefined) {
+      const newW = imageChanges.width ?? (sprite as any).lastWidth;
+      const newH = imageChanges.height ?? (sprite as any).lastHeight;
+      const texW = sprite.texture.width || 1;
+      const texH = sprite.texture.height || 1;
+      const baseScaleX = (newW || 1) / texW;
+      const baseScaleY = (newH || 1) / texH;
+      const tf = imageChanges.transform ?? (sprite as any).lastTransform;
+      sprite.scale.set(baseScaleX * tf.scaleX, baseScaleY * tf.scaleY);
+      const baseX = (sprite as any).lastX ?? 0;
+      const baseY = (sprite as any).lastY ?? 0;
+      sprite.x = baseX + (tf.pivotX ?? transform.pivotX) * newW;
+      sprite.y = baseY + (tf.pivotY ?? transform.pivotY) * newH;
+    }
 
     // 更新图片源
     if (imageChanges.src !== undefined) {

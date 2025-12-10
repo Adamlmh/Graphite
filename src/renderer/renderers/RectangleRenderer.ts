@@ -54,6 +54,8 @@ export class RectangleRenderer implements IElementRenderer {
     (graphics as any).lastHeight = height;
     (graphics as any).lastStyle = style;
     (graphics as any).lastTransform = transform;
+    (graphics as any).lastX = x;
+    (graphics as any).lastY = y;
 
     console.log(`RectangleRenderer: 创建矩形元素 ${element.id}`, { x, y, width, height });
 
@@ -78,6 +80,8 @@ export class RectangleRenderer implements IElementRenderer {
     if (rectChanges.y !== undefined && transform) {
       graphics.y = rectChanges.y + transform.pivotY * height;
     }
+    if (rectChanges.x !== undefined) (graphics as any).lastX = rectChanges.x;
+    if (rectChanges.y !== undefined) (graphics as any).lastY = rectChanges.y;
 
     // 更新透明度
     if (rectChanges.opacity !== undefined) graphics.alpha = rectChanges.opacity;
@@ -148,7 +152,10 @@ export class RectangleRenderer implements IElementRenderer {
       const transform = rectChanges.transform ?? (graphics as any).lastTransform;
       if (transform) {
         graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
-        // 更新缓存
+        const baseX = (graphics as any).lastX ?? 0;
+        const baseY = (graphics as any).lastY ?? 0;
+        graphics.x = baseX + transform.pivotX * width;
+        graphics.y = baseY + transform.pivotY * height;
         (graphics as any).lastTransform = transform;
       }
     }

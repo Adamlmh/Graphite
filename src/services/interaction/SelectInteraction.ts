@@ -649,55 +649,118 @@ class ResizeInteraction {
       useCanvasStore.getState().setViewport({ snapping: nextSnap });
     } else {
       const sb = this.startBounds;
-      if (!sb) return;
-      const cx = sb.x + sb.width / 2;
-      const cy = sb.y + sb.height / 2;
-      let newW = Math.max(1, sb.width);
-      let newH = Math.max(1, sb.height);
-      if (
-        this.handleType === 'right' ||
-        this.handleType === 'top-right' ||
-        this.handleType === 'bottom-right'
-      ) {
-        newW = Math.max(1, sb.width + dx);
+      if (!sb || !this.handleType) return;
+      const handle = this.handleType;
+      let ax = 0;
+      let ay = 0;
+      let hx0 = 0;
+      let hy0 = 0;
+      let allowX = false;
+      let allowY = false;
+      if (handle === 'top-left') {
+        ax = sb.x + sb.width;
+        ay = sb.y + sb.height;
+        hx0 = sb.x;
+        hy0 = sb.y;
+        allowX = true;
+        allowY = true;
+      } else if (handle === 'top') {
+        ax = sb.x + sb.width / 2;
+        ay = sb.y + sb.height;
+        hx0 = sb.x + sb.width / 2;
+        hy0 = sb.y;
+        allowX = false;
+        allowY = true;
+      } else if (handle === 'top-right') {
+        ax = sb.x;
+        ay = sb.y + sb.height;
+        hx0 = sb.x + sb.width;
+        hy0 = sb.y;
+        allowX = true;
+        allowY = true;
+      } else if (handle === 'right') {
+        ax = sb.x;
+        ay = sb.y + sb.height / 2;
+        hx0 = sb.x + sb.width;
+        hy0 = sb.y + sb.height / 2;
+        allowX = true;
+        allowY = false;
+      } else if (handle === 'bottom-right') {
+        ax = sb.x;
+        ay = sb.y;
+        hx0 = sb.x + sb.width;
+        hy0 = sb.y + sb.height;
+        allowX = true;
+        allowY = true;
+      } else if (handle === 'bottom') {
+        ax = sb.x + sb.width / 2;
+        ay = sb.y;
+        hx0 = sb.x + sb.width / 2;
+        hy0 = sb.y + sb.height;
+        allowX = false;
+        allowY = true;
+      } else if (handle === 'bottom-left') {
+        ax = sb.x + sb.width;
+        ay = sb.y;
+        hx0 = sb.x;
+        hy0 = sb.y + sb.height;
+        allowX = true;
+        allowY = true;
+      } else if (handle === 'left') {
+        ax = sb.x + sb.width;
+        ay = sb.y + sb.height / 2;
+        hx0 = sb.x;
+        hy0 = sb.y + sb.height / 2;
+        allowX = true;
+        allowY = false;
       }
-      if (
-        this.handleType === 'left' ||
-        this.handleType === 'top-left' ||
-        this.handleType === 'bottom-left'
-      ) {
-        newW = Math.max(1, sb.width - dx);
-      }
-      if (
-        this.handleType === 'bottom' ||
-        this.handleType === 'bottom-left' ||
-        this.handleType === 'bottom-right'
-      ) {
-        newH = Math.max(1, sb.height + dy);
-      }
-      if (
-        this.handleType === 'top' ||
-        this.handleType === 'top-left' ||
-        this.handleType === 'top-right'
-      ) {
-        newH = Math.max(1, sb.height - dy);
-      }
-      if (
-        this.handleType === 'top-left' ||
-        this.handleType === 'top-right' ||
-        this.handleType === 'bottom-left' ||
-        this.handleType === 'bottom-right'
-      ) {
+      const hx = hx0 + (allowX ? dx : 0);
+      const hy = hy0 + (allowY ? dy : 0);
+      let newW = Math.max(1, allowX ? Math.abs(ax - hx) : sb.width);
+      let newH = Math.max(1, allowY ? Math.abs(ay - hy) : sb.height);
+      const isCorner =
+        allowX &&
+        allowY &&
+        (handle === 'top-left' ||
+          handle === 'top-right' ||
+          handle === 'bottom-left' ||
+          handle === 'bottom-right');
+      if (isCorner) {
         const s = Math.max(newW / sb.width, newH / sb.height);
         newW = Math.max(1, sb.width * s);
         newH = Math.max(1, sb.height * s);
+      }
+      let newX = sb.x;
+      let newY = sb.y;
+      if (handle === 'top-left') {
+        newX = ax - newW;
+        newY = ay - newH;
+      } else if (handle === 'top') {
+        newX = ax - newW / 2;
+        newY = ay - newH;
+      } else if (handle === 'top-right') {
+        newX = ax;
+        newY = ay - newH;
+      } else if (handle === 'right') {
+        newX = ax;
+        newY = ay - newH / 2;
+      } else if (handle === 'bottom-right') {
+        newX = ax;
+        newY = ay;
+      } else if (handle === 'bottom') {
+        newX = ax - newW / 2;
+        newY = ay;
+      } else if (handle === 'bottom-left') {
+        newX = ax - newW;
+        newY = ay;
+      } else if (handle === 'left') {
+        newX = ax - newW;
+        newY = ay - newH / 2;
       }
       const vp = useCanvasStore.getState().viewport;
       const threshold = vp.snapping.threshold || 4;
       const snapToElements = vp.snapping.snapToElements;
       const snapToCanvas = vp.snapping.snapToCanvas;
-      let newX = cx - newW / 2;
-      let newY = cy - newH / 2;
       const left = newX;
       const right = newX + newW;
       const top = newY;
@@ -714,12 +777,7 @@ class ResizeInteraction {
       const visibleBounds2 = this.viewportManager.getVisibleWorldBounds();
       const intersect2 = (
         a: { x: number; y: number; width: number; height: number },
-        b: {
-          x: number;
-          y: number;
-          width: number;
-          height: number;
-        },
+        b: { x: number; y: number; width: number; height: number },
       ) =>
         a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
       const allOthers: Element[] = Object.values(useCanvasStore.getState().elements)
@@ -747,9 +805,11 @@ class ResizeInteraction {
       let bestAxis: 'x' | 'y' | null = null;
       let bestDelta = 0;
       let bestGuide: Guideline | null = null;
-      vList.forEach((c) => {
-        const deltas = [c.x - left, c.x - right];
-        deltas.forEach((d) => {
+      if (allowX) {
+        const targetX =
+          handle === 'left' || handle === 'top-left' || handle === 'bottom-left' ? left : right;
+        vList.forEach((c) => {
+          const d = c.x - targetX;
           const ad = Math.abs(d);
           if (ad <= threshold) {
             if (bestAxis === null || Math.abs(bestDelta) > ad) {
@@ -765,10 +825,12 @@ class ResizeInteraction {
             }
           }
         });
-      });
-      hList.forEach((c) => {
-        const deltas = [c.y - top, c.y - bottom];
-        deltas.forEach((d) => {
+      }
+      if (allowY) {
+        const targetY =
+          handle === 'top' || handle === 'top-left' || handle === 'top-right' ? top : bottom;
+        hList.forEach((c) => {
+          const d = c.y - targetY;
           const ad = Math.abs(d);
           if (ad <= threshold) {
             if (bestAxis === null || Math.abs(bestDelta) > ad) {
@@ -784,11 +846,58 @@ class ResizeInteraction {
             }
           }
         });
-      });
+      }
       const guides: Guideline[] = [];
       if (bestAxis && bestGuide) {
-        if (bestAxis === 'x') newX += bestDelta;
-        else newY += bestDelta;
+        if (bestAxis === 'x') {
+          if (handle === 'left' || handle === 'top-left' || handle === 'bottom-left') {
+            newX += bestDelta;
+          } else {
+            newW = Math.max(1, newW + bestDelta);
+          }
+        } else {
+          if (handle === 'top' || handle === 'top-left' || handle === 'top-right') {
+            newY += bestDelta;
+          } else {
+            newH = Math.max(1, newH + bestDelta);
+          }
+        }
+        if (isCorner) {
+          if (bestAxis === 'x') {
+            const s = Math.max(newW / sb.width, newH / sb.height);
+            newW = Math.max(1, sb.width * s);
+            newH = Math.max(1, sb.height * s);
+          } else {
+            const s = Math.max(newW / sb.width, newH / sb.height);
+            newW = Math.max(1, sb.width * s);
+            newH = Math.max(1, sb.height * s);
+          }
+        }
+        if (handle === 'top-left') {
+          newX = ax - newW;
+          newY = ay - newH;
+        } else if (handle === 'top') {
+          newX = ax - newW / 2;
+          newY = ay - newH;
+        } else if (handle === 'top-right') {
+          newX = ax;
+          newY = ay - newH;
+        } else if (handle === 'right') {
+          newX = ax;
+          newY = ay - newH / 2;
+        } else if (handle === 'bottom-right') {
+          newX = ax;
+          newY = ay;
+        } else if (handle === 'bottom') {
+          newX = ax - newW / 2;
+          newY = ay;
+        } else if (handle === 'bottom-left') {
+          newX = ax - newW;
+          newY = ay;
+        } else if (handle === 'left') {
+          newX = ax - newW;
+          newY = ay - newH / 2;
+        }
         guides.push(bestGuide);
       }
       const scaleX = newW / sb.width;
@@ -797,19 +906,11 @@ class ResizeInteraction {
       this.elementIds.forEach((id) => {
         const base = this.originalElements.get(id);
         if (!base) return;
-        const relX = base.x - sb.x;
-        const relY = base.y - sb.y;
+        const nx = ax + (base.x - ax) * scaleX;
+        const ny = ay + (base.y - ay) * scaleY;
         const childW = Math.max(1, base.width * scaleX);
         const childH = Math.max(1, base.height * scaleY);
-        updates.push({
-          id,
-          updates: {
-            x: newX + relX * scaleX,
-            y: newY + relY * scaleY,
-            width: childW,
-            height: childH,
-          },
-        });
+        updates.push({ id, updates: { x: nx, y: ny, width: childW, height: childH } });
       });
       if (updates.length) store.updateElements(updates);
       const selectedIds = useCanvasStore.getState().selectedElementIds;
@@ -819,11 +920,11 @@ class ResizeInteraction {
           const gb = groupComputeGroupBounds(sid);
           if (gb) {
             const cb = useCanvasStore.getState().viewport.contentBounds;
-            const nx = Math.max(cb.x, Math.min(cb.x + cb.width - gb.width, gb.x));
-            const ny = Math.max(cb.y, Math.min(cb.y + cb.height - gb.height, gb.y));
+            const nx2 = Math.max(cb.x, Math.min(cb.x + cb.width - gb.width, gb.x));
+            const ny2 = Math.max(cb.y, Math.min(cb.y + cb.height - gb.height, gb.y));
             useCanvasStore
               .getState()
-              .updateElement(sid, { x: nx, y: ny, width: gb.width, height: gb.height });
+              .updateElement(sid, { x: nx2, y: ny2, width: gb.width, height: gb.height });
           }
         }
       });
@@ -1143,7 +1244,13 @@ export class SelectInteraction {
         } else if (handleInfo.elementId) {
           const el = store.elements[handleInfo.elementId];
           if (!el) return;
-          const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
+          const corners = this.geometryService.getElementWorldCorners(
+            new ElementProvider(handleInfo.elementId),
+          );
+          const center = {
+            x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4,
+            y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4,
+          };
           this.rotateInteraction.startSingle(handleInfo.elementId, center, payload.world);
         }
         this.state = 'DragRotating';
@@ -1431,16 +1538,6 @@ export class SelectInteraction {
     const rotOffset = 20 / zoom;
     const rotSize = size * 1.4;
     if (selectedIds.length > 0) {
-      const bounds = this.computeGroupBounds(selectedIds);
-      const tl = { x: bounds.x, y: bounds.y };
-      const tr = { x: bounds.x + bounds.width, y: bounds.y };
-      const br = { x: bounds.x + bounds.width, y: bounds.y + bounds.height };
-      const bl = { x: bounds.x, y: bounds.y + bounds.height };
-      const tm = { x: bounds.x + bounds.width / 2, y: bounds.y };
-      const rm = { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 };
-      const bm = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
-      const lm = { x: bounds.x, y: bounds.y + bounds.height / 2 };
-      const rotation = { x: bm.x, y: bm.y + rotOffset };
       const rectAt = (p: Point) => ({
         x: p.x - size / 2,
         y: p.y - size / 2,
@@ -1453,32 +1550,98 @@ export class SelectInteraction {
         width: rotSize,
         height: rotSize,
       });
-      const handles: Array<{
-        handleType: ResizeHandleType | 'rotation';
-        rect: { x: number; y: number; width: number; height: number };
-      }> = [
-        { handleType: 'top-left', rect: rectAt(tl) },
-        { handleType: 'top', rect: rectAt(tm) },
-        { handleType: 'top-right', rect: rectAt(tr) },
-        { handleType: 'right', rect: rectAt(rm) },
-        { handleType: 'bottom-right', rect: rectAt(br) },
-        { handleType: 'bottom', rect: rectAt(bm) },
-        { handleType: 'bottom-left', rect: rectAt(bl) },
-        { handleType: 'left', rect: rectAt(lm) },
-        { handleType: 'rotation', rect: rectAtRot(rotation) },
-      ];
-      for (const h of handles) {
-        if (this.isPointInRect(worldPoint, h.rect)) {
-          const isGroupSingle =
-            selectedIds.length === 1 &&
-            !!store.elements[selectedIds[0]] &&
-            isGroupElement(store.elements[selectedIds[0]] as Element);
-          return {
-            type: 'handle',
-            handleType: h.handleType,
-            isGroup: selectedIds.length > 1 || isGroupSingle,
-            elementId: selectedIds.length === 1 ? selectedIds[0] : undefined,
-          };
+
+      if (
+        selectedIds.length === 1 &&
+        !!store.elements[selectedIds[0]] &&
+        !isGroupElement(store.elements[selectedIds[0]] as Element)
+      ) {
+        const el = store.elements[selectedIds[0]] as Element;
+        const corners = this.geometryService.getElementWorldCorners(new ElementProvider(el.id));
+        const tl = corners[0];
+        const tr = corners[1];
+        const br = corners[2];
+        const bl = corners[3];
+        const tm = { x: (tl.x + tr.x) / 2, y: (tl.y + tr.y) / 2 };
+        const rm = { x: (tr.x + br.x) / 2, y: (tr.y + br.y) / 2 };
+        const bm = { x: (br.x + bl.x) / 2, y: (br.y + bl.y) / 2 };
+        const lm = { x: (bl.x + tl.x) / 2, y: (bl.y + tl.y) / 2 };
+        const center = {
+          x: (tl.x + tr.x + br.x + bl.x) / 4,
+          y: (tl.y + tr.y + br.y + bl.y) / 4,
+        };
+        const edgeVec = { x: tr.x - tl.x, y: tr.y - tl.y };
+        const normal = { x: -edgeVec.y, y: edgeVec.x };
+        const toOutside = { x: bm.x - center.x, y: bm.y - center.y };
+        const dot = normal.x * toOutside.x + normal.y * toOutside.y;
+        const sign = dot >= 0 ? 1 : -1;
+        const nLen = Math.hypot(normal.x, normal.y) || 1;
+        const nx = (normal.x / nLen) * sign;
+        const ny = (normal.y / nLen) * sign;
+        const rotation = { x: bm.x + nx * rotOffset, y: bm.y + ny * rotOffset };
+
+        const handles: Array<{
+          handleType: ResizeHandleType | 'rotation';
+          rect: { x: number; y: number; width: number; height: number };
+        }> = [
+          { handleType: 'top-left', rect: rectAt(tl) },
+          { handleType: 'top', rect: rectAt(tm) },
+          { handleType: 'top-right', rect: rectAt(tr) },
+          { handleType: 'right', rect: rectAt(rm) },
+          { handleType: 'bottom-right', rect: rectAt(br) },
+          { handleType: 'bottom', rect: rectAt(bm) },
+          { handleType: 'bottom-left', rect: rectAt(bl) },
+          { handleType: 'left', rect: rectAt(lm) },
+          { handleType: 'rotation', rect: rectAtRot(rotation) },
+        ];
+        for (const h of handles) {
+          if (this.isPointInRect(worldPoint, h.rect)) {
+            return {
+              type: 'handle',
+              handleType: h.handleType,
+              isGroup: false,
+              elementId: selectedIds[0],
+            };
+          }
+        }
+      } else {
+        const bounds = this.computeGroupBounds(selectedIds);
+        const tl = { x: bounds.x, y: bounds.y };
+        const tr = { x: bounds.x + bounds.width, y: bounds.y };
+        const br = { x: bounds.x + bounds.width, y: bounds.y + bounds.height };
+        const bl = { x: bounds.x, y: bounds.y + bounds.height };
+        const tm = { x: bounds.x + bounds.width / 2, y: bounds.y };
+        const rm = { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 };
+        const bm = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
+        const lm = { x: bounds.x, y: bounds.y + bounds.height / 2 };
+        const rotation = { x: bm.x, y: bm.y + rotOffset };
+        const handles: Array<{
+          handleType: ResizeHandleType | 'rotation';
+          rect: { x: number; y: number; width: number; height: number };
+        }> = [
+          { handleType: 'top-left', rect: rectAt(tl) },
+          { handleType: 'top', rect: rectAt(tm) },
+          { handleType: 'top-right', rect: rectAt(tr) },
+          { handleType: 'right', rect: rectAt(rm) },
+          { handleType: 'bottom-right', rect: rectAt(br) },
+          { handleType: 'bottom', rect: rectAt(bm) },
+          { handleType: 'bottom-left', rect: rectAt(bl) },
+          { handleType: 'left', rect: rectAt(lm) },
+          { handleType: 'rotation', rect: rectAtRot(rotation) },
+        ];
+        for (const h of handles) {
+          if (this.isPointInRect(worldPoint, h.rect)) {
+            const isGroupSingle =
+              selectedIds.length === 1 &&
+              !!store.elements[selectedIds[0]] &&
+              isGroupElement(store.elements[selectedIds[0]] as Element);
+            return {
+              type: 'handle',
+              handleType: h.handleType,
+              isGroup: selectedIds.length > 1 || isGroupSingle,
+              elementId: selectedIds.length === 1 ? selectedIds[0] : undefined,
+            };
+          }
         }
       }
     }
