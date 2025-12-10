@@ -31,13 +31,14 @@ export class CircleRenderer implements IElementRenderer {
     (graphics as any).elementType = 'circle';
     (graphics as any).elementId = element.id;
 
-    // 计算圆心和半径（使用宽度和高度的较小值作为直径）
-    const radius = Math.min(width, height) / 2;
+    // 计算圆心和半径/半轴
     const centerX = width / 2;
     const centerY = height / 2;
+    const rx = width / 2;
+    const ry = height / 2;
 
-    // 应用样式和绘制
-    this.drawCircle(graphics, centerX, centerY, radius, style);
+    // 应用样式和绘制（宽高相等绘制正圆，否则绘制椭圆）
+    this.drawEllipse(graphics, centerX, centerY, rx, ry, style);
 
     // 设置位置和变换
     graphics.x = x + transform.pivotX * width;
@@ -58,8 +59,10 @@ export class CircleRenderer implements IElementRenderer {
     (graphics as any).lastHeight = height;
     (graphics as any).lastStyle = style;
     (graphics as any).lastTransform = transform;
+    (graphics as any).lastX = x;
+    (graphics as any).lastY = y;
 
-    console.log(`CircleRenderer: 创建圆形元素 ${element.id}`, { x, y, width, height, radius });
+    console.log(`CircleRenderer: 创建圆形元素 ${element.id}`, { x, y, width, height });
 
     return graphics;
   }
@@ -82,6 +85,8 @@ export class CircleRenderer implements IElementRenderer {
     if (circleChanges.y !== undefined && transform) {
       graphics.y = circleChanges.y + transform.pivotY * height;
     }
+    if (circleChanges.x !== undefined) (graphics as any).lastX = circleChanges.x;
+    if (circleChanges.y !== undefined) (graphics as any).lastY = circleChanges.y;
 
     // 更新透明度
     if (circleChanges.opacity !== undefined) graphics.alpha = circleChanges.opacity;
@@ -101,6 +106,10 @@ export class CircleRenderer implements IElementRenderer {
       const height = circleChanges.height ?? (graphics as any).lastHeight;
       if (width !== undefined && height !== undefined) {
         graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+        const baseX = (graphics as any).lastX ?? 0;
+        const baseY = (graphics as any).lastY ?? 0;
+        graphics.x = baseX + transform.pivotX * width;
+        graphics.y = baseY + transform.pivotY * height;
       }
     }
 
@@ -117,12 +126,13 @@ export class CircleRenderer implements IElementRenderer {
       const lastStyle = (graphics as any).lastStyle || {};
       const style = circleChanges.style ? { ...lastStyle, ...circleChanges.style } : lastStyle;
 
-      const radius = Math.min(width, height) / 2;
       const centerX = width / 2;
       const centerY = height / 2;
+      const rx = width / 2;
+      const ry = height / 2;
 
       graphics.clear();
-      this.drawCircle(graphics, centerX, centerY, radius, style);
+      this.drawEllipse(graphics, centerX, centerY, rx, ry, style);
 
       // 缓存当前尺寸和样式
       (graphics as any).lastWidth = width;
@@ -130,9 +140,13 @@ export class CircleRenderer implements IElementRenderer {
       (graphics as any).lastStyle = style;
 
       // 如果有变换，需要重新设置变换中心
-      const transform = circleChanges.transform ?? (graphics as any).lastTransform;
-      if (transform) {
-        graphics.pivot.set(transform.pivotX * width, transform.pivotY * height);
+      const transform2 = circleChanges.transform ?? (graphics as any).lastTransform;
+      if (transform2) {
+        graphics.pivot.set(transform2.pivotX * width, transform2.pivotY * height);
+        const baseX = (graphics as any).lastX ?? 0;
+        const baseY = (graphics as any).lastY ?? 0;
+        graphics.x = baseX + transform2.pivotX * width;
+        graphics.y = baseY + transform2.pivotY * height;
       }
     }
 
@@ -142,11 +156,12 @@ export class CircleRenderer implements IElementRenderer {
   /**
    * 绘制圆形
    */
-  private drawCircle(
+  private drawEllipse(
     graphics: PIXI.Graphics,
     centerX: number,
     centerY: number,
-    radius: number,
+    rx: number,
+    ry: number,
     style: CircleElement['style'],
   ): void {
     const { fill, fillOpacity, stroke, strokeWidth, strokeOpacity } = style;
@@ -163,8 +178,12 @@ export class CircleRenderer implements IElementRenderer {
       graphics.beginFill(this.parseColor(fill), fillOpacity);
     }
 
-    // 绘制圆形
-    graphics.circle(centerX, centerY, radius);
+    // 绘制圆/椭圆
+    if (Math.abs(rx - ry) < 1e-6) {
+      graphics.circle(centerX, centerY, rx);
+    } else {
+      graphics.ellipse(centerX, centerY, rx, ry);
+    }
 
     // 结束填充
     if (fill && fillOpacity > 0) {

@@ -92,13 +92,14 @@ export const DEFAULT_HOTKEYS: Omit<HotKeyDescriptor, 'handler'>[] = [
     userAssignable: false,
   },
 
-  {
-    id: 'panToggle',
-    key: ['Space'],
-    context: 'canvas',
-    description: '平移画布切换',
-    userAssignable: true,
-  },
+  // {
+  //   id: 'panToggle',
+  //   key: ['Space'],
+  //   context: 'canvas',
+  //   description: '平移画布切换',
+  //   userAssignable: true,
+  // },
+  { id: 'changeTool', key: 'V', context: 'canvas', description: '切换工具', userAssignable: true },
 
   {
     id: 'nudgeLeft',
@@ -173,7 +174,6 @@ export const DEFAULT_HOTKEYS: Omit<HotKeyDescriptor, 'handler'>[] = [
     userAssignable: true,
   },
 
-  { id: 'selectTool', key: 'V', context: 'global', description: '选择工具', userAssignable: true },
   {
     id: 'boxSelectTool',
     key: 'M',

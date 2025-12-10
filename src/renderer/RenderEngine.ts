@@ -406,28 +406,12 @@ export class RenderEngine {
           // 普通元素使用原有的逻辑
           const graphics = this.elementGraphics.get(elementId);
           if (graphics) {
-            this.drawSelectionBox(graphics, elementId, true);
+            this.drawRotatedSelectionBox(graphics, elementId, true);
           }
         }
       });
     } else {
-      filteredSelectedIds.forEach((elementId) => {
-        const element = state.elements[elementId];
-
-        // 如果是 group，使用 computeGroupBounds 计算边界
-        if (element && isGroupElement(element)) {
-          const bounds = computeGroupBounds(elementId);
-          if (bounds) {
-            this.drawSelectionBoxForGroup(bounds, elementId, false);
-          }
-        } else {
-          // 普通元素使用原有的逻辑
-          const graphics = this.elementGraphics.get(elementId);
-          if (graphics) {
-            this.drawSelectionBox(graphics, elementId, false);
-          }
-        }
-      });
+      // 多选状态下不绘制任何单体选框，尤其不显示 group 的选中框
     }
 
     // 如果选择多个元素，绘制组合边界框以增强视觉反馈
@@ -861,12 +845,14 @@ export class RenderEngine {
     elementId: string,
     withHandles: boolean = true,
   ): void {
-    const pixiBounds = elementGraphics.getBounds() as unknown as PIXI.Rectangle;
-    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
-    const br = this.camera.toLocal(
-      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
-    );
-    const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+    const provider = new ElementProvider(elementId);
+    const worldBounds = this.geometryService.getElementBoundsWorld(provider);
+    const bounds = {
+      x: worldBounds.x,
+      y: worldBounds.y,
+      width: worldBounds.width,
+      height: worldBounds.height,
+    };
 
     this.validateSelectionAlignment(elementId, bounds);
 
@@ -992,6 +978,164 @@ export class RenderEngine {
       rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
       rotationHandle.cursor = 'pointer';
       // 使用静态事件模式，确保可以接收事件
+      rotationHandle.eventMode = 'static';
+      (
+        rotationHandle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+      ).__graphiteHandleType = 'rotation';
+      (
+        rotationHandle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+      ).__graphiteElementId = elementId;
+
+      selectionLayer.addChild(rotationHandle);
+    }
+
+    console.log('RenderEngine: 选中层内容统计', {
+      elementId,
+      selectionChildren: selectionLayer.children.length,
+      withHandles,
+    });
+  }
+
+  private drawRotatedSelectionBox(
+    elementGraphics: PIXI.Container,
+    elementId: string,
+    withHandles: boolean = true,
+  ): void {
+    const selectionLayer = this.layerManager.getSelectionLayer();
+    const zoom = this.currentViewport?.zoom ?? 1;
+
+    const provider = new ElementProvider(elementId);
+    const worldCorners = this.geometryService.getElementWorldCorners(provider);
+    const cameraCorners = worldCorners.map((p) => new PIXI.Point(p.x, p.y));
+
+    const dashedBox = new PIXI.Graphics();
+    dashedBox.lineStyle(3 / zoom, 0x007bff, 1);
+    const dash = 8;
+    const gap = 6;
+    const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      let pos = 0;
+      while (pos < len) {
+        const sx = x1 + ux * pos;
+        const sy = y1 + uy * pos;
+        const ex = x1 + ux * Math.min(pos + dash, len);
+        const ey = y1 + uy * Math.min(pos + dash, len);
+        dashedBox.moveTo(sx, sy);
+        dashedBox.lineTo(ex, ey);
+        pos += dash + gap;
+      }
+    };
+    for (let i = 0; i < 4; i++) {
+      const a = cameraCorners[i];
+      const b = cameraCorners[(i + 1) % 4];
+      drawDashed(a.x, a.y, b.x, b.y);
+    }
+    dashedBox.stroke();
+    dashedBox.interactive = false;
+    dashedBox.interactiveChildren = false;
+    selectionLayer.addChild(dashedBox);
+
+    const highlightBox = new PIXI.Graphics();
+    highlightBox.beginFill(0x3b82f6, 0.06);
+    highlightBox.moveTo(cameraCorners[0].x, cameraCorners[0].y);
+    for (let i = 1; i < 4; i++) {
+      highlightBox.lineTo(cameraCorners[i].x, cameraCorners[i].y);
+    }
+    highlightBox.lineTo(cameraCorners[0].x, cameraCorners[0].y);
+    highlightBox.endFill();
+    highlightBox.interactive = false;
+    highlightBox.interactiveChildren = false;
+    selectionLayer.addChild(highlightBox);
+
+    if (withHandles) {
+      const handleSize = 8;
+      const handleColor = 0xffffff;
+      const handleBorderColor = 0x007bff;
+
+      const mid = (p1: PIXI.Point, p2: PIXI.Point) =>
+        new PIXI.Point((p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
+      const handlePositions = [
+        cameraCorners[0],
+        mid(cameraCorners[0], cameraCorners[1]),
+        cameraCorners[1],
+        mid(cameraCorners[1], cameraCorners[2]),
+        cameraCorners[2],
+        mid(cameraCorners[2], cameraCorners[3]),
+        cameraCorners[3],
+        mid(cameraCorners[3], cameraCorners[0]),
+      ];
+
+      const handleTypes = [
+        'top-left',
+        'top',
+        'top-right',
+        'right',
+        'bottom-right',
+        'bottom',
+        'bottom-left',
+        'left',
+      ];
+
+      const handleCursors = [
+        'nwse-resize',
+        'ns-resize',
+        'nesw-resize',
+        'ew-resize',
+        'nwse-resize',
+        'ns-resize',
+        'nesw-resize',
+        'ew-resize',
+      ];
+      handlePositions.forEach((pos, index) => {
+        const handle = new PIXI.Graphics();
+        handle.beginFill(handleColor);
+        handle.lineStyle(1, handleBorderColor, 1);
+        handle.circle(0, 0, handleSize / 2);
+        handle.endFill();
+        handle.position.set(pos.x, pos.y);
+        handle.interactive = true;
+        handle.scale.set(1 / zoom);
+        handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
+        handle.cursor = handleCursors[index];
+        (
+          handle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+        ).__graphiteHandleType = handleTypes[index];
+        (
+          handle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }
+        ).__graphiteElementId = elementId;
+        selectionLayer.addChild(handle);
+      });
+
+      const rotationHandle = new PIXI.Graphics();
+      rotationHandle.beginFill(handleColor);
+      rotationHandle.lineStyle(1, handleBorderColor, 1);
+      rotationHandle.circle(0, 0, 6);
+      rotationHandle.endFill();
+      const bottomMid = mid(cameraCorners[2], cameraCorners[3]);
+      const edgeVec = new PIXI.Point(
+        cameraCorners[1].x - cameraCorners[0].x,
+        cameraCorners[1].y - cameraCorners[0].y,
+      );
+      const center = new PIXI.Point(
+        (cameraCorners[0].x + cameraCorners[1].x + cameraCorners[2].x + cameraCorners[3].x) / 4,
+        (cameraCorners[0].y + cameraCorners[1].y + cameraCorners[2].y + cameraCorners[3].y) / 4,
+      );
+      const normal = new PIXI.Point(-edgeVec.y, edgeVec.x);
+      const toOutside = new PIXI.Point(bottomMid.x - center.x, bottomMid.y - center.y);
+      const dot = normal.x * toOutside.x + normal.y * toOutside.y;
+      const sign = dot >= 0 ? 1 : -1;
+      const nLen = Math.sqrt(normal.x * normal.x + normal.y * normal.y) || 1;
+      const nx = (normal.x / nLen) * sign;
+      const ny = (normal.y / nLen) * sign;
+      rotationHandle.position.set(bottomMid.x + nx * (20 / zoom), bottomMid.y + ny * (20 / zoom));
+      rotationHandle.interactive = true;
+      rotationHandle.scale.set(1 / zoom);
+      rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
+      rotationHandle.cursor = 'pointer';
       rotationHandle.eventMode = 'static';
       (
         rotationHandle as unknown as { __graphiteHandleType?: string; __graphiteElementId?: string }

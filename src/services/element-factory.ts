@@ -340,10 +340,12 @@ export class ElementFactory {
         return this.createRectangle(x, y, width, height, options?.style);
 
       case 'circle': {
-        const radius = Math.min(width, height) / 2;
-        const centerX = x + width / 2;
-        const centerY = y + height / 2;
-        return this.createCircle(centerX, centerY, radius, options?.style);
+        const baseElement = this.createBaseElement('circle', x, y, width, height);
+        const circleStyle = { ...this.getBaseStyleDefaults(), ...options?.style };
+        return {
+          ...baseElement,
+          style: circleStyle,
+        } as CircleElement;
       }
       case 'triangle':
         return this.createTriangle(x, y, width, height, options?.style);
