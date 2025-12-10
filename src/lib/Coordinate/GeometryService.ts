@@ -99,21 +99,33 @@ export class GeometryService {
   public getElementWorldOutlinePoints(element: IElementProvider, elementType: string): Point[] {
     const size = element.getSize();
 
-    // 对于圆形，需要计算旋转后的四个极值点
+    // 对于圆形和椭圆，使用椭圆采样公式（圆形是椭圆的特例，rx = ry）
+    // 椭圆旋转后，最左/最右/最上/最下点不再对应固定的0°/90°/180°/270°点
+    // 必须采样多个点（16个）才能确保旋转后能正确计算OBB
+    // 如果只用4个极值点，在某些旋转角度下这些点可能全部落在椭圆内部，
+    // 导致凸包无法正确包含椭圆的真实外缘，OBB会偏斜
     if (elementType === 'circle') {
-      const radius = Math.min(size.width, size.height) / 2;
-      const centerX = size.width / 2;
-      const centerY = size.height / 2;
+      // 圆形是椭圆的特例：rx = ry = radius
+      const rx = size.width / 2;
+      const ry = size.height / 2;
+      const cx = size.width / 2;
+      const cy = size.height / 2;
 
-      // 圆的四个极值点（局部坐标）
-      const localPoints = [
-        { x: centerX - radius, y: centerY }, // left
-        { x: centerX + radius, y: centerY }, // right
-        { x: centerX, y: centerY - radius }, // top
-        { x: centerX, y: centerY + radius }, // bottom
-      ];
+      // 椭圆采样16个点（每22.5°一个），确保任何旋转角度下都能正确计算OBB
+      // 16点是精度和性能的最佳平衡点
+      const steps = 16;
+      const localPoints: Point[] = [];
 
-      // 转换为世界坐标
+      for (let i = 0; i < steps; i++) {
+        const angle = (Math.PI * 2 * i) / steps;
+        // 椭圆参数方程：x = cx + rx * cos(θ), y = cy + ry * sin(θ)
+        localPoints.push({
+          x: cx + rx * Math.cos(angle),
+          y: cy + ry * Math.sin(angle),
+        });
+      }
+
+      // 转换为世界坐标（自动考虑旋转、缩放、pivot等变换）
       return localPoints.map((p) => this.coordinateTransformer.localToWorld(p.x, p.y, element));
     }
 
