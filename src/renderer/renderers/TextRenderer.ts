@@ -75,6 +75,11 @@ export class TextRenderer implements IElementRenderer {
     container.pivot.set(transform.pivotX * width, transform.pivotY * height);
     container.rotation = rotation * (Math.PI / 180);
 
+    // 🎯 关键修复: 设置 hitArea 和 interactive，确保即使没有背景色也能被点击
+    container.hitArea = new PIXI.Rectangle(0, 0, width, height);
+    container.interactive = true;
+    container.interactiveChildren = true;
+
     // 1. 创建背景层
     const background = new PIXI.Graphics();
     container.addChild(background);
@@ -165,6 +170,9 @@ export class TextRenderer implements IElementRenderer {
       container.y = newY + transform.pivotY * height;
       container.scale.set(transform.scaleX, transform.scaleY);
       container.pivot.set(transform.pivotX * width, transform.pivotY * height);
+
+      // 🎯 关键修复: 更新 hitArea 以匹配新尺寸
+      container.hitArea = new PIXI.Rectangle(0, 0, width, height);
 
       // 更新缓存
       (container as any).lastX = newX;

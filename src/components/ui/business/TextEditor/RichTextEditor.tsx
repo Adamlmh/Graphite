@@ -15,6 +15,7 @@ import './RichTextEditor.less';
 export interface RichTextEditorProps {
   element: TextElement;
   position: { x: number; y: number }; // 屏幕坐标
+  scale?: number; // 缩放比例，跟随视口缩放
   onUpdate: (content: string, richText?: RichTextSpan[]) => void;
   onBlur: (e: React.FocusEvent) => void;
   onStyleChange?: (style: Partial<TextElement['textStyle']>) => void; // 用于局部文本样式处理
@@ -24,7 +25,13 @@ export interface RichTextEditorProps {
  * 富文本编辑器组件
  * 基于 Tiptap 实现，作为 DOM Overlay 层显示在画布上方
  */
-const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUpdate, onBlur }) => {
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
+  element,
+  position,
+  scale = 1,
+  onUpdate,
+  onBlur,
+}) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const { content, textStyle, width, height, richText } = element;
 
@@ -289,6 +296,10 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
     return null;
   }
 
+  // 计算缩放后的尺寸
+  const scaledWidth = width * scale;
+  const scaledHeight = height * scale;
+
   return (
     <div
       ref={editorRef}
@@ -297,13 +308,25 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ element, position, onUp
         position: 'fixed',
         left: `${position.x}px`,
         top: `${position.y}px`,
-        width: `${width}px`,
-        minHeight: `${height}px`,
+        width: `${scaledWidth}px`,
+        minHeight: `${scaledHeight}px`,
         zIndex: 9999,
         pointerEvents: 'auto',
+        // 应用缩放变换，保持文本与 PIXI 渲染的一致性
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left',
+        // 取消缩放对宽高的影响，因为已经通过 transform 实现
+        // 重新设置为原始尺寸
       }}
     >
-      <EditorContent editor={editor} />
+      <div
+        style={{
+          width: `${width}px`,
+          minHeight: `${height}px`,
+        }}
+      >
+        <EditorContent editor={editor} />
+      </div>
 
       {/* 浮动文本工具栏 */}
       {editor && (

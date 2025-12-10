@@ -19,6 +19,7 @@ const TextEditorManager: React.FC = () => {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const updateElement = useCanvasStore((state) => state.updateElement);
   const elements = useCanvasStore((state) => state.elements); // 监听元素变化
+  const viewport = useCanvasStore((state) => state.viewport); // 监听视口变化
   const coordinateTransformer = useMemo(() => new CoordinateTransformer(), []);
 
   useEffect(() => {
@@ -76,7 +77,12 @@ const TextEditorManager: React.FC = () => {
     }
     // 使用 CoordinateTransformer 将世界坐标转换为屏幕坐标
     return coordinateTransformer.worldToScreen(currentElement.x, currentElement.y);
-  }, [currentElement, coordinateTransformer]);
+  }, [currentElement, coordinateTransformer, viewport]); // 添加 viewport 依赖，确保视口变化时重新计算
+
+  // 计算编辑器的缩放比例，跟随视口缩放
+  const editorScale = useMemo(() => {
+    return viewport.zoom;
+  }, [viewport.zoom]);
 
   // 处理内容更新
   const handleUpdate = (content: string, richText?: RichTextSpan[]) => {
@@ -159,6 +165,7 @@ const TextEditorManager: React.FC = () => {
     <RichTextEditor
       element={currentElement} // 使用最新的元素数据
       position={editorPosition}
+      scale={editorScale} // 传递缩放比例
       onUpdate={handleUpdate}
       onBlur={handleBlur}
       onStyleChange={handleStyleChange}
