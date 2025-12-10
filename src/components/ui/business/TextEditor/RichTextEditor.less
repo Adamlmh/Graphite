@@ -1,9 +1,14 @@
 .rich-text-editor-overlay {
   background: transparent;
-  border: 2px solid #007bff;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  overflow: hidden;
+  // 编辑态时移除边框和阴影，实现无缝切换效果
+  border: solid 1px rgb(59, 59, 190);
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+  // 确保精确定位
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
 
   // Tiptap 编辑器样式
   .ProseMirror {
@@ -11,6 +16,9 @@
     min-height: 24px;
     word-wrap: break-word;
     white-space: pre-wrap;
+    // 确保与 PIXI 文本渲染对齐
+    padding: 0;
+    margin: 0;
 
     // 占位符样式
     p.is-editor-empty:first-child::before {
@@ -24,6 +32,7 @@
     // 段落样式
     p {
       margin: 0;
+      padding: 0;
     }
 
     // 加粗
@@ -51,4 +60,9 @@
   .ProseMirror-focused {
     outline: none;
   }
+}
+
+// 编辑态的视觉指示器（可选，使用细微边框）
+.rich-text-editor-overlay--editing {
+  border: 1px solid rgba(0, 123, 255, 0.3);
 }

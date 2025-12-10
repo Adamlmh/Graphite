@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Tooltip, ColorPicker, Slider, Popover, Select } from 'antd';
 import {
   BoldOutlined,
@@ -9,6 +10,7 @@ import {
   BgColorsOutlined,
 } from '@ant-design/icons';
 import type { Editor } from '@tiptap/react';
+import { debounce } from '../../../../utils';
 import styles from '../Propertities/TextProperties/TextProperties.module.less';
 
 export interface InlineTextToolbarProps {
@@ -98,83 +100,154 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   }, [editor, visible, updateTrigger, lastSelection]);
 
   // === 选区辅助：在工具栏交互时恢复最近的有效选区，避免选区丢失导致工具栏闪退 ===
-  const runWithSelection = (
-    executor: (chain: ReturnType<typeof editor.chain>) => ReturnType<typeof editor.chain>,
-  ) => {
-    if (!editor) return;
-    const { from, to } = editor.state.selection;
+  const runWithRestore = useCallback(
+    (
+      executor: (chain: ReturnType<typeof editor.chain>) => ReturnType<typeof editor.chain>,
+      options?: { focus?: boolean; restore?: boolean },
+    ) => {
+      if (!editor) return;
 
-    // 如果当前是空选区且有上次有效选区，先恢复选区
-    const needsRestore = from === to && lastSelection && lastSelection.from !== lastSelection.to;
-    let chain = editor.chain();
-    if (needsRestore) {
-      chain = chain.setTextSelection(lastSelection);
-    }
+      // 1. 获取链式对象
+      let chain = editor.chain();
 
-    executor(chain.focus()).run();
-  };
+      // 2. 尝试恢复焦点（可通过 options 控制，避免频繁 focus 导致选区抖动）
+      if (options?.focus ?? true) {
+        chain = chain.focus();
+      }
+
+      // 3. 如果有传入 lastSelection 且当前编辑器没有选区（或选区已丢失），尝试恢复选区
+      // 注意：这只是为了应对 ColorPicker 关闭后可能丢失选区的情况
+      if (
+        options?.restore !== false &&
+        lastSelection &&
+        (editor.state.selection.empty ||
+          !editor.isFocused ||
+          editor.state.selection.from !== lastSelection.from ||
+          editor.state.selection.to !== lastSelection.to)
+      ) {
+        try {
+          chain = chain.setTextSelection(lastSelection);
+        } catch (e) {
+          console.warn('Failed to restore selection', e);
+        }
+      }
+
+      // 4. 执行命令
+      executor(chain).run();
+    },
+    [editor, lastSelection],
+  );
 
   // === 样式操作处理函数 ===
-  // 应用/取消加粗样式
-  const handleToggleBold = () => {
-    console.log('[InlineTextToolbar] Executing toggleBold');
-    runWithSelection((chain) => chain.toggleBold());
-    console.log('[InlineTextToolbar] toggleBold executed, active:', editor?.isActive('bold'));
+  const handleToggleBold = (e?: React.MouseEvent) => {
+    e?.preventDefault(); // 双重保险
+    editor.chain().focus().toggleBold().run();
   };
 
-  // 应用/取消斜体样式
-  const handleToggleItalic = () => {
-    console.log('[InlineTextToolbar] Executing toggleItalic');
-    runWithSelection((chain) => chain.toggleItalic());
-    console.log('[InlineTextToolbar] toggleItalic executed, active:', editor?.isActive('italic'));
+  const handleToggleItalic = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    editor.chain().focus().toggleItalic().run();
   };
 
-  // 应用/取消下划线样式
-  const handleToggleUnderline = () => {
-    console.log('[InlineTextToolbar] Executing toggleUnderline');
-    runWithSelection((chain) => chain.toggleUnderline());
-    console.log(
-      '[InlineTextToolbar] toggleUnderline executed, active:',
-      editor?.isActive('underline'),
-    );
+  const handleToggleUnderline = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    editor.chain().focus().toggleUnderline().run();
   };
 
-  // 应用/取消删除线样式
-  const handleToggleStrike = () => {
-    console.log('[InlineTextToolbar] Executing toggleStrike');
-    runWithSelection((chain) => chain.toggleStrike());
-    console.log('[InlineTextToolbar] toggleStrike executed, active:', editor?.isActive('strike'));
+  const handleToggleStrike = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    editor.chain().focus().toggleStrike().run();
   };
 
-  // 修改文本颜色
+  // 🎯 性能优化: 使用useCallback保存防抖函数
+  // === 复杂操作：使用 runWithRestore ===
+  // 颜色选择器必然会导致物理失焦，所以使用 runWithRestore 尝试拉回焦点
+  // 对于 ColorPicker 的连续滑动，我们不希望每次都 focus/restore（会导致闪动/回弹），
+  // 所以调整为默认不做 focus/restore，只有必要时在外部手动调用恢复。
+  const handleTextColorChangeInternal = useCallback(
+    (color: string) => {
+      if (!editor) return;
+      // 不 focus，不 restore（避免频繁改动导致闪烁）。
+      editor.chain().setColor(color).run();
+    },
+    [editor],
+  );
+
+  const handleBackgroundColorChangeInternal = useCallback(
+    (backgroundColor: string) => {
+      if (!editor) return;
+      editor.chain().setBackgroundColor(backgroundColor).run();
+    },
+    [editor],
+  );
+
+  // 局部调节滑块需要对 UI 响应快速，所以将防抖调小并通过本地 state 提升流畅度
+  const debouncedTextColorChangeRef = useRef(
+    debounce((color: string, handler: (color: string) => void) => handler(color), 30),
+  );
+
+  const debouncedBackgroundColorChangeRef = useRef(
+    debounce((color: string, handler: (color: string) => void) => handler(color), 30),
+  );
+
+  // 局部 state，避免 ColorPicker 在滑动时被父组件属性回写导致回弹
+  const [textColorLocal, setTextColorLocal] = useState<string>('#000000');
+  const [backgroundColorLocal, setBackgroundColorLocal] = useState<string>('#ffffff');
+
+  // 同步本地状态，当外部属性刷新（updateTrigger）时更新本地显示颜色
+  useEffect(() => {
+    const src = textStyles.textColor || '#000000';
+    if (textColorLocal !== src) {
+      const timer = setTimeout(() => setTextColorLocal(src), 0);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [updateTrigger, textStyles.textColor, textColorLocal]);
+
+  useEffect(() => {
+    const src = textStyles.backgroundColor || '#ffffff';
+    if (backgroundColorLocal !== src) {
+      const timer = setTimeout(() => setBackgroundColorLocal(src), 0);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [updateTrigger, textStyles.backgroundColor, backgroundColorLocal]);
+
   const handleTextColorChange = (color: string) => {
-    console.log('[InlineTextToolbar] Changing text color to:', color);
-    runWithSelection((chain) => chain.setColor(color));
+    setTextColorLocal(color);
+    debouncedTextColorChangeRef.current(color, handleTextColorChangeInternal);
   };
 
-  // 修改背景颜色
   const handleBackgroundColorChange = (backgroundColor: string) => {
-    console.log('[InlineTextToolbar] Changing background color to:', backgroundColor);
-    runWithSelection((chain) => chain.setBackgroundColor(backgroundColor));
+    setBackgroundColorLocal(backgroundColor);
+    debouncedBackgroundColorChangeRef.current(backgroundColor, handleBackgroundColorChangeInternal);
   };
 
-  // 修改字号
-  const handleFontSizeChange = (fontSize: number) => {
-    console.log('[InlineTextToolbar] Changing font size to:', fontSize);
-    runWithSelection((chain) => chain.setFontSize(`${fontSize}px`));
-  };
+  // 字号由于是 Slider，我们在 onMouseDown 做了特殊处理，这里直接 run 即可
+  const handleFontSizeChange = useCallback(
+    (fontSize: number) => {
+      editor.chain().focus().setFontSize(`${fontSize}px`).run();
+    },
+    [editor],
+  );
 
-  // 修改字体
-  const handleFontFamilyChange = (fontFamily: string) => {
-    console.log('[InlineTextToolbar] Changing font family to:', fontFamily);
-    runWithSelection((chain) => chain.setFontFamily(fontFamily));
-  };
+  const handleFontFamilyChange = useCallback(
+    (fontFamily: string) => {
+      runWithRestore((chain) => chain.setFontFamily(fontFamily));
+    },
+    [runWithRestore],
+  );
 
   if (!visible) {
     return null;
   }
 
-  return (
+  // 公用的防失焦处理函数
+  const preventFocusLoss = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
+  const toolbarNode = (
     <div
       style={{
         position: 'fixed',
@@ -187,10 +260,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
       }}
       className="inline-text-toolbar-container"
       data-toolbar="inline-text"
-      onMouseDown={(e) => {
-        // 阻止失焦事件，保证点击工具栏时选区不丢失
-        e.preventDefault();
-      }}
+      onMouseDown={preventFocusLoss} // 最外层防御
     >
       <div className={styles.toolbar}>
         {/* 字体选择 */}
@@ -204,10 +274,9 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           popupMatchSelectWidth={false}
           placement="bottomLeft"
           getPopupContainer={() => document.body}
+          onMouseDown={preventFocusLoss}
+          dropdownRender={(menu) => <div onMouseDown={(e) => e.preventDefault()}>{menu}</div>}
           dropdownStyle={{ zIndex: 10001 }}
-          onDropdownVisibleChange={(open) => {
-            console.log('[InlineTextToolbar] Font select dropdown visible:', open);
-          }}
         />
 
         {/* 字体大小调节 */}
@@ -217,7 +286,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
               className={styles.sliderPopover}
               onMouseDown={(e) => {
                 // 防止 Popover 内容触发编辑器失焦
-                e.stopPropagation();
+                e.preventDefault();
               }}
             >
               <Slider
@@ -237,12 +306,13 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           mouseLeaveDelay={0.2}
           getPopupContainer={() => document.body}
           overlayStyle={{ zIndex: 10001 }}
-          onOpenChange={(visible) => {
-            console.log('[InlineTextToolbar] Font size popover visible:', visible);
-          }}
         >
           <Tooltip title="字号" placement="bottom" mouseEnterDelay={0.3}>
-            <Button className={styles.toolButton} icon={<FontSizeOutlined />} />
+            <Button
+              className={styles.toolButton}
+              icon={<FontSizeOutlined />}
+              onMouseDown={preventFocusLoss}
+            />
           </Tooltip>
         </Popover>
 
@@ -251,19 +321,46 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         {/* 文本颜色选择 */}
         <Tooltip title="文本颜色">
           <ColorPicker
-            value={textStyles.textColor}
-            onChange={(_, hex) => handleTextColorChange(hex)}
+            value={textColorLocal}
+            onChange={(color, hex) => {
+              console.log('[InlineTextToolbar] Text color changed:', { color, hex });
+              handleTextColorChange(hex);
+            }}
+            onOpenChange={(open) => {
+              if (!open) {
+                // panel 关闭时确保选区恢复并获取焦点
+                runWithRestore((chain) => chain, { focus: true, restore: true });
+              }
+            }}
             className={styles.colorPicker}
             getPopupContainer={() => document.body}
-            panelRender={(panel) => <div style={{ zIndex: 10001 }}>{panel}</div>}
+            panelRender={(panel) => (
+              <div style={{ zIndex: 10001 }} onMouseDown={(e) => e.preventDefault()}>
+                {panel}
+              </div>
+            )}
+            showText
+            format="hex"
           >
             <Button
               className={styles.colorButton}
               style={{
                 background: textStyles.textColor || '#000000',
+                border: `2px solid ${textStyles.textColor || '#000000'}`,
               }}
+              onMouseDown={preventFocusLoss}
             >
-              <span className={styles.colorButtonText}>A</span>
+              <span
+                className={styles.colorButtonText}
+                style={{
+                  color:
+                    textStyles.textColor === '#ffffff' || textStyles.textColor === '#fff'
+                      ? '#000000'
+                      : '#ffffff',
+                }}
+              >
+                A
+              </span>
             </Button>
           </ColorPicker>
         </Tooltip>
@@ -271,19 +368,45 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
         {/* 背景颜色选择 */}
         <Tooltip title="背景色">
           <ColorPicker
-            value={textStyles.backgroundColor || '#ffffff'}
-            onChange={(_, hex) => handleBackgroundColorChange(hex)}
+            value={backgroundColorLocal}
+            onChange={(color, hex) => {
+              console.log('[InlineTextToolbar] Background color changed:', { color, hex });
+              handleBackgroundColorChange(hex);
+            }}
+            onOpenChange={(open) => {
+              if (!open) {
+                runWithRestore((chain) => chain, { focus: true, restore: true });
+              }
+            }}
             className={styles.colorPicker}
             getPopupContainer={() => document.body}
-            panelRender={(panel) => <div style={{ zIndex: 10001 }}>{panel}</div>}
+            panelRender={(panel) => (
+              <div style={{ zIndex: 10001 }} onMouseDown={(e) => e.preventDefault()}>
+                {panel}
+              </div>
+            )}
+            showText
+            format="hex"
           >
             <Button
               className={styles.colorButton}
               style={{
                 background: textStyles.backgroundColor || '#ffffff',
+                border: `2px solid ${textStyles.backgroundColor || '#e0e0e0'}`,
               }}
+              onMouseDown={preventFocusLoss}
             >
-              <BgColorsOutlined className={styles.colorButtonIcon} />
+              <BgColorsOutlined
+                className={styles.colorButtonIcon}
+                style={{
+                  color:
+                    textStyles.backgroundColor === '#ffffff' ||
+                    textStyles.backgroundColor === '#fff' ||
+                    !textStyles.backgroundColor
+                      ? '#666666'
+                      : '#ffffff',
+                }}
+              />
             </Button>
           </ColorPicker>
         </Tooltip>
@@ -295,6 +418,8 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             className={`${styles.toolButton} ${textStyles.isBold ? styles.active : ''}`}
             icon={<BoldOutlined />}
             onClick={handleToggleBold}
+            aria-label="bold"
+            onMouseDown={preventFocusLoss}
           />
         </Tooltip>
 
@@ -303,6 +428,8 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             className={`${styles.toolButton} ${textStyles.isItalic ? styles.active : ''}`}
             icon={<ItalicOutlined />}
             onClick={handleToggleItalic}
+            aria-label="italic"
+            onMouseDown={preventFocusLoss}
           />
         </Tooltip>
 
@@ -311,6 +438,8 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             className={`${styles.toolButton} ${textStyles.isUnderline ? styles.active : ''}`}
             icon={<UnderlineOutlined />}
             onClick={handleToggleUnderline}
+            aria-label="underline"
+            onMouseDown={preventFocusLoss}
           />
         </Tooltip>
 
@@ -319,11 +448,15 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             className={`${styles.toolButton} ${textStyles.isStrike ? styles.active : ''}`}
             icon={<StrikethroughOutlined />}
             onClick={handleToggleStrike}
+            aria-label="strike"
+            onMouseDown={preventFocusLoss}
           />
         </Tooltip>
       </div>
     </div>
   );
+
+  return createPortal(toolbarNode, document.body);
 };
 
 export default InlineTextToolbar;

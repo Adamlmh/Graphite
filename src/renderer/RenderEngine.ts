@@ -324,9 +324,15 @@ export class RenderEngine {
     const state = useCanvasStore.getState();
 
     // 过滤掉组合元素的子元素：如果选中了组合元素，不应该显示子元素的选中框
+    // 同时过滤掉正在编辑的元素：编辑态时不显示选中框
     const filteredSelectedIds = selectedElementIds.filter((elementId) => {
       const element = state.elements[elementId];
       if (!element) {
+        return false;
+      }
+
+      // 如果元素正在编辑，不显示选中框
+      if (this.editingElementId === elementId) {
         return false;
       }
 
