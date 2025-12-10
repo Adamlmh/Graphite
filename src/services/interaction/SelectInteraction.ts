@@ -678,8 +678,18 @@ class ResizeInteraction {
         allowX = true;
         allowY = false;
       }
-      const hx = hx0 + (allowX ? dx : 0);
-      const hy = hy0 + (allowY ? dy : 0);
+      const sx = handle === 'left' || handle === 'top-left' || handle === 'bottom-left' ? -1 : 1;
+      const sy = handle === 'top' || handle === 'top-left' || handle === 'top-right' ? -1 : 1;
+      let hx = hx0 + (allowX ? dx : 0);
+      let hy = hy0 + (allowY ? dy : 0);
+      if (allowX) {
+        if (sx === -1 && hx > ax) hx = ax;
+        if (sx === 1 && hx < ax) hx = ax;
+      }
+      if (allowY) {
+        if (sy === -1 && hy > ay) hy = ay;
+        if (sy === 1 && hy < ay) hy = ay;
+      }
       let newW = Math.max(1, allowX ? Math.abs(ax - hx) : sb.width);
       let newH = Math.max(1, allowY ? Math.abs(ay - hy) : sb.height);
       const isCorner =
@@ -1202,7 +1212,7 @@ export class SelectInteraction {
         this.lockCursor('pointer');
 
         if (handleInfo.isGroup) {
-          const bounds = this.computeGroupBounds(selectedIds);
+          const bounds = this.computeSelectionAABBFromIds(selectedIds);
           const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
           this.rotateInteraction.startGroup(selectedIds, center, payload.world);
         } else if (handleInfo.elementId) {
@@ -1239,7 +1249,7 @@ export class SelectInteraction {
       this.lockCursor(cursor);
 
       if (handleInfo.isGroup) {
-        const bounds = this.computeGroupBounds(selectedIds);
+        const bounds = this.computeSelectionAABBFromIds(selectedIds);
         this.resizeInteraction.startGroup(selectedIds, handleType, bounds, payload.world);
       } else if (handleInfo.elementId) {
         this.resizeInteraction.startSingle(handleInfo.elementId, handleType, payload.world);
@@ -1569,7 +1579,7 @@ export class SelectInteraction {
           }
         }
       } else {
-        const bounds = this.computeGroupBounds(selectedIds);
+        const bounds = this.computeSelectionAABBFromIds(selectedIds);
         const tl = { x: bounds.x, y: bounds.y };
         const tr = { x: bounds.x + bounds.width, y: bounds.y };
         const br = { x: bounds.x + bounds.width, y: bounds.y + bounds.height };
@@ -1612,7 +1622,7 @@ export class SelectInteraction {
     const element = this.findTopHitElement(worldPoint);
     if (element) return { type: 'element', elementId: element.id };
     if (selectedIds.length > 1) {
-      const bounds = this.computeGroupBounds(selectedIds);
+      const bounds = this.computeSelectionAABBFromIds(selectedIds);
       const insideGroup = this.isPointInRect(worldPoint, bounds);
       if (insideGroup) {
         return { type: 'group', isGroup: true };
@@ -1659,6 +1669,27 @@ export class SelectInteraction {
       return { x: 0, y: 0, width: 0, height: 0 };
     }
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  private computeSelectionAABBFromIds(ids: string[]): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } {
+    const state = useCanvasStore.getState();
+    const expanded: string[] = [];
+    ids.forEach((id) => {
+      const el = state.elements[id];
+      if (el && isGroupElement(el)) {
+        getGroupDeepChildren(id).forEach((cid) => expanded.push(cid));
+      } else {
+        expanded.push(id);
+      }
+    });
+    const providers = expanded.map((id) => new ElementProvider(id));
+    const types = expanded.map((id) => state.elements[id]?.type || 'rect');
+    return this.geometryService.computeAxisAlignedSelectionBounds(providers, types);
   }
 
   private getRotatedCorners(el: Element): Array<Point> {

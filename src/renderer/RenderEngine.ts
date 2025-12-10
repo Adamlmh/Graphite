@@ -24,7 +24,7 @@ import { GeometryService } from '../lib/Coordinate/GeometryService';
 import { CoordinateTransformer } from '../lib/Coordinate/CoordinateTransformer';
 import { ElementProvider } from '../lib/Coordinate/providers/ElementProvider';
 import { isGroupElement } from '../types/index';
-import { computeGroupBounds } from '../services/group-service';
+import { computeGroupBounds, getGroupDeepChildren } from '../services/group-service';
 import { useCanvasStore } from '../stores/canvas-store';
 /**
  * 渲染引擎核心 - 协调所有渲染模块
@@ -370,37 +370,20 @@ export class RenderEngine {
           });
 
           if (graphics) {
-            // 如果 group 有 graphics 对象，使用与普通元素相同的方式绘制选中框
-            // 但是需要重新计算 bounds（因为 group 的 bounds 应该基于子元素）
-            const groupBounds = computeGroupBounds(elementId);
-
-            if (groupBounds) {
-              // 直接使用 groupBounds，不进行坐标转换（与第425行保持一致）
-              console.log(
-                `[GROUP_DEBUG] [RenderEngine.updateSelection] 有 graphics 对象，使用 bounds`,
-                {
-                  elementId,
-                  bounds: groupBounds,
-                },
-              );
-              this.drawSelectionBoxForGroup(groupBounds, elementId, true);
-            } else {
-              // 如果没有 groupBounds，使用 graphics 的 bounds（降级方案）
-              this.drawSelectionBox(graphics, elementId, true);
-            }
+            const childrenIds = getGroupDeepChildren(elementId);
+            const providers = childrenIds.map((cid) => new ElementProvider(cid));
+            const types = childrenIds.map((cid) => state.elements[cid]?.type || 'rect');
+            const bounds = this.geometryService.computeAxisAlignedSelectionBounds(providers, types);
+            this.drawSelectionBoxForGroup(bounds, elementId, true);
           } else {
-            // 如果没有 graphics 对象，使用 computeGroupBounds
-            const bounds = computeGroupBounds(elementId);
-            if (bounds) {
-              console.log(
-                `[GROUP_DEBUG] [RenderEngine.updateSelection] 无 graphics 对象，使用 bounds`,
-                {
-                  elementId,
-                  bounds,
-                },
-              );
-              this.drawSelectionBoxForGroup(bounds, elementId, true);
-            }
+            const childrenIds2 = getGroupDeepChildren(elementId);
+            const providers2 = childrenIds2.map((cid) => new ElementProvider(cid));
+            const types2 = childrenIds2.map((cid) => state.elements[cid]?.type || 'rect');
+            const bounds2 = this.geometryService.computeAxisAlignedSelectionBounds(
+              providers2,
+              types2,
+            );
+            this.drawSelectionBoxForGroup(bounds2, elementId, true);
           }
         } else {
           // 普通元素使用原有的逻辑
@@ -416,36 +399,22 @@ export class RenderEngine {
 
     // 如果选择多个元素，绘制组合边界框以增强视觉反馈
     if (filteredSelectedIds.length > 1) {
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-
+      const expandedIds: string[] = [];
       filteredSelectedIds.forEach((elementId) => {
-        const element = state.elements[elementId];
-        let b: { x: number; y: number; width: number; height: number };
-
-        // 如果是 group，使用 computeGroupBounds 计算边界
-        if (element && isGroupElement(element)) {
-          const groupBounds = computeGroupBounds(elementId);
-          if (groupBounds) {
-            b = groupBounds;
-          } else {
-            // 如果计算失败，使用元素本身的边界
-            const provider = new ElementProvider(elementId);
-            b = this.geometryService.getElementBoundsWorld(provider);
-          }
+        const el = state.elements[elementId];
+        if (el && isGroupElement(el)) {
+          expandedIds.push(...getGroupDeepChildren(elementId));
         } else {
-          // 普通元素使用原有的逻辑
-          const provider = new ElementProvider(elementId);
-          b = this.geometryService.getElementBoundsWorld(provider);
+          expandedIds.push(elementId);
         }
-
-        minX = Math.min(minX, b.x);
-        minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.width);
-        maxY = Math.max(maxY, b.y + b.height);
       });
+      const providers = expandedIds.map((id) => new ElementProvider(id));
+      const types = expandedIds.map((id) => state.elements[id]?.type || 'rect');
+      const aabb = this.geometryService.computeAxisAlignedSelectionBounds(providers, types);
+      const minX = aabb.x;
+      const minY = aabb.y;
+      const maxX = aabb.x + aabb.width;
+      const maxY = aabb.y + aabb.height;
 
       if (minX !== Infinity) {
         const selectionLayer = this.layerManager.getSelectionLayer();
