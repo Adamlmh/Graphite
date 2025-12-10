@@ -9,6 +9,7 @@ import {
   MoonOutlined,
   UndoOutlined,
   RedoOutlined,
+  SaveOutlined,
   ApartmentOutlined,
   UngroupOutlined,
 } from '@ant-design/icons';
@@ -165,6 +166,16 @@ const ToolBar: React.FC = () => {
     }
   };
 
+  // 处理保存
+  const handleSave = async () => {
+    try {
+      await historyService.forceSave();
+    } catch (error) {
+      message.error('保存失败');
+      console.error('Save error:', error);
+    }
+  };
+
   // 处理打组
   const handleGroup = async () => {
     try {
@@ -243,13 +254,21 @@ const ToolBar: React.FC = () => {
             disabled={!canUndo}
           />
         </Tooltip>
-        <Tooltip title="重做 (Ctrl+Shift+Z)" placement="bottom">
+        <Tooltip title="重做 (Ctrl+Y)" placement="bottom">
           <Button
             type="text"
             className={styles.toolButton}
             icon={<RedoOutlined />}
             onClick={handleRedo}
             disabled={!canRedo}
+          />
+        </Tooltip>
+        <Tooltip title="保存 (Ctrl+S)" placement="bottom">
+          <Button
+            type="text"
+            className={styles.toolButton}
+            icon={<SaveOutlined />}
+            onClick={handleSave()}
           />
         </Tooltip>
       </div>

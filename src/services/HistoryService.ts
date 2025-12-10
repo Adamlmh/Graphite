@@ -645,7 +645,6 @@ export class HistoryService {
       if (this.saveStatus === SaveStatus.SAVING || this.pendingSnapshotIds.size > 0) {
         // ← 修改点：增加pending检查
         event.preventDefault();
-        event.returnValue = '正在保存数据，请稍候...';
         this.forceSave();
       }
     });
@@ -717,7 +716,7 @@ export class HistoryService {
       console.log('检测到刷新操作，正在保存数据...');
 
       // 创建等待保存完成的Promise
-      await this.waitForAllSaves(10000); // 10秒超时
+      await this.forceSave(10000); // 10秒超时
 
       console.log('数据保存完成，执行刷新');
       window.location.reload();
@@ -744,7 +743,7 @@ export class HistoryService {
       console.log('检测到关闭操作，正在保存数据...');
 
       // 等待所有保存完成
-      await this.waitForAllSaves(10000); // 10秒超时
+      await this.forceSave(10000); // 10秒超时
 
       console.log('数据保存完成，可以安全关闭');
       // 由于浏览器限制，无法直接关闭窗口，但可以确保数据已保存
@@ -991,10 +990,11 @@ export class HistoryService {
    * 强制立即保存（带超时保护）
    */
   async forceSave(timeout: number = 5000): Promise<void> {
-    const snapshot = await this.createSnapshot(true);
-    if (this.config.persistenceEnabled) {
-      await this.saveSnapshotToDB(snapshot); // 显式保存，不依赖 worker
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout as number); // 强制类型转换
+      this.autoSaveTimeout = null;
     }
+    await this.createSnapshot(false);
   }
 
   /**
@@ -1718,7 +1718,6 @@ export class HistoryService {
 
       // 提示用户有未保存的更改
       event.preventDefault();
-      event.returnValue = '正在保存数据，请稍候...';
       return event.returnValue;
     }
   }
