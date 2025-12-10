@@ -10,6 +10,7 @@ import type { CanvasState } from '../stores/canvas-store';
 import HistoryWorker from '../workers/history.worker.ts?worker';
 import type { WorkerSaveResponse } from '../workers/history.worker';
 import { eventBus } from '../lib/eventBus';
+import { AttributeChangeCommand } from './command/HistoryCommand';
 
 /*
 // 协同操作类型定义
@@ -133,6 +134,8 @@ export class HistoryService {
   private redoStack: Command[] = [];
   private snapshots: Snapshot[] = [];
   private currentVersion: number = 0;
+  private isAttributeCoalescing = false;
+  private coalescingAnchorCommandId: string | null = null;
 
   // 在类中添加新的属性和方法
   private pendingUnloadAction: {
@@ -314,7 +317,7 @@ export class HistoryService {
 
   // 配置
   private config = {
-    autoSaveDelay: 500, // ← 修改点：从1000ms改为500ms，减少延迟
+    autoSaveDelay: 500, // 0.5s防抖
     maxSnapshots: 100,
     maxUndoSteps: 50,
     fullSnapshotInterval: 10, // 每10个操作创建一个完整快照
@@ -716,7 +719,7 @@ export class HistoryService {
       console.log('检测到刷新操作，正在保存数据...');
 
       // 创建等待保存完成的Promise
-      await this.forceSave(10000); // 10秒超时
+      await this.forceSave();
 
       console.log('数据保存完成，执行刷新');
       window.location.reload();
@@ -743,7 +746,7 @@ export class HistoryService {
       console.log('检测到关闭操作，正在保存数据...');
 
       // 等待所有保存完成
-      await this.forceSave(10000); // 10秒超时
+      await this.forceSave();
 
       console.log('数据保存完成，可以安全关闭');
       // 由于浏览器限制，无法直接关闭窗口，但可以确保数据已保存
@@ -989,7 +992,7 @@ export class HistoryService {
   /**
    * 强制立即保存（带超时保护）
    */
-  async forceSave(timeout: number = 5000): Promise<void> {
+  async forceSave(): Promise<void> {
     if (this.autoSaveTimeout) {
       clearTimeout(this.autoSaveTimeout as number); // 强制类型转换
       this.autoSaveTimeout = null;
@@ -1520,10 +1523,51 @@ export class HistoryService {
     try {
       await command.execute();
 
-      this.undoStack.push(command);
-      this.redoStack = [];
-      this.currentVersion++;
-      this.performanceMetrics.operationCount++;
+      // 合并策略：仅在当前合并会话内合并到锚点命令
+      if (command.type === 'attribute-change' && command instanceof AttributeChangeCommand) {
+        const last = this.undoStack[this.undoStack.length - 1];
+        if (this.isAttributeCoalescing) {
+          // 会话内：第一次属性变更作为锚点入栈，后续只更新锚点的 newValue
+          if (!this.coalescingAnchorCommandId) {
+            this.undoStack.push(command);
+            this.coalescingAnchorCommandId = command.id;
+            this.redoStack = [];
+            this.currentVersion++;
+            this.performanceMetrics.operationCount++;
+          } else if (
+            last &&
+            last.type === 'attribute-change' &&
+            last instanceof AttributeChangeCommand &&
+            last.id === this.coalescingAnchorCommandId &&
+            last.getTargetId() === command.getTargetId() &&
+            last.getAttributeName() === command.getAttributeName()
+          ) {
+            last.setNewValue(command.getNewValue());
+            this.redoStack = [];
+            this.currentVersion++;
+            this.performanceMetrics.operationCount++;
+          } else {
+            // 锚点不匹配或栈顶不是锚点，作为新的锚点入栈
+            this.undoStack.push(command);
+            this.coalescingAnchorCommandId = command.id;
+            this.redoStack = [];
+            this.currentVersion++;
+            this.performanceMetrics.operationCount++;
+          }
+        } else {
+          // 非会话：每次独立入栈
+          this.undoStack.push(command);
+          this.redoStack = [];
+          this.currentVersion++;
+          this.performanceMetrics.operationCount++;
+        }
+      } else {
+        // 其他命令类型：正常入栈
+        this.undoStack.push(command);
+        this.redoStack = [];
+        this.currentVersion++;
+        this.performanceMetrics.operationCount++;
+      }
 
       // 根据操作频率调整快照间隔
       this.adjustSnapshotInterval();
@@ -1533,7 +1577,9 @@ export class HistoryService {
 
       // 对于频繁操作（如移动、调整大小），使用更长的防抖延迟
       const isFrequentOperation =
-        command.type === 'move-elements' || command.type === 'resize-elements';
+        command.type === 'move-elements' ||
+        command.type === 'resize-elements' ||
+        command.type === 'attribute-change';
       const debounceDelay = isFrequentOperation
         ? this.config.autoSaveDelay * 2 // 频繁操作使用2倍延迟
         : this.config.autoSaveDelay;
@@ -1552,6 +1598,18 @@ export class HistoryService {
       console.error('Failed to execute command:', error);
       throw error;
     }
+  }
+
+  /** 开始属性合并会话（例如滑杆拖动开始） */
+  beginAttributeCoalescing(): void {
+    this.isAttributeCoalescing = true;
+    this.coalescingAnchorCommandId = null;
+  }
+
+  /** 结束属性合并会话（例如滑杆拖动结束） */
+  endAttributeCoalescing(): void {
+    this.isAttributeCoalescing = false;
+    this.coalescingAnchorCommandId = null;
   }
 
   /**
