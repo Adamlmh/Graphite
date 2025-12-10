@@ -46,17 +46,89 @@ export class GeometryService {
    */
   public getElementBoundsWorld(element: IElementProvider): Bounds {
     const size = element.getSize();
+    const type = element.getType();
 
-    // 统一通过四个角点计算 AABB，这样可以正确处理 pivot、scale 和 rotation
-    // 获取元素的局部四个角点
-    const corners = [
-      { x: 0, y: 0 }, // 左上角
-      { x: size.width, y: 0 }, // 右上角
-      { x: size.width, y: size.height }, // 右下角
-      { x: 0, y: size.height }, // 左下角
-    ];
+    // 对于圆形，需要使用数学公式直接计算旋转后的椭圆外接矩形
+    if (type === 'circle') {
+      // 圆形：通过数学计算直接得到旋转后的外接矩形
+      // 圆心在局部坐标系：(width/2, height/2)
+      // 半径：Math.min(width, height) / 2
+      const radius = Math.min(size.width, size.height) / 2;
+      const centerX = size.width / 2;
+      const centerY = size.height / 2;
 
-    // 将四个角点转换为世界坐标
+      // 获取缩放和旋转信息
+      const scale = element.getScale();
+      const rotation = element.getRotation();
+
+      // 计算缩放后的半径（考虑 scaleX 和 scaleY）
+      // 由于圆形可能被缩放成椭圆，我们需要计算椭圆的外接矩形
+      const radiusX = radius * scale.scaleX;
+      const radiusY = radius * scale.scaleY;
+
+      // 如果未旋转，外接矩形就是简单的矩形
+      if (!rotation || rotation === 0) {
+        // 计算圆心在世界坐标系中的位置
+        const centerWorld = this.coordinateTransformer.localToWorld(centerX, centerY, element);
+
+        return {
+          x: centerWorld.x - radiusX,
+          y: centerWorld.y - radiusY,
+          width: radiusX * 2,
+          height: radiusY * 2,
+        };
+      }
+
+      // 如果有旋转，需要计算旋转后的椭圆外接矩形
+      // 椭圆旋转后的外接矩形宽度 = 2 * sqrt((a*cos(θ))² + (b*sin(θ))²)
+      // 其中 a = radiusX, b = radiusY, θ = rotation
+      const rotationRad = (rotation * Math.PI) / 180;
+      const cos = Math.cos(rotationRad);
+      const sin = Math.sin(rotationRad);
+
+      // 计算旋转后椭圆的外接矩形尺寸
+      const halfWidth = Math.sqrt(Math.pow(radiusX * cos, 2) + Math.pow(radiusY * sin, 2));
+      const halfHeight = Math.sqrt(Math.pow(radiusX * sin, 2) + Math.pow(radiusY * cos, 2));
+
+      // 计算圆心在世界坐标系中的位置
+      const centerWorld = this.coordinateTransformer.localToWorld(centerX, centerY, element);
+
+      return {
+        x: centerWorld.x - halfWidth,
+        y: centerWorld.y - halfHeight,
+        width: halfWidth * 2,
+        height: halfHeight * 2,
+      };
+    }
+
+    // 对于三角形和其他元素，使用顶点计算
+    let corners: Array<{ x: number; y: number }>;
+
+    if (type === 'triangle') {
+      // 三角形：使用三个顶点
+      // 三个顶点：(width/2, 0), (0, height), (width, height)
+      corners = [
+        { x: size.width / 2, y: 0 }, // 顶部顶点
+        { x: 0, y: size.height }, // 左下角
+        { x: size.width, y: size.height }, // 右下角
+      ];
+    } else {
+      // 其他元素（矩形、文本、图片等）：使用矩形的四个角点
+      corners = [
+        { x: 0, y: 0 }, // 左上角
+        { x: size.width, y: 0 }, // 右上角
+        { x: size.width, y: size.height }, // 右下角
+        { x: 0, y: size.height }, // 左下角
+      ];
+    }
+
+    // 如果元素提供了自定义顶点（通过 getLocalPoints），优先使用
+    const customPoints = element.getLocalPoints?.();
+    if (Array.isArray(customPoints) && customPoints.length > 0) {
+      corners = customPoints;
+    }
+
+    // 将所有点转换为世界坐标
     const worldCorners = corners.map((corner) =>
       this.coordinateTransformer.localToWorld(corner.x, corner.y, element),
     );

@@ -861,12 +861,10 @@ export class RenderEngine {
     elementId: string,
     withHandles: boolean = true,
   ): void {
-    const pixiBounds = elementGraphics.getBounds() as unknown as PIXI.Rectangle;
-    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
-    const br = this.camera.toLocal(
-      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
-    );
-    const bounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+    // 使用 GeometryService 计算边界框，这样可以正确处理旋转后的圆形和三角形
+    // 而不是使用 PIXI Graphics 的 getBounds()，它只返回轴对齐边界框
+    const provider = new ElementProvider(elementId);
+    const bounds = this.geometryService.getElementBoundsWorld(provider);
 
     this.validateSelectionAlignment(elementId, bounds);
 
@@ -1017,36 +1015,30 @@ export class RenderEngine {
     elementId: string,
     bounds: { x: number; y: number; width: number; height: number },
   ): void {
-    const graphics = this.elementGraphics.get(elementId);
-    if (!graphics) return;
+    // 使用 GeometryService 计算边界框进行验证，确保与绘制选中框时使用的计算方法一致
+    const provider = new ElementProvider(elementId);
+    const calculatedBounds = this.geometryService.getElementBoundsWorld(provider);
 
-    const pixiBounds = graphics.getBounds() as unknown as PIXI.Rectangle;
-    const tl = this.camera.toLocal(new PIXI.Point(pixiBounds.x, pixiBounds.y));
-    const br = this.camera.toLocal(
-      new PIXI.Point(pixiBounds.x + pixiBounds.width, pixiBounds.y + pixiBounds.height),
-    );
-    const worldPixiBounds = { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
-
-    const dx = Math.abs(worldPixiBounds.x - bounds.x);
-    const dy = Math.abs(worldPixiBounds.y - bounds.y);
-    const dw = Math.abs(worldPixiBounds.width - bounds.width);
-    const dh = Math.abs(worldPixiBounds.height - bounds.height);
+    const dx = Math.abs(calculatedBounds.x - bounds.x);
+    const dy = Math.abs(calculatedBounds.y - bounds.y);
+    const dw = Math.abs(calculatedBounds.width - bounds.width);
+    const dh = Math.abs(calculatedBounds.height - bounds.height);
 
     const tolerance = 0.5; // 像素级对齐容差
     const aligned = dx <= tolerance && dy <= tolerance && dw <= tolerance && dh <= tolerance;
 
     if (!aligned) {
-      console.warn('RenderEngine: 选框与渲染不对齐', {
+      console.warn('RenderEngine: 选框与计算边界框不对齐', {
         elementId,
         bounds,
-        worldPixiBounds,
+        calculatedBounds,
         delta: { dx, dy, dw, dh },
       });
     } else {
-      console.log('RenderEngine: 选框与渲染对齐', {
+      console.log('RenderEngine: 选框与计算边界框对齐', {
         elementId,
         bounds,
-        worldPixiBounds,
+        calculatedBounds,
       });
     }
   }
