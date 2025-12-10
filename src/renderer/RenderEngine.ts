@@ -465,8 +465,9 @@ export class RenderEngine {
 
       if (minX !== Infinity) {
         const selectionLayer = this.layerManager.getSelectionLayer();
+        const zoom = this.currentViewport?.zoom ?? 1;
         const box = new PIXI.Graphics();
-        box.lineStyle(2, 0x2563eb, 1);
+        box.lineStyle(3 / zoom, 0x2563eb, 1);
         const dash = 10;
         const gap = 6;
         const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
@@ -504,7 +505,6 @@ export class RenderEngine {
         selectionLayer.addChild(box);
         selectionLayer.addChild(fill);
 
-        const zoom = this.currentViewport?.zoom ?? 1;
         const handleSize = 8;
         const handleColor = 0xffffff;
         const handleBorderColor = 0x2563eb;
@@ -645,7 +645,8 @@ export class RenderEngine {
 
     // 绘制虚线边框（使用转换后的坐标）
     const dashedBox = new PIXI.Graphics();
-    dashedBox.lineStyle(2, 0x007bff, 1);
+    const zoom = this.currentViewport?.zoom ?? 1;
+    dashedBox.lineStyle(3 / zoom, 0x007bff, 1);
     const dash = 8;
     const gap = 6;
     const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
@@ -717,7 +718,6 @@ export class RenderEngine {
 
     // 如果需要显示调整手柄
     if (withHandles) {
-      const zoom = this.currentViewport?.zoom ?? 1;
       const handleSize = 8;
       const handleColor = 0xffffff;
       const handleBorderColor = 0x007bff;
@@ -872,8 +872,9 @@ export class RenderEngine {
 
     const selectionLayer = this.layerManager.getSelectionLayer();
 
+    const zoom = this.currentViewport?.zoom ?? 1;
     const dashedBox = new PIXI.Graphics();
-    dashedBox.lineStyle(2, 0x007bff, 1);
+    dashedBox.lineStyle(3 / zoom, 0x007bff, 1);
     const dash = 8;
     const gap = 6;
     const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
@@ -921,7 +922,6 @@ export class RenderEngine {
     selectionLayer.addChild(highlightBox);
 
     if (withHandles) {
-      const zoom = this.currentViewport?.zoom ?? 1;
       const handleSize = 8;
       const handleColor = 0xffffff;
       const handleBorderColor = 0x007bff;

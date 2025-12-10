@@ -9,8 +9,7 @@ import ElementFactory from './element-factory';
 import type { CanvasState } from '../stores/canvas-store';
 import HistoryWorker from '../workers/history.worker.ts?worker';
 import type { WorkerSaveResponse } from '../workers/history.worker';
-//import {Point} from "../types/index.ts"; // 直接导入接口
-//type CanvasState = ReturnType<typeof useCanvasStore>;
+import { eventBus } from '../lib/eventBus';
 
 /*
 // 协同操作类型定义
@@ -211,11 +210,12 @@ export class HistoryService {
         if (this.config.persistenceEnabled && this.config.autoSaveToDB) {
           const shouldPersist = snapshot.isFullSnapshot || Date.now() - this.lastDBSaveTime > 60000;
           if (shouldPersist) {
+            // 只有在 DB 写入完成后才删除 pendingSnapshotId
             this.saveSnapshotToDB(snapshot)
               .then(() => {
                 this.lastDBSaveTime = Date.now();
-                console.log('保存到持久化存储');
-                // 标记快照已完成处理
+                console.log(`✅ 快照 ${snapshotId} 已保存到持久化存储`);
+                // 标记快照已完成处理（DB 写入完成）
                 this.pendingSnapshotIds.delete(snapshotId);
                 // 检查是否所有快照都已完成
                 this.updateSaveStatus();
@@ -223,26 +223,31 @@ export class HistoryService {
                 this.checkPendingUnloadAction();
               })
               .catch((error) => {
-                console.error('保存到持久化存储失败:', error);
+                console.error(`❌ 快照 ${snapshotId} 保存到持久化存储失败:`, error);
+                this.saveStatus = SaveStatus.ERROR;
+                this.saveError = error as Error;
                 // 即使失败也标记为已完成（避免永久阻塞）
                 this.pendingSnapshotIds.delete(snapshotId);
                 this.updateSaveStatus();
                 this.checkPendingUnloadAction();
               });
           } else {
-            // 即使不持久化，也标记为已完成
+            // 不需要立即持久化到 DB（增量快照且距离上次 DB 保存不到 60 秒）
+            // Worker 处理已完成，数据已在内存中（snapshot.data 已填充）
+            // 可以标记为完成，因为完整快照应该已经保存到 DB
             this.pendingSnapshotIds.delete(snapshotId);
             this.updateSaveStatus();
             this.checkPendingUnloadAction();
           }
         } else {
-          // 如果未启用持久化或自动保存，也标记为已完成
+          // 如果未启用持久化或自动保存，worker 处理完成即可标记为完成
           this.pendingSnapshotIds.delete(snapshotId);
           this.updateSaveStatus();
           this.checkPendingUnloadAction();
         }
       } else {
         // 如果快照不存在，也继续处理
+        console.warn(`⚠️ 快照 ${snapshotId} 不存在，清理 pending 状态`);
         this.pendingSnapshotIds.delete(snapshotId);
         this.updateSaveStatus();
         this.checkPendingUnloadAction();
@@ -267,10 +272,19 @@ export class HistoryService {
         /* 标记就绪 */
         this._isReady = true;
         this._readyResolve(true);
+        // 初始化完成后触发一次状态更新事件
+        // 确保初始状态正确
+        this.saveStatus = SaveStatus.SAVED;
+        this.hasUnsavedChanges = false;
+        this.updateSaveStatus();
       })
       .catch((e) => {
         console.warn('[HistoryService] 未能从持久化存储恢复', e);
-        // 可以在这里给一个“新建空白画布”的默认状态
+        // 可以在这里给一个"新建空白画布"的默认状态
+        // 即使失败也触发状态更新
+        this.saveStatus = SaveStatus.SAVED;
+        this.hasUnsavedChanges = false;
+        this.updateSaveStatus();
       });
   }
   // 自动保存相关
@@ -361,7 +375,6 @@ export class HistoryService {
       request.onsuccess = () => {
         this.db = request.result;
         this.isDBReady = true;
-        console.log('IndexedDB initialized successfully');
         resolve();
       };
 
@@ -378,8 +391,6 @@ export class HistoryService {
         if (!db.objectStoreNames.contains('history')) {
           db.createObjectStore('history', { keyPath: 'id' });
         }
-
-        console.log('IndexedDB schema upgraded to version', this.dbVersion);
       };
     });
   }
@@ -450,7 +461,6 @@ export class HistoryService {
   async loadFromStorage(): Promise<void> {
     // 如果未启用持久化，跳过加载
     if (!this.config.persistenceEnabled) {
-      console.log('持久化已禁用，跳过加载');
       return;
     }
     if (this.config.storageBackend === 'indexeddb' && this.isDBReady) {
@@ -488,7 +498,6 @@ export class HistoryService {
         } else {
           // 修复：直接处理快照，不再调用 restoreFromSnapshots（避免循环）
           if (snapshots.length === 0) {
-            console.log('📊 IndexedDB 中无快照数据');
             this.snapshots = [];
             resolve();
             return;
@@ -936,17 +945,46 @@ export class HistoryService {
    * 当所有待处理的快照都完成后，才设置为 SAVED
    */
   private updateSaveStatus(): void {
+    const previousStatus = this.saveStatus;
+
     // 如果还有待处理的快照，保持 SAVING 状态
     if (this.pendingSnapshotIds.size > 0) {
-      this.saveStatus = SaveStatus.SAVING;
-      return;
+      if (this.saveStatus !== SaveStatus.SAVING) {
+        this.saveStatus = SaveStatus.SAVING;
+      }
+    } else {
+      // 所有快照都已完成，更新状态
+      if (this.saveStatus !== SaveStatus.SAVED) {
+        this.saveStatus = SaveStatus.SAVED;
+        this.saveError = null;
+        // 更新 lastSavedVersion 为当前版本（表示已保存）
+        this.lastSavedVersion = this.currentVersion;
+        // 更新 hasUnsavedChanges（此时应该为 false，因为已保存）
+        this.hasUnsavedChanges = false;
+      }
     }
 
-    // 所有快照都已完成，更新状态
-    this.saveStatus = SaveStatus.SAVED;
-    this.saveError = null;
-    this.lastSavedVersion = this.currentVersion;
-    this.hasUnsavedChanges = false;
+    // 计算实际的 hasUnsavedChanges（基于版本比较和待处理快照）
+    const actualHasUnsavedChanges =
+      this.currentVersion > this.lastSavedVersion || this.pendingSnapshotIds.size > 0;
+
+    // 如果状态发生变化，发出事件通知 UI 更新
+    if (previousStatus !== this.saveStatus) {
+      eventBus.emit('history:save-status-changed', {
+        status: this.saveStatus,
+        error: this.saveError,
+        lastSaveTime: this.lastSaveTime,
+        hasPendingSnapshots: this.pendingSnapshotIds.size > 0,
+        hasUnsavedChanges: actualHasUnsavedChanges,
+      });
+      console.log('📢 发出保存状态变化事件:', {
+        status: this.saveStatus,
+        hasPendingSnapshots: this.pendingSnapshotIds.size > 0,
+        hasUnsavedChanges: actualHasUnsavedChanges,
+        currentVersion: this.currentVersion,
+        lastSavedVersion: this.lastSavedVersion,
+      });
+    }
   }
 
   /**
@@ -1212,7 +1250,7 @@ export class HistoryService {
    * 创建快照
    */
   async createSnapshot(isFullSnapshot: boolean = false): Promise<Snapshot> {
-    console.log('尝试创建快照', {
+    console.log('📸 尝试创建快照', {
       isFullSnapshot,
       currentVersion: this.currentVersion,
       saveStatus: this.saveStatus,
@@ -1230,12 +1268,15 @@ export class HistoryService {
 
       // 如果仍然在保存，抛出错误
       if (this.saveStatus === SaveStatus.SAVING) {
-        console.warn('保存操作超时，跳过本次保存');
+        console.warn('⚠️ 保存操作超时，跳过本次保存');
         throw new Error('Save operation timeout');
       }
     }
 
+    // 立即设置保存状态，确保 UI 能及时更新
     this.saveStatus = SaveStatus.SAVING;
+    // 立即更新状态，触发 UI 更新
+    this.updateSaveStatus();
 
     let snapshot: Snapshot | null = null;
     try {
@@ -1243,7 +1284,7 @@ export class HistoryService {
       const currentState = this.store.getState();
       const elementCount = Object.keys(currentState.elements).length;
 
-      console.log('创建快照时读取的状态:', {
+      console.log('📝 创建快照时读取的状态:', {
         elementCount,
         elementIds: Object.keys(currentState.elements).slice(0, 10), // 只显示前10个
         selectedElementIds: currentState.selectedElementIds,
@@ -1287,7 +1328,7 @@ export class HistoryService {
         return snapshot;
       }
 
-      // 标记快照为待处理状态
+      // 标记快照为待处理状态（在发送到 worker 之前）
       this.pendingSnapshotIds.add(snapshot.id);
 
       // 把耗时操作完全交给 Worker
@@ -1314,6 +1355,7 @@ export class HistoryService {
       this.saveStatus = SaveStatus.ERROR;
       this.saveError = error as Error;
       this.updateSaveStatus(); // 更新状态
+      console.error('❌ 创建快照失败:', error);
       throw error;
     }
   }
@@ -1486,8 +1528,8 @@ export class HistoryService {
       // 根据操作频率调整快照间隔
       this.adjustSnapshotInterval();
 
-      // 标记有未保存的更改
-      this.hasUnsavedChanges = true;
+      // 标记有未保存的更改（基于版本比较）
+      this.hasUnsavedChanges = this.currentVersion > this.lastSavedVersion;
 
       // 对于频繁操作（如移动、调整大小），使用更长的防抖延迟
       const isFrequentOperation =
@@ -1501,6 +1543,11 @@ export class HistoryService {
 
       // 重新调度自动保存（防抖）
       this.scheduleAutoSave(debounceDelay);
+
+      // 如果有未保存的更改，触发状态更新事件
+      if (this.hasUnsavedChanges) {
+        this.updateSaveStatus();
+      }
     } catch (error) {
       console.error('Failed to execute command:', error);
       throw error;
@@ -1529,11 +1576,22 @@ export class HistoryService {
    * 获取保存状态
    */
   getSaveStatus(): { status: SaveStatus; error: Error | null; lastSaveTime: number } {
+    // 确保状态是最新的
+    const hasPending = this.pendingSnapshotIds.size > 0;
+    const actualStatus = hasPending ? SaveStatus.SAVING : this.saveStatus;
+
     return {
-      status: this.saveStatus,
+      status: actualStatus,
       error: this.saveError,
       lastSaveTime: this.lastSaveTime,
     };
+  }
+
+  /**
+   * 获取是否有未保存的更改
+   */
+  getHasUnsavedChanges(): boolean {
+    return this.currentVersion > this.lastSavedVersion || this.pendingSnapshotIds.size > 0;
   }
 
   /**
@@ -1645,14 +1703,23 @@ export class HistoryService {
     if (!this.config.persistenceEnabled) {
       return;
     }
-    // 如果有待处理的快照或未保存的更改，阻止页面关闭
-    if (this.pendingSnapshotIds.size > 0 || this.hasUnsavedChanges) {
+
+    // 检查是否有待处理的快照或正在保存
+    const hasPending = this.pendingSnapshotIds.size > 0;
+    const isSaving = this.saveStatus === SaveStatus.SAVING;
+    const hasUnsaved = this.hasUnsavedChanges;
+
+    // 如果有待处理的快照、正在保存或未保存的更改，阻止页面关闭
+    if ((hasPending || isSaving || hasUnsaved) && this.autoSaveEnabled) {
       // 尝试最后一次保存
-      this.forceSave();
+      this.forceSave().catch((error) => {
+        console.error('强制保存失败:', error);
+      });
 
       // 提示用户有未保存的更改
       event.preventDefault();
       event.returnValue = '正在保存数据，请稍候...';
+      return event.returnValue;
     }
   }
 
