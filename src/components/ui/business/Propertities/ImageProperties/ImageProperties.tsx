@@ -12,6 +12,8 @@ import type { Element, ImageElement } from '../../../../../types/index';
 import styles from './ImageProperties.module.less';
 import { useElementCategory } from '../../../../../hooks/useElementCategory';
 import { useCanvasStore } from '../../../../../stores/canvas-store';
+import { historyService } from '../../../../../services/instances';
+import { AttributeChangeCommand } from '../../../../../services/command/HistoryCommand';
 
 type ImagePropertiesProps = {
   element?: Element;
@@ -58,6 +60,7 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
 
   // 获取 canvas store 的更新函数
   const updateElement = useCanvasStore((state) => state.updateElement);
+  const isCoalescingRef = React.useRef(false);
 
   // 获取图片调整参数的公共值
   const commonAdjustments = useMemo(() => {
@@ -107,20 +110,31 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
   }
 
   // 更新单个调整参数
-  const updateAdjustment = (key: string, newValue: number) => {
+  const updateAdjustment = async (key: string, newValue: number) => {
+    if (!isCoalescingRef.current) {
+      historyService.beginAttributeCoalescing();
+      isCoalescingRef.current = true;
+    }
     const newAdjustments = {
       ...imageAdjustments,
       [key]: newValue,
     };
     setImageAdjustments(newAdjustments);
 
-    // 使用 canvas store 更新元素的 adjustments 属性
-    imageElements.forEach((element) => {
-      updateElement(element.id, { adjustments: newAdjustments as ImageElement['adjustments'] });
-    });
+    // 使用历史服务记录并更新元素的 adjustments 属性
+    for (const element of imageElements) {
+      const cmd = new AttributeChangeCommand(
+        element.id,
+        'adjustments',
+        element.adjustments ?? {},
+        newAdjustments as ImageElement['adjustments'],
+        { updateElement },
+      );
+      await historyService.executeCommand(cmd);
+    }
   };
 
-  const handleFilterSelect = (type?: FilterType) => {
+  const handleFilterSelect = async (type?: FilterType) => {
     let newAdjustments: Record<string, number>;
 
     if (type === 'default') {
@@ -144,10 +158,17 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
 
     setImageAdjustments(newAdjustments);
 
-    // 直接使用 canvas store 更新元素的 adjustments 属性
-    imageElements.forEach((element) => {
-      updateElement(element.id, { adjustments: newAdjustments as ImageElement['adjustments'] });
-    });
+    // 使用历史服务记录并更新元素的 adjustments 属性
+    for (const element of imageElements) {
+      const cmd = new AttributeChangeCommand(
+        element.id,
+        'adjustments',
+        element.adjustments ?? {},
+        newAdjustments as ImageElement['adjustments'],
+        { updateElement },
+      );
+      await historyService.executeCommand(cmd);
+    }
   };
 
   // 从本地状态读取当前值
@@ -183,6 +204,10 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
         max={200}
         value={brightnessValue}
         onChange={(value) => updateAdjustment('brightness', value)}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -197,6 +222,10 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
         max={200}
         value={contrastValue}
         onChange={(value) => updateAdjustment('contrast', value)}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -211,6 +240,10 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
         max={200}
         value={saturationValue}
         onChange={(value) => updateAdjustment('saturation', value)}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -225,6 +258,10 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
         max={180}
         value={hueValue}
         onChange={(value) => updateAdjustment('hue', value)}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -239,6 +276,10 @@ const ImagePropertiesInner: React.FC<ImagePropertiesProps> = ({ element, element
         max={20}
         value={blurValue}
         onChange={(value) => updateAdjustment('blur', value)}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />

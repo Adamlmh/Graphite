@@ -4,6 +4,8 @@ import { BgColorsOutlined, BorderOutlined, RadiusSettingOutlined } from '@ant-de
 import type { Element, RectElement } from '../../../../../types/index';
 import { useElementCategory } from '../../../../../hooks/useElementCategory';
 import { useCanvasStore } from '../../../../../stores/canvas-store';
+import { historyService } from '../../../../../services/instances';
+import { AttributeChangeCommand } from '../../../../../services/command/HistoryCommand';
 import styles from './ShapeProperties.module.less';
 
 type ShapePropertiesProps = {
@@ -36,6 +38,7 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
 
   // 获取 canvas store 的更新函数
   const updateElement = useCanvasStore((state) => state.updateElement);
+  const isCoalescingRef = React.useRef(false);
 
   // 判断是否所有元素都是矩形类型（用于显示圆角控制）
   const isAllRectangles = useMemo(() => {
@@ -123,7 +126,11 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
   }
 
   // 应用样式补丁到所有元素
-  const updateStyle = (patch: Partial<Element['style']>) => {
+  const updateStyle = async (patch: Partial<Element['style']>) => {
+    if (!isCoalescingRef.current) {
+      historyService.beginAttributeCoalescing();
+      isCoalescingRef.current = true;
+    }
     setShapeStyle((prev) => {
       const base = prev ?? commonStyle ?? {};
       return { ...base, ...patch };
@@ -131,17 +138,15 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
 
     console.log('[ShapeProperties] Applying patch:', patch);
 
-    // 批量更新所有元素
-    effectiveElements.forEach((el) => {
-      const updates: Partial<Element> = {
-        style: {
-          ...el.style,
-          ...patch,
-        },
-      };
-
-      updateElement(el.id, updates);
-    });
+    // 批量记录到历史并更新所有元素
+    for (const el of effectiveElements) {
+      const newStyle = {
+        ...el.style,
+        ...patch,
+      } as Element['style'];
+      const cmd = new AttributeChangeCommand(el.id, 'style', el.style, newStyle, { updateElement });
+      await historyService.executeCommand(cmd);
+    }
   };
 
   const currentStyle = {
@@ -164,6 +169,10 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
         step={1}
         value={sliderStrokeWidth}
         onChange={(width) => updateStyle({ strokeWidth: width })}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -181,6 +190,10 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
         <ColorPicker
           value={currentStyle.fill}
           onChange={(_, hex) => updateStyle({ fill: hex })}
+          onChangeComplete={() => {
+            historyService.endAttributeCoalescing();
+            isCoalescingRef.current = false;
+          }}
           className={styles.colorPicker}
         >
           <Button
@@ -212,6 +225,10 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
         <ColorPicker
           value={currentStyle.stroke}
           onChange={(_, hex) => updateStyle({ stroke: hex })}
+          onChangeComplete={() => {
+            historyService.endAttributeCoalescing();
+            isCoalescingRef.current = false;
+          }}
           className={styles.colorPicker}
         >
           <Button
@@ -238,6 +255,10 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
               step={1}
               value={sliderBorderRadius}
               onChange={(radius) => updateStyle({ borderRadius: radius })}
+              onAfterChange={() => {
+                historyService.endAttributeCoalescing();
+                isCoalescingRef.current = false;
+              }}
               className={styles.inlineSlider}
               tooltip={{ open: false }}
             />

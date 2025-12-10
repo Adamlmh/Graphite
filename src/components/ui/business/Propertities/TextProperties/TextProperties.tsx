@@ -13,6 +13,8 @@ import type { Element } from '../../../../../types/index';
 import styles from './TextProperties.module.less';
 import { useElementCategory } from '../../../../../hooks/useElementCategory';
 import { useCanvasStore } from '../../../../../stores/canvas-store';
+import { historyService } from '../../../../../services/instances';
+import { AttributeChangeCommand } from '../../../../../services/command/HistoryCommand';
 import { cleanupRichTextSpans } from '../../../../../utils/tiptapConverter';
 
 // 这里用 props 接收Zustand的 selectedElements
@@ -107,6 +109,7 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
   // 使用Zustand进行状态管理
   const store = useCanvasStore();
   const [textPatch, setTextPatch] = useState<TextStylePatch>({});
+  const isCoalescingRef = React.useRef(false);
 
   // 重置补丁状态当元素改变时
   const textElementIds = React.useMemo(
@@ -126,7 +129,7 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
   }
 
   // 应用补丁到所有文本元素
-  const applyPatch = (patch: TextStylePatch) => {
+  const applyPatch = async (patch: TextStylePatch) => {
     setTextPatch((prev) => ({ ...prev, ...patch }));
 
     if (!textElements.length) {
@@ -135,8 +138,8 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
 
     console.log('[TextProperties] Applying patch:', patch);
 
-    // 批量更新所有文本元素
-    textElements.forEach((el) => {
+    // 批量记录到历史并更新所有文本元素
+    for (const el of textElements) {
       const updates: Partial<TextElementType> = {};
 
       // 更新 textStyle
@@ -195,10 +198,36 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         };
       }
 
-      if (Object.keys(updates).length > 0) {
-        store.updateElement(el.id, updates);
+      // 将每个属性更新记录到历史服务
+      if (updates.textStyle) {
+        const cmd = new AttributeChangeCommand(
+          el.id,
+          'textStyle',
+          el.textStyle ?? {},
+          updates.textStyle,
+          { updateElement: store.updateElement },
+        );
+        await historyService.executeCommand(cmd);
       }
-    });
+
+      if (updates.richText !== undefined) {
+        const cmd = new AttributeChangeCommand(
+          el.id,
+          'richText',
+          el.richText ?? [],
+          updates.richText,
+          { updateElement: store.updateElement },
+        );
+        await historyService.executeCommand(cmd);
+      }
+
+      if (updates.style) {
+        const cmd = new AttributeChangeCommand(el.id, 'style', el.style ?? {}, updates.style, {
+          updateElement: store.updateElement,
+        });
+        await historyService.executeCommand(cmd);
+      }
+    }
   };
 
   // 获取当前样式值（从第一个元素或补丁中获取）
@@ -244,7 +273,17 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
         min={10}
         max={72}
         value={fontSize}
-        onChange={(size) => updateTextStyle({ fontSize: size })}
+        onChange={(size) => {
+          if (!isCoalescingRef.current) {
+            historyService.beginAttributeCoalescing();
+            isCoalescingRef.current = true;
+          }
+          updateTextStyle({ fontSize: size });
+        }}
+        onAfterChange={() => {
+          historyService.endAttributeCoalescing();
+          isCoalescingRef.current = false;
+        }}
         className={styles.popoverSlider}
         tooltip={{ open: false }}
       />
@@ -283,7 +322,17 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
       <Tooltip title="文本颜色">
         <ColorPicker
           value={color}
-          onChange={(_, hex) => updateTextStyle({ color: hex })}
+          onChange={(_, hex) => {
+            if (!isCoalescingRef.current) {
+              historyService.beginAttributeCoalescing();
+              isCoalescingRef.current = true;
+            }
+            updateTextStyle({ color: hex });
+          }}
+          onChangeComplete={() => {
+            historyService.endAttributeCoalescing();
+            isCoalescingRef.current = false;
+          }}
           className={styles.colorPicker}
         >
           <Button
@@ -300,7 +349,17 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
       <Tooltip title="背景色">
         <ColorPicker
           value={backgroundColor}
-          onChange={(_, hex) => updateTextStyle({ backgroundColor: hex })}
+          onChange={(_, hex) => {
+            if (!isCoalescingRef.current) {
+              historyService.beginAttributeCoalescing();
+              isCoalescingRef.current = true;
+            }
+            updateTextStyle({ backgroundColor: hex });
+          }}
+          onChangeComplete={() => {
+            historyService.endAttributeCoalescing();
+            isCoalescingRef.current = false;
+          }}
           className={styles.colorPicker}
         >
           <Button

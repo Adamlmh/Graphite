@@ -927,7 +927,7 @@ export class AttributeChangeCommand implements Command {
   timestamp: number;
 
   private targetId: string;
-  private attributeName: keyof Element;
+  private attributeName: string;
   private oldValue: unknown;
   private newValue: unknown;
 
@@ -937,7 +937,7 @@ export class AttributeChangeCommand implements Command {
 
   constructor(
     targetId: string,
-    attributeName: keyof Element,
+    attributeName: string,
     oldValue: unknown,
     newValue: unknown,
     canvasStore: {
@@ -980,5 +980,22 @@ export class AttributeChangeCommand implements Command {
       targetId: this.targetId,
       attributeName: this.attributeName as string,
     });
+  }
+
+  // === 提供合并支持的辅助方法 ===
+  getTargetId(): string {
+    return this.targetId;
+  }
+
+  getAttributeName(): string {
+    return this.attributeName;
+  }
+
+  getNewValue(): unknown {
+    return this.newValue;
+  }
+
+  setNewValue(value: unknown): void {
+    this.newValue = JSON.parse(JSON.stringify(value));
   }
 }

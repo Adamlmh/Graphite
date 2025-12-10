@@ -10,8 +10,7 @@ import type { CanvasState } from '../stores/canvas-store';
 import HistoryWorker from '../workers/history.worker.ts?worker';
 import type { WorkerSaveResponse } from '../workers/history.worker';
 import { eventBus } from '../lib/eventBus';
-//import {Point} from "../types/index.ts"; // 直接导入接口
-//type CanvasState = ReturnType<typeof useCanvasStore>;
+import { AttributeChangeCommand } from './command/HistoryCommand';
 
 /*
 // 协同操作类型定义
@@ -135,8 +134,26 @@ export class HistoryService {
   private redoStack: Command[] = [];
   private snapshots: Snapshot[] = [];
   private currentVersion: number = 0;
-  //private unsubscribe: (() => void) | null = null;
-  //private store: typeof useCanvasStore; // 直接使用 store 类型
+  private isAttributeCoalescing = false;
+  private coalescingAnchorCommandId: string | null = null;
+
+  // 在类中添加新的属性和方法
+  private pendingUnloadAction: {
+    type: 'refresh' | 'close';
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null = null;
+  private isProcessingUnload = false;
+
+  /* ====== 新增 ====== */
+  private _readyResolve!: (v: boolean) => void;
+  private _readyReject!: (e: unknown) => void;
+  public readonly ready: Promise<boolean>; // 对外等待
+  private _isReady = false; // 同步只读
+  public get isReady() {
+    return this._isReady;
+  }
+
   private store: {
     getState: () => CanvasState;
     setState: (
@@ -145,6 +162,8 @@ export class HistoryService {
   };
   private worker = new HistoryWorker();
   private pendingSnapshotIds = new Set<string>(); // 跟踪正在 Worker 中处理的快照 ID
+  // 当前正在 worker 里处理的快照，用于在发送新任务前清理旧的 pending
+  private currentWorkerSnapshotId: string | null = null;
 
   constructor(store: {
     getState: () => CanvasState;
@@ -153,11 +172,25 @@ export class HistoryService {
     ) => void;
   }) {
     this.store = store;
+
+    /* 1. 创建 ready Promise */
+    this.ready = new Promise<boolean>((res, rej) => {
+      this._readyResolve = res;
+      this._readyReject = rej;
+    });
+
+    /* 2. 原有初始化逻辑包一层 async/await */
+    this._init().catch(this._readyReject);
+  }
+
+  private async _init(): Promise<void> {
     // 加载持久化偏好设置
     this.config.persistenceEnabled = this.loadPersistencePreference();
     // 初始化时先禁用自动保存
     this.autoSaveEnabled = false;
-    this.setupPageUnloadListener();
+    //this.setupPageUnloadListener();
+    // 修改点：增强页面卸载监听
+    this.setupEnhancedPageUnloadListener();
     this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
 
@@ -167,9 +200,13 @@ export class HistoryService {
 
       // 将 worker 的结果写入快照记录
       const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+      if (this.currentWorkerSnapshotId === snapshotId) {
+        this.currentWorkerSnapshotId = null;
+      }
       if (snapshot) {
         snapshot.data = compressed;
         snapshot.metadata = {
+          ...snapshot.metadata, // ← 修改点：保留原有metadata
           elementCount: snapshot.metadata?.elementCount || 0,
           memoryUsage: snapshot.metadata?.memoryUsage || 0,
           compressedSize: compressed.length,
@@ -185,11 +222,14 @@ export class HistoryService {
             this.saveSnapshotToDB(snapshot)
               .then(() => {
                 this.lastDBSaveTime = Date.now();
+                this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot.version);
                 console.log(`✅ 快照 ${snapshotId} 已保存到持久化存储`);
                 // 标记快照已完成处理（DB 写入完成）
                 this.pendingSnapshotIds.delete(snapshotId);
                 // 检查是否所有快照都已完成
                 this.updateSaveStatus();
+                // 如果有待处理的卸载操作，通知完成
+                this.checkPendingUnloadAction();
               })
               .catch((error) => {
                 console.error(`❌ 快照 ${snapshotId} 保存到持久化存储失败:`, error);
@@ -198,6 +238,7 @@ export class HistoryService {
                 // 即使失败也标记为已完成（避免永久阻塞）
                 this.pendingSnapshotIds.delete(snapshotId);
                 this.updateSaveStatus();
+                this.checkPendingUnloadAction();
               });
           } else {
             // 不需要立即持久化到 DB（增量快照且距离上次 DB 保存不到 60 秒）
@@ -205,17 +246,22 @@ export class HistoryService {
             // 可以标记为完成，因为完整快照应该已经保存到 DB
             this.pendingSnapshotIds.delete(snapshotId);
             this.updateSaveStatus();
+            this.checkPendingUnloadAction();
           }
         } else {
           // 如果未启用持久化或自动保存，worker 处理完成即可标记为完成
+          // 持久化关闭时视为“已保存”（由用户选择关闭）
+          this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot?.version ?? 0);
           this.pendingSnapshotIds.delete(snapshotId);
           this.updateSaveStatus();
+          this.checkPendingUnloadAction();
         }
       } else {
         // 如果快照不存在，也继续处理
         console.warn(`⚠️ 快照 ${snapshotId} 不存在，清理 pending 状态`);
         this.pendingSnapshotIds.delete(snapshotId);
         this.updateSaveStatus();
+        this.checkPendingUnloadAction();
       }
     };
     // 初始化 IndexedDB
@@ -234,10 +280,15 @@ export class HistoryService {
       .then(() => {
         this.autoSaveEnabled = true; // 恢复完成后再启用
         this.setupAutoSave();
+        /* 标记就绪 */
+        this._isReady = true;
+        this._readyResolve(true);
         // 初始化完成后触发一次状态更新事件
         // 确保初始状态正确
         this.saveStatus = SaveStatus.SAVED;
         this.hasUnsavedChanges = false;
+        this.lastSavedVersion = this.currentVersion;
+        this.lastDBSaveTime = Date.now();
         this.updateSaveStatus();
       })
       .catch((e) => {
@@ -246,6 +297,7 @@ export class HistoryService {
         // 即使失败也触发状态更新
         this.saveStatus = SaveStatus.SAVED;
         this.hasUnsavedChanges = false;
+        this.lastSavedVersion = this.currentVersion;
         this.updateSaveStatus();
       });
   }
@@ -254,7 +306,8 @@ export class HistoryService {
   private lastSaveTime: number = 0;
   private saveStatus: SaveStatus = SaveStatus.IDLE;
   private saveError: Error | null = null;
-  private lastSavedVersion: number = 0; //待确认
+  // 记录已落盘（或用户关闭持久化时视为已接受）的版本
+  private lastSavedVersion: number = 0;
   private hasUnsavedChanges: boolean = false;
   private autoSaveEnabled: boolean = true;
   private lastDBSaveTime: number = 0;
@@ -276,7 +329,7 @@ export class HistoryService {
 
   // 配置
   private config = {
-    autoSaveDelay: 1000, // 1秒防抖
+    autoSaveDelay: 500, // 0.5s防抖
     maxSnapshots: 100,
     maxUndoSteps: 50,
     fullSnapshotInterval: 10, // 每10个操作创建一个完整快照
@@ -473,6 +526,7 @@ export class HistoryService {
 
           // 保留最新的快照
           this.snapshots = snapshots.slice(lastFullSnapshotIndex);
+          console.log('📦 从 IndexedDB 加载的快照数量:', this.snapshots.length);
           resolve();
         }
       };
@@ -511,13 +565,17 @@ export class HistoryService {
   async saveToStorage(): Promise<void> {
     // 如果未启用持久化，跳过保存
     if (!this.config.persistenceEnabled) {
+      console.log('持久化已禁用，跳过保存');
       return;
     }
     const snapshot = await this.createSnapshot(true); // 创建完整快照
     if (this.config.storageBackend === 'indexeddb') {
       await this.saveSnapshotToDB(snapshot);
+      this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot.version);
+      this.lastDBSaveTime = Date.now();
     } else {
       await this.saveSnapshotToLocalStorage(snapshot);
+      this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot.version);
     }
   }
 
@@ -563,6 +621,7 @@ export class HistoryService {
    */
   private async restoreFromSnapshots(snapshots: Snapshot[]): Promise<void> {
     if (snapshots.length === 0) {
+      console.log('restoreFromSnapshots: 传入快照为空');
       return;
     }
 
@@ -581,6 +640,7 @@ export class HistoryService {
     const lastFullSnapshotIndex = Math.max(snapshots.length - this.config.maxSnapshots, 0);
 
     this.snapshots = snapshots.slice(lastFullSnapshotIndex);
+    console.log('📦 最终保留的快照数量:', this.snapshots.length);
   }
 
   /**
@@ -600,12 +660,217 @@ export class HistoryService {
    */
   private setupPageUnloadListener(): void {
     window.addEventListener('beforeunload', (event) => {
-      if (this.saveStatus === SaveStatus.SAVING) {
+      if (this.saveStatus === SaveStatus.SAVING || this.pendingSnapshotIds.size > 0) {
+        // ← 修改点：增加pending检查
         event.preventDefault();
-        event.returnValue = '正在保存数据，请稍候...';
-        this.forceSave().catch(console.error);
+        this.forceSave();
       }
     });
+  }
+
+  /**
+   * 设置增强的页面卸载监听（捕获所有刷新和关闭操作）
+   */
+  private setupEnhancedPageUnloadListener(): void {
+    // 监听 beforeunload 事件（页面关闭/刷新）
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
+
+    // 监听页面可见性变化（切换到其他标签页也会触发）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        this.handlePageHide();
+      }
+    });
+
+    // 监听页面卸载（fallback）
+    window.addEventListener('unload', () => {
+      this.handlePageUnload();
+    });
+
+    // 监听键盘快捷键 - 修改为异步处理
+    document.addEventListener('keydown', (event) => {
+      this.handleKeyShortcuts(event);
+    });
+  }
+
+  /**
+   * 处理键盘快捷键
+   */
+  private handleKeyShortcuts(event: KeyboardEvent): void {
+    // Ctrl+R 或 Cmd+R（刷新）
+    if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+      event.preventDefault(); // 阻止默认刷新行为
+      this.handleForceSaveAndRefresh();
+      return;
+    }
+
+    // Ctrl+W 或 Cmd+W（关闭标签页）
+    if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
+      event.preventDefault(); // 阻止默认关闭行为
+      this.handleForceSaveAndClose();
+      return;
+    }
+
+    // F5 刷新
+    if (event.key === 'F5') {
+      event.preventDefault();
+      this.handleForceSaveAndRefresh();
+      return;
+    }
+  }
+
+  /**
+   * 处理强制保存并刷新
+   */
+  private async handleForceSaveAndRefresh(): Promise<void> {
+    if (this.isProcessingUnload) {
+      console.log('已有卸载操作在处理中，跳过重复操作');
+      return;
+    }
+
+    this.isProcessingUnload = true;
+
+    try {
+      console.log('检测到刷新操作，正在保存数据...');
+
+      // 创建等待保存完成的Promise
+      await this.forceSave();
+
+      console.log('数据保存完成，执行刷新');
+      window.location.reload();
+    } catch (error) {
+      console.error('保存数据失败，但仍继续刷新:', error);
+      window.location.reload();
+    } finally {
+      this.isProcessingUnload = false;
+    }
+  }
+
+  /**
+   * 处理强制保存并关闭
+   */
+  private async handleForceSaveAndClose(): Promise<void> {
+    if (this.isProcessingUnload) {
+      console.log('已有卸载操作在处理中，跳过重复操作');
+      return;
+    }
+
+    this.isProcessingUnload = true;
+
+    try {
+      console.log('检测到关闭操作，正在保存数据...');
+
+      // 等待所有保存完成
+      await this.forceSave();
+
+      console.log('数据保存完成，可以安全关闭');
+      // 由于浏览器限制，无法直接关闭窗口，但可以确保数据已保存
+    } catch (error) {
+      console.error('保存数据失败:', error);
+      // 仍然允许关闭
+    } finally {
+      this.isProcessingUnload = false;
+    }
+  }
+
+  /**
+   * 等待所有待处理的保存操作完成
+   */
+  private async waitForAllSaves(timeout: number = 10000): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const startTime = Date.now();
+      const timeoutId = setTimeout(() => {
+        reject(new Error(`等待保存操作超时（${timeout}ms）`));
+      }, timeout);
+
+      const checkPendingSaves = () => {
+        const pendingCount = this.pendingSnapshotIds.size;
+        const isSaving = this.saveStatus === SaveStatus.SAVING;
+
+        console.log(`检查保存状态: 待处理快照=${pendingCount}, 保存状态=${this.saveStatus}`);
+
+        if (pendingCount === 0 && !isSaving) {
+          clearTimeout(timeoutId);
+          resolve();
+          return;
+        }
+
+        // 检查是否超时
+        if (Date.now() - startTime > timeout) {
+          clearTimeout(timeoutId);
+          reject(new Error(`等待保存操作超时（${timeout}ms）`));
+          return;
+        }
+
+        // 继续检查
+        setTimeout(checkPendingSaves, 100);
+      };
+
+      // 立即开始检查
+      checkPendingSaves();
+    });
+  }
+
+  /**
+   * 处理页面隐藏（切换到其他标签页）
+   */
+  private async handlePageHide(): Promise<void> {
+    if (
+      (this.hasUnsavedChanges ||
+        this.pendingSnapshotIds.size > 0 ||
+        this.saveStatus === SaveStatus.SAVING) &&
+      !this.isProcessingUnload
+    ) {
+      try {
+        await this.waitForAllSaves(5000); // 切换到其他标签页时等待5秒
+      } catch (error) {
+        console.warn('页面隐藏时等待保存超时:', error);
+      }
+    }
+  }
+
+  /**
+   * 处理页面卸载（最终fallback）
+   */
+  private handlePageUnload(): void {
+    // 同步保存（如果可能）
+    if (this.hasUnsavedChanges) {
+      try {
+        // 尝试同步保存（有限操作）
+        this.syncSaveIfPossible();
+      } catch (error) {
+        console.error('页面卸载时同步保存失败:', error);
+      }
+    }
+  }
+
+  /**
+   * 同步保存（用于页面卸载时的最后尝试）
+   */
+  private syncSaveIfPossible(): void {
+    if (!navigator.sendBeacon) return;
+
+    try {
+      const state = this.store.getState();
+      const persistableState = this.generatePersistableState(state);
+      const data = JSON.stringify(persistableState);
+
+      // 使用 sendBeacon 进行同步保存（不会阻塞页面卸载）
+      const blob = new Blob([data], { type: 'application/json' });
+      navigator.sendBeacon('/api/autosave', blob);
+    } catch (error) {
+      console.error('sendBeacon 保存失败:', error);
+    }
+  }
+
+  /**
+   * 检查是否有待处理的卸载操作
+   */
+  private checkPendingUnloadAction(): void {
+    // 当所有保存完成时，如果有待处理的卸载操作，可以在这里处理
+    if (this.pendingSnapshotIds.size === 0 && this.saveStatus === SaveStatus.SAVED) {
+      console.log('所有保存操作已完成，可以安全执行卸载操作');
+    }
   }
 
   //检查是否有意义的变更
@@ -699,26 +964,32 @@ export class HistoryService {
   private updateSaveStatus(): void {
     const previousStatus = this.saveStatus;
 
+    const hasPendingPersistence = this.currentVersion > this.lastSavedVersion;
+    const hasPendingSnapshots = this.pendingSnapshotIds.size > 0;
+
     // 如果还有待处理的快照，保持 SAVING 状态
-    if (this.pendingSnapshotIds.size > 0) {
+    if (hasPendingSnapshots) {
       if (this.saveStatus !== SaveStatus.SAVING) {
         this.saveStatus = SaveStatus.SAVING;
       }
     } else {
-      // 所有快照都已完成，更新状态
-      if (this.saveStatus !== SaveStatus.SAVED) {
-        this.saveStatus = SaveStatus.SAVED;
-        this.saveError = null;
-        // 更新 lastSavedVersion 为当前版本（表示已保存）
-        this.lastSavedVersion = this.currentVersion;
-        // 更新 hasUnsavedChanges（此时应该为 false，因为已保存）
+      // 没有 pending 快照，根据是否已落盘决定状态
+      if (hasPendingPersistence) {
+        if (this.saveStatus !== SaveStatus.IDLE) {
+          this.saveStatus = SaveStatus.IDLE;
+        }
+        this.hasUnsavedChanges = true;
+      } else {
+        if (this.saveStatus !== SaveStatus.SAVED) {
+          this.saveStatus = SaveStatus.SAVED;
+          this.saveError = null;
+        }
         this.hasUnsavedChanges = false;
       }
     }
 
     // 计算实际的 hasUnsavedChanges（基于版本比较和待处理快照）
-    const actualHasUnsavedChanges =
-      this.currentVersion > this.lastSavedVersion || this.pendingSnapshotIds.size > 0;
+    const actualHasUnsavedChanges = hasPendingPersistence || hasPendingSnapshots;
 
     // 如果状态发生变化，发出事件通知 UI 更新
     if (previousStatus !== this.saveStatus) {
@@ -740,7 +1011,7 @@ export class HistoryService {
   }
 
   /**
-   * 强制立即保存
+   * 强制立即保存（带超时保护）
    */
   async forceSave(): Promise<void> {
     if (this.autoSaveTimeout) {
@@ -936,14 +1207,25 @@ export class HistoryService {
   ): Record<string, Element> {
     const elements: Record<string, Element> = {};
 
+    console.log('反序列化元素:', {
+      elementsDataCount: Object.keys(elementsData).length,
+      elementsDataKeys: Object.keys(elementsData),
+    });
+
     Object.entries(elementsData).forEach(([id, elementData]) => {
       try {
         const element = this.deserializeElementFromPersistence(elementData);
         elements[id] = element;
+        console.log(`✅ 成功反序列化元素 ${id}:`, { type: element.type });
       } catch (error) {
         console.error(`❌ 反序列化元素失败 ${id}:`, error, elementData);
         // 跳过损坏的元素，继续恢复其他元素
       }
+    });
+
+    console.log('反序列化完成:', {
+      successCount: Object.keys(elements).length,
+      successKeys: Object.keys(elements),
     });
 
     return elements;
@@ -1070,7 +1352,17 @@ export class HistoryService {
         return snapshot;
       }
 
+      // 如果有正在处理的 worker 任务，清理其 pending 标记（被新的任务取代）
+      if (
+        this.currentWorkerSnapshotId &&
+        this.pendingSnapshotIds.has(this.currentWorkerSnapshotId)
+      ) {
+        this.pendingSnapshotIds.delete(this.currentWorkerSnapshotId);
+        this.updateSaveStatus();
+      }
+
       // 标记快照为待处理状态（在发送到 worker 之前）
+      this.currentWorkerSnapshotId = snapshot.id;
       this.pendingSnapshotIds.add(snapshot.id);
 
       // 把耗时操作完全交给 Worker
@@ -1147,12 +1439,62 @@ export class HistoryService {
 
     try {
       const stateData = this.deserializeStateFromPersistence(snapshot.data) as Partial<CanvasState>;
+      console.log('恢复历史数据：', stateData);
+
+      // 检查图片元素的 src 格式
+      if (stateData.elements) {
+        Object.values(stateData.elements).forEach((element) => {
+          if (element.type === 'image') {
+            const imageElement = element as import('../types/index').ImageElement;
+            const src = imageElement.src;
+            console.log('📷 恢复的图片元素:', {
+              id: element.id,
+              srcType:
+                typeof src === 'string'
+                  ? src.startsWith('blob:')
+                    ? 'Blob URL'
+                    : src.startsWith('data:')
+                      ? 'DataURL'
+                      : 'Other'
+                  : 'Unknown',
+              srcPreview: typeof src === 'string' ? src.substring(0, 100) : src,
+            });
+          }
+        });
+      }
+
+      const currentState = this.store.getState();
+      console.log('📝 恢复前的状态:', {
+        elementsCount: Object.keys(currentState.elements || {}).length,
+        currentVersion: this.currentVersion,
+      });
 
       this.currentVersion = snapshot.version;
+
+      // 确保使用新的对象引用，触发订阅
+      const prevStateBeforeRestore = this.store.getState();
+      console.log('恢复前状态:', {
+        elementsCount: Object.keys(prevStateBeforeRestore.elements || {}).length,
+        elementsRef: prevStateBeforeRestore.elements,
+      });
+
+      // 检查恢复的数据
+      console.log('恢复的数据 stateData:', {
+        hasElements: !!stateData.elements,
+        elementsCount: stateData.elements ? Object.keys(stateData.elements).length : 0,
+        elementsKeys: stateData.elements ? Object.keys(stateData.elements) : [],
+        stateDataKeys: Object.keys(stateData),
+      });
 
       // 使用函数式更新，确保创建新的对象引用
       this.store.setState((prevState: CanvasState) => {
         const newElements = stateData.elements ? { ...stateData.elements } : prevState.elements;
+        console.log('setState 回调中:', {
+          prevElementsCount: Object.keys(prevState.elements || {}).length,
+          stateDataElementsCount: stateData.elements ? Object.keys(stateData.elements).length : 0,
+          newElementsCount: Object.keys(newElements || {}).length,
+          newElementsKeys: Object.keys(newElements || {}),
+        });
 
         return {
           ...prevState,
@@ -1161,6 +1503,17 @@ export class HistoryService {
           elements: newElements,
         };
       });
+
+      // 延迟检查新状态
+      setTimeout(() => {
+        const newState = this.store.getState();
+        console.log('✅ 延迟检查新状态:', {
+          elementsCount: Object.keys(newState.elements || {}).length,
+          newVersion: snapshot.version,
+          stateKeys: Object.keys(newState),
+          elementsRef: newState.elements,
+        });
+      }, 100);
     } catch (error) {
       console.error('恢复快照失败:', error);
       // 不再尝试从备份恢复（避免进一步循环）
@@ -1184,6 +1537,7 @@ export class HistoryService {
         this.store.setState((prevState: CanvasState) => {
           return Object.assign({} as CanvasState, prevState, stateData as Partial<CanvasState>);
         });
+        console.log('Recovery successful from snapshot:', snapshot.id);
         return;
       } catch (recoveryError) {
         console.warn('Recovery attempt failed:', recoveryError);
@@ -1200,10 +1554,51 @@ export class HistoryService {
     try {
       await command.execute();
 
-      this.undoStack.push(command);
-      this.redoStack = [];
-      this.currentVersion++;
-      this.performanceMetrics.operationCount++;
+      // 合并策略：仅在当前合并会话内合并到锚点命令
+      if (command.type === 'attribute-change' && command instanceof AttributeChangeCommand) {
+        const last = this.undoStack[this.undoStack.length - 1];
+        if (this.isAttributeCoalescing) {
+          // 会话内：第一次属性变更作为锚点入栈，后续只更新锚点的 newValue
+          if (!this.coalescingAnchorCommandId) {
+            this.undoStack.push(command);
+            this.coalescingAnchorCommandId = command.id;
+            this.redoStack = [];
+            this.currentVersion++;
+            this.performanceMetrics.operationCount++;
+          } else if (
+            last &&
+            last.type === 'attribute-change' &&
+            last instanceof AttributeChangeCommand &&
+            last.id === this.coalescingAnchorCommandId &&
+            last.getTargetId() === command.getTargetId() &&
+            last.getAttributeName() === command.getAttributeName()
+          ) {
+            last.setNewValue(command.getNewValue());
+            this.redoStack = [];
+            this.currentVersion++;
+            this.performanceMetrics.operationCount++;
+          } else {
+            // 锚点不匹配或栈顶不是锚点，作为新的锚点入栈
+            this.undoStack.push(command);
+            this.coalescingAnchorCommandId = command.id;
+            this.redoStack = [];
+            this.currentVersion++;
+            this.performanceMetrics.operationCount++;
+          }
+        } else {
+          // 非会话：每次独立入栈
+          this.undoStack.push(command);
+          this.redoStack = [];
+          this.currentVersion++;
+          this.performanceMetrics.operationCount++;
+        }
+      } else {
+        // 其他命令类型：正常入栈
+        this.undoStack.push(command);
+        this.redoStack = [];
+        this.currentVersion++;
+        this.performanceMetrics.operationCount++;
+      }
 
       // 根据操作频率调整快照间隔
       this.adjustSnapshotInterval();
@@ -1213,7 +1608,9 @@ export class HistoryService {
 
       // 对于频繁操作（如移动、调整大小），使用更长的防抖延迟
       const isFrequentOperation =
-        command.type === 'move-elements' || command.type === 'resize-elements';
+        command.type === 'move-elements' ||
+        command.type === 'resize-elements' ||
+        command.type === 'attribute-change';
       const debounceDelay = isFrequentOperation
         ? this.config.autoSaveDelay * 2 // 频繁操作使用2倍延迟
         : this.config.autoSaveDelay;
@@ -1232,6 +1629,18 @@ export class HistoryService {
       console.error('Failed to execute command:', error);
       throw error;
     }
+  }
+
+  /** 开始属性合并会话（例如滑杆拖动开始） */
+  beginAttributeCoalescing(): void {
+    this.isAttributeCoalescing = true;
+    this.coalescingAnchorCommandId = null;
+  }
+
+  /** 结束属性合并会话（例如滑杆拖动结束） */
+  endAttributeCoalescing(): void {
+    this.isAttributeCoalescing = false;
+    this.coalescingAnchorCommandId = null;
   }
 
   /**
@@ -1361,6 +1770,13 @@ export class HistoryService {
       // 重置保存状态
       this.lastSavedVersion = this.currentVersion;
       this.hasUnsavedChanges = false;
+
+      console.log('History imported successfully:', {
+        snapshots: this.snapshots.length,
+        currentVersion: this.currentVersion,
+      });
+      // 读取 / 使用 lastSavedVersion，例如打印 /通知 /存储 UI 状态
+      console.log(`[HistoryService] lastSavedVersion set to ${this.lastSavedVersion}`);
     } catch (error) {
       console.error('Failed to import history:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1391,7 +1807,6 @@ export class HistoryService {
 
       // 提示用户有未保存的更改
       event.preventDefault();
-      event.returnValue = '正在保存数据，请稍候...';
       return event.returnValue;
     }
   }
@@ -1565,6 +1980,7 @@ export class HistoryService {
    */
   async undo(): Promise<void> {
     if (this.undoStack.length === 0) {
+      console.log('撤销栈为空，无法执行撤销操作');
       return;
     }
 
@@ -1573,6 +1989,11 @@ export class HistoryService {
       await command.undo();
       this.redoStack.push(command);
       this.currentVersion--;
+      this.hasUnsavedChanges = true;
+
+      // 立即创建快照（不等待防抖）
+      this.cancelPendingAutoSave();
+      await this.createSnapshot(false); // ← 修改点：同步保存
     } catch (error) {
       console.error('Failed to undo command:', error);
       this.undoStack.push(command);
@@ -1585,6 +2006,7 @@ export class HistoryService {
    */
   async redo(): Promise<void> {
     if (this.redoStack.length === 0) {
+      console.log('重做栈为空，无法执行重做操作');
       return;
     }
 
@@ -1623,6 +2045,7 @@ export class HistoryService {
         const transaction = this.db.transaction(['snapshots'], 'readwrite');
         const store = transaction.objectStore('snapshots');
         await store.clear();
+        console.log('IndexedDB storage cleared');
       }
 
       // 清空 localStorage
@@ -1632,6 +2055,7 @@ export class HistoryService {
           localStorage.removeItem(`canvas-snapshot-${item.id}`);
         });
         localStorage.removeItem('canvas-snapshots-index');
+        console.log('localStorage cleared');
       }
 
       // 重置状态
@@ -1640,6 +2064,8 @@ export class HistoryService {
       this.saveError = null;
       this.lastSavedVersion = 0;
       this.hasUnsavedChanges = false;
+
+      console.log('All persistent storage cleared successfully');
     } catch (error) {
       console.error('Failed to clear persistent storage:', error);
       throw error;
@@ -1699,6 +2125,7 @@ export class HistoryService {
   setPersistenceEnabled(enabled: boolean): void {
     this.config.persistenceEnabled = enabled;
     this.savePersistencePreference(enabled);
+    console.log(`持久化已${enabled ? '启用' : '禁用'}`);
   }
 
   /**
