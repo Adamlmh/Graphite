@@ -162,6 +162,8 @@ export class HistoryService {
   };
   private worker = new HistoryWorker();
   private pendingSnapshotIds = new Set<string>(); // 跟踪正在 Worker 中处理的快照 ID
+  // 当前正在 worker 里处理的快照，用于在发送新任务前清理旧的 pending
+  private currentWorkerSnapshotId: string | null = null;
 
   constructor(store: {
     getState: () => CanvasState;
@@ -198,6 +200,9 @@ export class HistoryService {
 
       // 将 worker 的结果写入快照记录
       const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+      if (this.currentWorkerSnapshotId === snapshotId) {
+        this.currentWorkerSnapshotId = null;
+      }
       if (snapshot) {
         snapshot.data = compressed;
         snapshot.metadata = {
@@ -217,6 +222,7 @@ export class HistoryService {
             this.saveSnapshotToDB(snapshot)
               .then(() => {
                 this.lastDBSaveTime = Date.now();
+                this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot.version);
                 console.log(`✅ 快照 ${snapshotId} 已保存到持久化存储`);
                 // 标记快照已完成处理（DB 写入完成）
                 this.pendingSnapshotIds.delete(snapshotId);
@@ -244,6 +250,8 @@ export class HistoryService {
           }
         } else {
           // 如果未启用持久化或自动保存，worker 处理完成即可标记为完成
+          // 持久化关闭时视为“已保存”（由用户选择关闭）
+          this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot?.version ?? 0);
           this.pendingSnapshotIds.delete(snapshotId);
           this.updateSaveStatus();
           this.checkPendingUnloadAction();
@@ -279,6 +287,8 @@ export class HistoryService {
         // 确保初始状态正确
         this.saveStatus = SaveStatus.SAVED;
         this.hasUnsavedChanges = false;
+        this.lastSavedVersion = this.currentVersion;
+        this.lastDBSaveTime = Date.now();
         this.updateSaveStatus();
       })
       .catch((e) => {
@@ -287,6 +297,7 @@ export class HistoryService {
         // 即使失败也触发状态更新
         this.saveStatus = SaveStatus.SAVED;
         this.hasUnsavedChanges = false;
+        this.lastSavedVersion = this.currentVersion;
         this.updateSaveStatus();
       });
   }
@@ -295,7 +306,8 @@ export class HistoryService {
   private lastSaveTime: number = 0;
   private saveStatus: SaveStatus = SaveStatus.IDLE;
   private saveError: Error | null = null;
-  private lastSavedVersion: number = 0; //待确认
+  // 记录已落盘（或用户关闭持久化时视为已接受）的版本
+  private lastSavedVersion: number = 0;
   private hasUnsavedChanges: boolean = false;
   private autoSaveEnabled: boolean = true;
   private lastDBSaveTime: number = 0;
@@ -559,8 +571,11 @@ export class HistoryService {
     const snapshot = await this.createSnapshot(true); // 创建完整快照
     if (this.config.storageBackend === 'indexeddb') {
       await this.saveSnapshotToDB(snapshot);
+      this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot.version);
+      this.lastDBSaveTime = Date.now();
     } else {
       await this.saveSnapshotToLocalStorage(snapshot);
+      this.lastSavedVersion = Math.max(this.lastSavedVersion, snapshot.version);
     }
   }
 
@@ -949,26 +964,32 @@ export class HistoryService {
   private updateSaveStatus(): void {
     const previousStatus = this.saveStatus;
 
+    const hasPendingPersistence = this.currentVersion > this.lastSavedVersion;
+    const hasPendingSnapshots = this.pendingSnapshotIds.size > 0;
+
     // 如果还有待处理的快照，保持 SAVING 状态
-    if (this.pendingSnapshotIds.size > 0) {
+    if (hasPendingSnapshots) {
       if (this.saveStatus !== SaveStatus.SAVING) {
         this.saveStatus = SaveStatus.SAVING;
       }
     } else {
-      // 所有快照都已完成，更新状态
-      if (this.saveStatus !== SaveStatus.SAVED) {
-        this.saveStatus = SaveStatus.SAVED;
-        this.saveError = null;
-        // 更新 lastSavedVersion 为当前版本（表示已保存）
-        this.lastSavedVersion = this.currentVersion;
-        // 更新 hasUnsavedChanges（此时应该为 false，因为已保存）
+      // 没有 pending 快照，根据是否已落盘决定状态
+      if (hasPendingPersistence) {
+        if (this.saveStatus !== SaveStatus.IDLE) {
+          this.saveStatus = SaveStatus.IDLE;
+        }
+        this.hasUnsavedChanges = true;
+      } else {
+        if (this.saveStatus !== SaveStatus.SAVED) {
+          this.saveStatus = SaveStatus.SAVED;
+          this.saveError = null;
+        }
         this.hasUnsavedChanges = false;
       }
     }
 
     // 计算实际的 hasUnsavedChanges（基于版本比较和待处理快照）
-    const actualHasUnsavedChanges =
-      this.currentVersion > this.lastSavedVersion || this.pendingSnapshotIds.size > 0;
+    const actualHasUnsavedChanges = hasPendingPersistence || hasPendingSnapshots;
 
     // 如果状态发生变化，发出事件通知 UI 更新
     if (previousStatus !== this.saveStatus) {
@@ -1331,7 +1352,17 @@ export class HistoryService {
         return snapshot;
       }
 
+      // 如果有正在处理的 worker 任务，清理其 pending 标记（被新的任务取代）
+      if (
+        this.currentWorkerSnapshotId &&
+        this.pendingSnapshotIds.has(this.currentWorkerSnapshotId)
+      ) {
+        this.pendingSnapshotIds.delete(this.currentWorkerSnapshotId);
+        this.updateSaveStatus();
+      }
+
       // 标记快照为待处理状态（在发送到 worker 之前）
+      this.currentWorkerSnapshotId = snapshot.id;
       this.pendingSnapshotIds.add(snapshot.id);
 
       // 把耗时操作完全交给 Worker
