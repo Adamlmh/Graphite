@@ -89,6 +89,374 @@ export class GeometryService {
   }
 
   /**
+   * 获取元素的世界坐标轮廓点
+   * 用于计算 OBB（Oriented Bounding Box）
+   *
+   * @param element 元素提供者
+   * @param elementType 元素类型（用于特殊处理圆形等）
+   * @returns 世界坐标轮廓点数组
+   */
+  public getElementWorldOutlinePoints(element: IElementProvider, elementType: string): Point[] {
+    const size = element.getSize();
+    const rotation = element.getRotation();
+
+    // 对于圆形和椭圆，使用椭圆采样公式（圆形是椭圆的特例，rx = ry）
+    // 椭圆旋转后，最左/最右/最上/最下点不再对应固定的0°/90°/180°/270°点
+    // 必须采样多个点（16个）才能确保旋转后能正确计算AABB
+    if (elementType === 'circle') {
+      const rx = size.width / 2;
+      const ry = size.height / 2;
+      const cx = size.width / 2;
+      const cy = size.height / 2;
+
+      // 椭圆采样16个点（每22.5°一个），确保任何旋转角度下都能正确计算AABB
+      const steps = 16;
+      const localPoints: Point[] = [];
+
+      for (let i = 0; i < steps; i++) {
+        const angle = (Math.PI * 2 * i) / steps;
+        // 椭圆参数方程：x = cx + rx * cos(θ), y = cy + ry * sin(θ)
+        localPoints.push({
+          x: cx + rx * Math.cos(angle),
+          y: cy + ry * Math.sin(angle),
+        });
+      }
+
+      return localPoints.map((p) => this.coordinateTransformer.localToWorld(p.x, p.y, element));
+    }
+
+    // 对于三角形，需要采样三条边上的点
+    // 只用3个顶点无法保证AABB贴紧三角形最外侧（特别是旋转后）
+    if (elementType === 'triangle') {
+      const localPoints: Point[] = [];
+      const stepsPerEdge = 8; // 每条边采样8个点
+
+      // 三角形的三个顶点（顶部为顶点）
+      const vertices = [
+        { x: size.width / 2, y: 0 }, // 顶部顶点
+        { x: 0, y: size.height }, // 左下角
+        { x: size.width, y: size.height }, // 右下角
+      ];
+
+      // 采样三条边
+      for (let i = 0; i < 3; i++) {
+        const v1 = vertices[i];
+        const v2 = vertices[(i + 1) % 3];
+
+        // 在边上均匀采样
+        for (let j = 0; j <= stepsPerEdge; j++) {
+          const t = j / stepsPerEdge;
+          localPoints.push({
+            x: v1.x + (v2.x - v1.x) * t,
+            y: v1.y + (v2.y - v1.y) * t,
+          });
+        }
+      }
+
+      return localPoints.map((p) => this.coordinateTransformer.localToWorld(p.x, p.y, element));
+    }
+
+    // 对于矩形和图片，如果旋转了也需要采样边缘点
+    // 如果未旋转，四个角点就足够了
+    if (elementType === 'rect' || elementType === 'image') {
+      const hasRotation = rotation !== 0 && rotation % 360 !== 0;
+
+      if (hasRotation) {
+        // 旋转的矩形需要采样四条边上的点，确保AABB贴紧真实边界
+        const localPoints: Point[] = [];
+        const stepsPerEdge = 8; // 每条边采样8个点
+
+        // 矩形的四个顶点
+        const vertices = [
+          { x: 0, y: 0 }, // 左上角
+          { x: size.width, y: 0 }, // 右上角
+          { x: size.width, y: size.height }, // 右下角
+          { x: 0, y: size.height }, // 左下角
+        ];
+
+        // 采样四条边
+        for (let i = 0; i < 4; i++) {
+          const v1 = vertices[i];
+          const v2 = vertices[(i + 1) % 4];
+
+          // 在边上均匀采样
+          for (let j = 0; j <= stepsPerEdge; j++) {
+            const t = j / stepsPerEdge;
+            localPoints.push({
+              x: v1.x + (v2.x - v1.x) * t,
+              y: v1.y + (v2.y - v1.y) * t,
+            });
+          }
+        }
+
+        return localPoints.map((p) => this.coordinateTransformer.localToWorld(p.x, p.y, element));
+      } else {
+        // 未旋转的矩形，四个角点就足够了
+        return this.getElementWorldCorners(element);
+      }
+    }
+
+    // 对于其他元素类型（group等），使用四个角点
+    return this.getElementWorldCorners(element);
+  }
+
+  /**
+   * 计算点集的最小外接矩形（旋转卡尺算法）
+   *
+   * @param points 点数组
+   * @returns OBB 信息
+   */
+  public computeMinimumBoundingBox(points: Point[]): {
+    corners: Point[];
+    rotation: number;
+    center: Point;
+    width: number;
+    height: number;
+  } {
+    if (points.length === 0) {
+      return {
+        corners: [],
+        rotation: 0,
+        center: { x: 0, y: 0 },
+        width: 0,
+        height: 0,
+      };
+    }
+
+    // 计算凸包
+    const hull = this.computeConvexHull(points);
+    if (hull.length < 2) {
+      // 如果点太少，返回 AABB
+      const minX = Math.min(...points.map((p) => p.x));
+      const maxX = Math.max(...points.map((p) => p.x));
+      const minY = Math.min(...points.map((p) => p.y));
+      const maxY = Math.max(...points.map((p) => p.y));
+      return {
+        corners: [
+          { x: minX, y: minY },
+          { x: maxX, y: minY },
+          { x: maxX, y: maxY },
+          { x: minX, y: maxY },
+        ],
+        rotation: 0,
+        center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+        width: maxX - minX,
+        height: maxY - minY,
+      };
+    }
+
+    // 旋转卡尺算法：找到最小面积的外接矩形
+    let minArea = Infinity;
+    let bestBox: {
+      corners: Point[];
+      rotation: number;
+      center: Point;
+      width: number;
+      height: number;
+    } | null = null;
+
+    const n = hull.length;
+    for (let i = 0; i < n; i++) {
+      const p1 = hull[i];
+      const p2 = hull[(i + 1) % n];
+
+      // 计算边的方向向量
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len === 0) continue;
+
+      const ux = dx / len;
+      const uy = dy / len;
+
+      // 计算垂直于边的方向
+      const vx = -uy;
+      const vy = ux;
+
+      // 将所有点投影到这个坐标系
+      const projections: number[] = [];
+      const perpProjections: number[] = [];
+
+      hull.forEach((p) => {
+        const px = p.x - p1.x;
+        const py = p.y - p1.y;
+        projections.push(px * ux + py * uy);
+        perpProjections.push(px * vx + py * vy);
+      });
+
+      const minU = Math.min(...projections);
+      const maxU = Math.max(...projections);
+      const minV = Math.min(...perpProjections);
+      const maxV = Math.max(...perpProjections);
+
+      const width = maxU - minU;
+      const height = maxV - minV;
+      const area = width * height;
+
+      if (area < minArea) {
+        minArea = area;
+
+        // 计算矩形的四个角点（在原始坐标系中）
+        const centerU = (minU + maxU) / 2;
+        const centerV = (minV + maxV) / 2;
+
+        const corners = [
+          {
+            x: p1.x + (centerU - width / 2) * ux + (centerV - height / 2) * vx,
+            y: p1.y + (centerU - width / 2) * uy + (centerV - height / 2) * vy,
+          },
+          {
+            x: p1.x + (centerU + width / 2) * ux + (centerV - height / 2) * vx,
+            y: p1.y + (centerU + width / 2) * uy + (centerV - height / 2) * vy,
+          },
+          {
+            x: p1.x + (centerU + width / 2) * ux + (centerV + height / 2) * vx,
+            y: p1.y + (centerU + width / 2) * uy + (centerV + height / 2) * vy,
+          },
+          {
+            x: p1.x + (centerU - width / 2) * ux + (centerV + height / 2) * vx,
+            y: p1.y + (centerU - width / 2) * uy + (centerV + height / 2) * vy,
+          },
+        ];
+
+        const center = {
+          x: p1.x + centerU * ux + centerV * vx,
+          y: p1.y + centerU * uy + centerV * vy,
+        };
+
+        const rotation = Math.atan2(uy, ux) * (180 / Math.PI);
+
+        bestBox = {
+          corners,
+          rotation,
+          center,
+          width,
+          height,
+        };
+      }
+    }
+
+    return (
+      bestBox || {
+        corners: [],
+        rotation: 0,
+        center: { x: 0, y: 0 },
+        width: 0,
+        height: 0,
+      }
+    );
+  }
+
+  /**
+   * 计算多个元素的轴对齐选择边界框（AABB）
+   *
+   * 这个方法收集所有元素的真实轮廓点（包括圆形的采样点），
+   * 然后对这些点直接取AABB，得到一个水平不旋转的边界框。
+   *
+   * 与 computeMinimumBoundingBox 的区别：
+   * - computeMinimumBoundingBox：返回旋转的OBB（Oriented Bounding Box）
+   * - computeAxisAlignedSelectionBounds：返回水平不旋转的AABB
+   *
+   * @param elements 元素提供者数组
+   * @param elementTypes 对应的元素类型数组（与elements顺序一致）
+   * @returns AABB边界框
+   */
+  public computeAxisAlignedSelectionBounds(
+    elements: IElementProvider[],
+    elementTypes: string[],
+  ): Bounds {
+    if (elements.length === 0) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
+
+    const allPoints: Point[] = [];
+
+    // Step 1: 收集所有元素的真实轮廓点（世界坐标）
+    elements.forEach((element, index) => {
+      const elementType = elementTypes[index] || element.getType();
+      const outlinePoints = this.getElementWorldOutlinePoints(element, elementType);
+      allPoints.push(...outlinePoints);
+    });
+
+    if (allPoints.length === 0) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
+
+    // Step 2: 对所有轮廓点直接取AABB（水平不旋转）
+    const minX = Math.min(...allPoints.map((p) => p.x));
+    const maxX = Math.max(...allPoints.map((p) => p.x));
+    const minY = Math.min(...allPoints.map((p) => p.y));
+    const maxY = Math.max(...allPoints.map((p) => p.y));
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }
+
+  /**
+   * 计算点集的凸包（Graham Scan 算法）
+   *
+   * @param points 点数组（不会修改原数组）
+   * @returns 凸包点数组（按逆时针顺序）
+   */
+  public computeConvexHull(points: Point[]): Point[] {
+    if (points.length <= 3) return [...points];
+
+    // 复制数组，避免修改原数组
+    const pointsCopy = points.map((p) => ({ ...p }));
+
+    // 找到最下方的点（y最大，如果相同则x最小）
+    let bottomIndex = 0;
+    for (let i = 1; i < pointsCopy.length; i++) {
+      if (
+        pointsCopy[i].y > pointsCopy[bottomIndex].y ||
+        (pointsCopy[i].y === pointsCopy[bottomIndex].y &&
+          pointsCopy[i].x < pointsCopy[bottomIndex].x)
+      ) {
+        bottomIndex = i;
+      }
+    }
+
+    // 交换到第一个位置
+    [pointsCopy[0], pointsCopy[bottomIndex]] = [pointsCopy[bottomIndex], pointsCopy[0]];
+
+    const pivot = pointsCopy[0];
+
+    // 按极角排序
+    const sorted = pointsCopy.slice(1).sort((a, b) => {
+      const cross = (a.x - pivot.x) * (b.y - pivot.y) - (a.y - pivot.y) * (b.x - pivot.x);
+      if (Math.abs(cross) < 1e-10) {
+        // 共线，按距离排序
+        const distA = (a.x - pivot.x) ** 2 + (a.y - pivot.y) ** 2;
+        const distB = (b.x - pivot.x) ** 2 + (b.y - pivot.y) ** 2;
+        return distA - distB;
+      }
+      return cross > 0 ? -1 : 1;
+    });
+
+    const hull = [{ ...pivot }, { ...sorted[0] }];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const point = sorted[i];
+      while (
+        hull.length > 1 &&
+        (hull[hull.length - 1].x - hull[hull.length - 2].x) * (point.y - hull[hull.length - 2].y) -
+          (hull[hull.length - 1].y - hull[hull.length - 2].y) *
+            (point.x - hull[hull.length - 2].x) <=
+          0
+      ) {
+        hull.pop();
+      }
+      hull.push({ ...point });
+    }
+
+    return hull;
+  }
+
+  /**
    * 判断两个矩形（Bounds）是否相交（AABB 相交检测）
    *
    * @param a 矩形 A
