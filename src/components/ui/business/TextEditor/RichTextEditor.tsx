@@ -35,6 +35,17 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const { content, textStyle, width, height, richText } = element;
 
+  // ① 使用 Ref 解决闭包问题，保持 Tiptap 回调获取最新 props
+  const textStyleRef = useRef(textStyle);
+  const onUpdateRef = useRef(onUpdate);
+  const isLocalUpdate = useRef(false);
+
+  // 同步 refs
+  useEffect(() => {
+    textStyleRef.current = textStyle;
+    onUpdateRef.current = onUpdate;
+  }, [textStyle, onUpdate]);
+
   // 选择状态管理
   const [selection, setSelection] = useState<{
     visible: boolean;
@@ -201,18 +212,20 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
       },
     },
     onUpdate: ({ editor }) => {
+      // 标记为本地更新，避免后续 props -> editor 的循环更新
+      isLocalUpdate.current = true;
       const json = editor.getJSON();
-      // 🎯 关键修复: 传入globalTextStyle，让parseTiptapContent生成相对差异
-      const { content: plainText, richText } = parseTiptapContent(json, textStyle);
+      // 使用最新的全局样式 ref
+      const { content: plainText, richText } = parseTiptapContent(json, textStyleRef.current);
 
-      // cleanupRichTextSpans不再需要，因为parseTiptapContent已经生成了差异
       console.log('[RichTextEditor] Syncing to Zustand:', {
         plainText,
         richText,
-        globalStyle: textStyle,
+        baseStyle: textStyleRef.current,
       });
 
-      onUpdate(plainText, richText);
+      // 使用 ref 调用最新 onUpdate
+      onUpdateRef.current(plainText, richText);
       setUpdateTrigger((prev) => prev + 1);
     },
     onSelectionUpdate: ({ editor }) => {
@@ -244,6 +257,19 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         return; // 不关闭工具栏
       }
 
+      // 退出编辑态时，强制 flush 一次同步更新（确保在恢复 PIXI 可见性前 Store 已更新）
+      try {
+        isLocalUpdate.current = true;
+        const json = editor.getJSON();
+        const { content: latestContent, richText: latestRichText } = parseTiptapContent(
+          json,
+          textStyleRef.current,
+        );
+        onUpdateRef.current(latestContent, latestRichText);
+      } catch (err) {
+        console.warn('[RichTextEditor] Failed to flush update on blur', err);
+      }
+
       // 延迟隐藏，给用户时间点击工具栏（防止某些情况下 relatedTarget 为 null）
       setTimeout(() => {
         // 双重检查：如果当前焦点在工具栏内，不关闭
@@ -263,6 +289,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         eventBus.emit('text-editor:selection-change', { hasSelection: false });
       }, 300); // 增加延迟时间到 300ms
 
+      // 回调外部 onBlur（例如 TextEditorManager 会恢复 PIXI 文本显示）
       onBlur(nativeEvent as unknown as React.FocusEvent);
     },
     autofocus: 'end',
@@ -290,6 +317,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         } else {
           contentEl.style.backgroundColor = '';
         }
+      }
+
+      // 如果最近是编辑器内部触发的更新，我们不应重新 setContent，避免光标跳动
+      if (isLocalUpdate.current) {
+        // 已消费这个更新，避免回写到编辑器
+        isLocalUpdate.current = false;
+        return;
       }
 
       // 🎯 关键修复: 当全局样式变化时,重新构建编辑器内容以应用新样式
