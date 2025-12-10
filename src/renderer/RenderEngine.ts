@@ -3,7 +3,6 @@ import * as PIXI from 'pixi.js';
 // import type { CanvasEvent } from '../lib/EventBridge';
 import { ViewportInteraction } from '../services/interaction/ViewportInteraction';
 import type { Element, ElementType, ViewportState } from '../types';
-import type { Point } from '../types/index';
 import {
   type AllRenderCommand,
   type BatchDeleteElementCommand,
@@ -351,19 +350,56 @@ export class RenderEngine {
           isGroup: element ? isGroupElement(element) : false,
         });
 
-        // 如果是 group，使用 OBB（旋转外接矩形）绘制选中框
+        // 如果是 group，尝试使用 graphics 对象的 bounds（与普通元素一致）
         if (element && isGroupElement(element)) {
-          // 计算组合元素的 OBB
-          const obb = this.computeOBBForElements([elementId]);
+          const graphics = this.elementGraphics.get(elementId);
+          console.log(`[GROUP_DEBUG] [RenderEngine.updateSelection] 渲染组合元素选中框`, {
+            elementId,
+            elementInfo: {
+              id: element.id,
+              type: element.type,
+              x: element.x,
+              y: element.y,
+              width: element.width,
+              height: element.height,
+              zIndex: element.zIndex,
+              children: isGroupElement(element) ? element.children : [],
+            },
+            hasGraphics: !!graphics,
+            graphicsPosition: graphics ? { x: graphics.x, y: graphics.y } : null,
+          });
 
-          if (obb && obb.corners.length === 4) {
-            // 使用旋转的选中框绘制方法
-            this.drawRotatedGroupSelectionBox(obb.corners, [elementId], true);
-          } else {
-            // 降级：如果无法计算 OBB，使用 AABB
+          if (graphics) {
+            // 如果 group 有 graphics 对象，使用与普通元素相同的方式绘制选中框
+            // 但是需要重新计算 bounds（因为 group 的 bounds 应该基于子元素）
             const groupBounds = computeGroupBounds(elementId);
+
             if (groupBounds) {
+              // 直接使用 groupBounds，不进行坐标转换（与第425行保持一致）
+              console.log(
+                `[GROUP_DEBUG] [RenderEngine.updateSelection] 有 graphics 对象，使用 bounds`,
+                {
+                  elementId,
+                  bounds: groupBounds,
+                },
+              );
               this.drawSelectionBoxForGroup(groupBounds, elementId, true);
+            } else {
+              // 如果没有 groupBounds，使用 graphics 的 bounds（降级方案）
+              this.drawSelectionBox(graphics, elementId, true);
+            }
+          } else {
+            // 如果没有 graphics 对象，使用 computeGroupBounds
+            const bounds = computeGroupBounds(elementId);
+            if (bounds) {
+              console.log(
+                `[GROUP_DEBUG] [RenderEngine.updateSelection] 无 graphics 对象，使用 bounds`,
+                {
+                  elementId,
+                  bounds,
+                },
+              );
+              this.drawSelectionBoxForGroup(bounds, elementId, true);
             }
           }
         } else {
@@ -376,62 +412,167 @@ export class RenderEngine {
       });
     } else {
       // 多选状态下不绘制任何单体选框，尤其不显示 group 的选中框
-      // 这样可以让用户清楚地看到多选框（虚线 AABB），而不是被单个元素的选中框干扰
     }
 
     // 如果选择多个元素，绘制组合边界框以增强视觉反馈
-    //
-    // 多选框设计（OBB - Oriented Bounding Box）：
-    // - 单个元素选中框：可以是旋转的（OBB），显示元素的精确边界
-    // - 多选框：使用旋转外接矩形（OBB），跟随内部元素的整体方向
-    // - 使用旋转卡尺算法计算最小外接矩形，确保紧密包裹所有元素
-    // - 多选框包含：虚线边框、半透明填充、8个调整手柄、1个旋转手柄
     if (filteredSelectedIds.length > 1) {
-      // 计算 OBB（Oriented Bounding Box）
-      const obb = this.computeOBBForElements(filteredSelectedIds);
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
 
-      if (obb && obb.corners.length === 4) {
-        // 使用旋转的选中框绘制方法
-        this.drawRotatedGroupSelectionBox(obb.corners, filteredSelectedIds, true);
-      } else {
-        // 降级：如果无法计算 OBB，使用 AABB
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
+      filteredSelectedIds.forEach((elementId) => {
+        const element = state.elements[elementId];
+        let b: { x: number; y: number; width: number; height: number };
 
-        filteredSelectedIds.forEach((elementId) => {
-          const element = state.elements[elementId];
-          let b: { x: number; y: number; width: number; height: number };
-
-          if (element && isGroupElement(element)) {
-            const groupBounds = computeGroupBounds(elementId);
-            if (groupBounds) {
-              b = groupBounds;
-            } else {
-              const provider = new ElementProvider(elementId);
-              b = this.geometryService.getElementBoundsWorld(provider);
-            }
+        // 如果是 group，使用 computeGroupBounds 计算边界
+        if (element && isGroupElement(element)) {
+          const groupBounds = computeGroupBounds(elementId);
+          if (groupBounds) {
+            b = groupBounds;
           } else {
+            // 如果计算失败，使用元素本身的边界
             const provider = new ElementProvider(elementId);
             b = this.geometryService.getElementBoundsWorld(provider);
           }
+        } else {
+          // 普通元素使用原有的逻辑
+          const provider = new ElementProvider(elementId);
+          b = this.geometryService.getElementBoundsWorld(provider);
+        }
 
-          minX = Math.min(minX, b.x);
-          minY = Math.min(minY, b.y);
-          maxX = Math.max(maxX, b.x + b.width);
-          maxY = Math.max(maxY, b.y + b.height);
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.width);
+        maxY = Math.max(maxY, b.y + b.height);
+      });
+
+      if (minX !== Infinity) {
+        const selectionLayer = this.layerManager.getSelectionLayer();
+        const zoom = this.currentViewport?.zoom ?? 1;
+        const box = new PIXI.Graphics();
+        box.lineStyle(3 / zoom, 0x2563eb, 1);
+        const dash = 10;
+        const gap = 6;
+        const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const ux = dx / len;
+          const uy = dy / len;
+          let pos = 0;
+          while (pos < len) {
+            const sx = x1 + ux * pos;
+            const sy = y1 + uy * pos;
+            const ex = x1 + ux * Math.min(pos + dash, len);
+            const ey = y1 + uy * Math.min(pos + dash, len);
+            box.moveTo(sx, sy);
+            box.lineTo(ex, ey);
+            pos += dash + gap;
+          }
+        };
+        drawDashed(minX, minY, maxX, minY);
+        drawDashed(maxX, minY, maxX, maxY);
+        drawDashed(maxX, maxY, minX, maxY);
+        drawDashed(minX, maxY, minX, minY);
+        box.stroke();
+        box.interactive = false;
+        box.interactiveChildren = false;
+
+        const fill = new PIXI.Graphics();
+        fill.beginFill(0x3b82f6, 0.04);
+        fill.drawRect(minX, minY, maxX - minX, maxY - minY);
+        fill.endFill();
+        fill.interactive = false;
+        fill.interactiveChildren = false;
+
+        selectionLayer.addChild(box);
+        selectionLayer.addChild(fill);
+
+        const handleSize = 8;
+        const handleColor = 0xffffff;
+        const handleBorderColor = 0x2563eb;
+        const handlePositions = [
+          { x: minX, y: minY },
+          { x: (minX + maxX) / 2, y: minY },
+          { x: maxX, y: minY },
+          { x: maxX, y: (minY + maxY) / 2 },
+          { x: maxX, y: maxY },
+          { x: (minX + maxX) / 2, y: maxY },
+          { x: minX, y: maxY },
+          { x: minX, y: (minY + maxY) / 2 },
+        ];
+        const handleTypes = [
+          'top-left',
+          'top',
+          'top-right',
+          'right',
+          'bottom-right',
+          'bottom',
+          'bottom-left',
+          'left',
+        ];
+        handlePositions.forEach((pos, index) => {
+          const handle = new PIXI.Graphics();
+          handle.beginFill(handleColor);
+          handle.lineStyle(1, handleBorderColor, 1);
+          handle.circle(0, 0, handleSize / 2);
+          handle.endFill();
+          handle.position.set(pos.x, pos.y);
+          handle.interactive = true;
+          (
+            handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
+          ).__graphiteHandleType = handleTypes[index];
+          (
+            handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
+          ).__graphiteGroupHandle = true;
+          handle.scale.set(1 / zoom);
+          handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
+          // handle.on('pointerdown', (event: PIXI.FederatedPointerEvent) => {
+          //   event.stopPropagation();
+
+          //   // 转换坐标为世界坐标
+          //   const screenX = event.clientX;
+          //   const screenY = event.clientY;
+          //   const worldPoint = this.coordinateTransformer.screenToWorld(screenX, screenY);
+
+          //   eventBus.emit('group-resize-start', {
+          //     elementIds: selectedElementIds,
+          //     handleType: handleTypes[index],
+          //     bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+          //     worldPoint, // 传递世界坐标
+          //     screenX, // 同时传递屏幕坐标
+          //     screenY,
+          //     nativeEvent: event,
+          //   });
+          // });
+          selectionLayer.addChild(handle);
         });
 
-        if (minX !== Infinity) {
-          // 绘制 AABB 多选框（降级方案）
-          this.drawAABBGroupSelectionBox({
-            x: minX,
-            y: minY,
-            width: maxX - minX,
-            height: maxY - minY,
-          });
-        }
+        const rotationHandle = new PIXI.Graphics();
+        rotationHandle.beginFill(handleColor);
+        rotationHandle.lineStyle(1, handleBorderColor, 1);
+        rotationHandle.circle(0, 0, 6);
+        rotationHandle.endFill();
+        rotationHandle.position.set((minX + maxX) / 2, maxY + 20 / zoom);
+        rotationHandle.interactive = true;
+        rotationHandle.scale.set(1 / zoom);
+        rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
+        rotationHandle.cursor = 'pointer';
+        (
+          rotationHandle as unknown as {
+            __graphiteHandleType?: string;
+            __graphiteGroupHandle?: boolean;
+          }
+        ).__graphiteHandleType = 'rotation';
+        (
+          rotationHandle as unknown as {
+            __graphiteHandleType?: string;
+            __graphiteGroupHandle?: boolean;
+          }
+        ).__graphiteGroupHandle = true;
+
+        selectionLayer.addChild(rotationHandle);
       }
     }
 
@@ -1011,348 +1152,6 @@ export class RenderEngine {
       selectionChildren: selectionLayer.children.length,
       withHandles,
     });
-  }
-
-  /**
-   * 计算多个元素的最小外接旋转矩形（OBB）
-   * 使用旋转卡尺算法（Rotating Calipers）
-   *
-   * @param elementIds 元素ID数组
-   * @returns OBB 信息，包含四个角点和旋转角度
-   */
-  private computeOBBForElements(elementIds: string[]): {
-    corners: Point[];
-    rotation: number;
-    center: Point;
-    width: number;
-    height: number;
-  } | null {
-    if (elementIds.length === 0) return null;
-
-    const state = useCanvasStore.getState();
-    const allPoints: Point[] = [];
-
-    // 收集所有元素的世界坐标轮廓点
-    elementIds.forEach((elementId) => {
-      const element = state.elements[elementId];
-      if (!element) return;
-
-      const provider = new ElementProvider(elementId);
-
-      // 如果是组合元素，递归获取所有子元素的点
-      if (isGroupElement(element)) {
-        element.children.forEach((childId) => {
-          const childElement = state.elements[childId];
-          if (childElement) {
-            const childProvider = new ElementProvider(childId);
-            const childPoints = this.geometryService.getElementWorldOutlinePoints(
-              childProvider,
-              childElement.type,
-            );
-            allPoints.push(...childPoints);
-          }
-        });
-      } else {
-        const points = this.geometryService.getElementWorldOutlinePoints(provider, element.type);
-        allPoints.push(...points);
-      }
-    });
-
-    if (allPoints.length === 0) return null;
-
-    // 使用旋转卡尺算法计算最小外接矩形
-    return this.geometryService.computeMinimumBoundingBox(allPoints);
-  }
-
-  /**
-   * 绘制旋转的多选框（OBB）
-   *
-   * @param corners OBB 的四个角点（世界坐标）
-   * @param elementIds 选中的元素ID数组
-   * @param withHandles 是否显示调整手柄
-   */
-  private drawRotatedGroupSelectionBox(
-    corners: Point[],
-    elementIds: string[],
-    withHandles: boolean = true,
-  ): void {
-    const selectionLayer = this.layerManager.getSelectionLayer();
-    const zoom = this.currentViewport?.zoom ?? 1;
-    const cameraCorners = corners.map((p) => new PIXI.Point(p.x, p.y));
-
-    // 绘制虚线边框
-    const dashedBox = new PIXI.Graphics();
-    dashedBox.lineStyle(3 / zoom, 0x2563eb, 1);
-    const dash = 10;
-    const gap = 6;
-    const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      const ux = dx / len;
-      const uy = dy / len;
-      let pos = 0;
-      while (pos < len) {
-        const sx = x1 + ux * pos;
-        const sy = y1 + uy * pos;
-        const ex = x1 + ux * Math.min(pos + dash, len);
-        const ey = y1 + uy * Math.min(pos + dash, len);
-        dashedBox.moveTo(sx, sy);
-        dashedBox.lineTo(ex, ey);
-        pos += dash + gap;
-      }
-    };
-    for (let i = 0; i < 4; i++) {
-      const a = cameraCorners[i];
-      const b = cameraCorners[(i + 1) % 4];
-      drawDashed(a.x, a.y, b.x, b.y);
-    }
-    dashedBox.stroke();
-    dashedBox.interactive = false;
-    dashedBox.interactiveChildren = false;
-    selectionLayer.addChild(dashedBox);
-
-    // 绘制半透明填充
-    const highlightBox = new PIXI.Graphics();
-    highlightBox.beginFill(0x3b82f6, 0.04);
-    highlightBox.moveTo(cameraCorners[0].x, cameraCorners[0].y);
-    for (let i = 1; i < 4; i++) {
-      highlightBox.lineTo(cameraCorners[i].x, cameraCorners[i].y);
-    }
-    highlightBox.lineTo(cameraCorners[0].x, cameraCorners[0].y);
-    highlightBox.endFill();
-    highlightBox.interactive = false;
-    highlightBox.interactiveChildren = false;
-    selectionLayer.addChild(highlightBox);
-
-    if (withHandles) {
-      const handleSize = 8;
-      const handleColor = 0xffffff;
-      const handleBorderColor = 0x2563eb;
-
-      const mid = (p1: PIXI.Point, p2: PIXI.Point) =>
-        new PIXI.Point((p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
-      const handlePositions = [
-        cameraCorners[0],
-        mid(cameraCorners[0], cameraCorners[1]),
-        cameraCorners[1],
-        mid(cameraCorners[1], cameraCorners[2]),
-        cameraCorners[2],
-        mid(cameraCorners[2], cameraCorners[3]),
-        cameraCorners[3],
-        mid(cameraCorners[3], cameraCorners[0]),
-      ];
-
-      const handleTypes = [
-        'top-left',
-        'top',
-        'top-right',
-        'right',
-        'bottom-right',
-        'bottom',
-        'bottom-left',
-        'left',
-      ];
-
-      const handleCursors = [
-        'nwse-resize',
-        'ns-resize',
-        'nesw-resize',
-        'ew-resize',
-        'nwse-resize',
-        'ns-resize',
-        'nesw-resize',
-        'ew-resize',
-      ];
-
-      handlePositions.forEach((pos, index) => {
-        const handle = new PIXI.Graphics();
-        handle.beginFill(handleColor);
-        handle.lineStyle(1, handleBorderColor, 1);
-        handle.circle(0, 0, handleSize / 2);
-        handle.endFill();
-        handle.position.set(pos.x, pos.y);
-        handle.interactive = true;
-        handle.scale.set(1 / zoom);
-        handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
-        handle.cursor = handleCursors[index];
-        (
-          handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
-        ).__graphiteHandleType = handleTypes[index];
-        (
-          handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
-        ).__graphiteGroupHandle = true;
-        selectionLayer.addChild(handle);
-      });
-
-      // 绘制旋转手柄
-      const rotationHandle = new PIXI.Graphics();
-      rotationHandle.beginFill(handleColor);
-      rotationHandle.lineStyle(1, handleBorderColor, 1);
-      rotationHandle.circle(0, 0, 6);
-      rotationHandle.endFill();
-      const bottomMid = mid(cameraCorners[2], cameraCorners[3]);
-      const edgeVec = new PIXI.Point(
-        cameraCorners[1].x - cameraCorners[0].x,
-        cameraCorners[1].y - cameraCorners[0].y,
-      );
-      const center = new PIXI.Point(
-        (cameraCorners[0].x + cameraCorners[1].x + cameraCorners[2].x + cameraCorners[3].x) / 4,
-        (cameraCorners[0].y + cameraCorners[1].y + cameraCorners[2].y + cameraCorners[3].y) / 4,
-      );
-      const normal = new PIXI.Point(-edgeVec.y, edgeVec.x);
-      const toOutside = new PIXI.Point(bottomMid.x - center.x, bottomMid.y - center.y);
-      const dot = normal.x * toOutside.x + normal.y * toOutside.y;
-      const sign = dot >= 0 ? 1 : -1;
-      const nLen = Math.sqrt(normal.x * normal.x + normal.y * normal.y) || 1;
-      const nx = (normal.x / nLen) * sign;
-      const ny = (normal.y / nLen) * sign;
-      rotationHandle.position.set(bottomMid.x + nx * (20 / zoom), bottomMid.y + ny * (20 / zoom));
-      rotationHandle.interactive = true;
-      rotationHandle.scale.set(1 / zoom);
-      rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
-      rotationHandle.cursor = 'pointer';
-      rotationHandle.eventMode = 'static';
-      (
-        rotationHandle as unknown as {
-          __graphiteHandleType?: string;
-          __graphiteGroupHandle?: boolean;
-        }
-      ).__graphiteHandleType = 'rotation';
-      (
-        rotationHandle as unknown as {
-          __graphiteHandleType?: string;
-          __graphiteGroupHandle?: boolean;
-        }
-      ).__graphiteGroupHandle = true;
-
-      selectionLayer.addChild(rotationHandle);
-    }
-  }
-
-  /**
-   * 绘制 AABB 多选框（降级方案）
-   *
-   * @param bounds AABB 边界框
-   */
-  private drawAABBGroupSelectionBox(bounds: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }): void {
-    const selectionLayer = this.layerManager.getSelectionLayer();
-    const zoom = this.currentViewport?.zoom ?? 1;
-    const { x: minX, y: minY, width, height } = bounds;
-    const maxX = minX + width;
-    const maxY = minY + height;
-
-    const box = new PIXI.Graphics();
-    box.lineStyle(3 / zoom, 0x2563eb, 1);
-    const dash = 10;
-    const gap = 6;
-    const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const ux = dx / len;
-      const uy = dy / len;
-      let pos = 0;
-      while (pos < len) {
-        const sx = x1 + ux * pos;
-        const sy = y1 + uy * pos;
-        const ex = x1 + ux * Math.min(pos + dash, len);
-        const ey = y1 + uy * Math.min(pos + dash, len);
-        box.moveTo(sx, sy);
-        box.lineTo(ex, ey);
-        pos += dash + gap;
-      }
-    };
-    drawDashed(minX, minY, maxX, minY);
-    drawDashed(maxX, minY, maxX, maxY);
-    drawDashed(maxX, maxY, minX, maxY);
-    drawDashed(minX, maxY, minX, minY);
-    box.stroke();
-    box.interactive = false;
-    box.interactiveChildren = false;
-
-    const fill = new PIXI.Graphics();
-    fill.beginFill(0x3b82f6, 0.04);
-    fill.drawRect(minX, minY, width, height);
-    fill.endFill();
-    fill.interactive = false;
-    fill.interactiveChildren = false;
-
-    selectionLayer.addChild(box);
-    selectionLayer.addChild(fill);
-
-    // 绘制调整手柄和旋转手柄（与之前相同）
-    const handleSize = 8;
-    const handleColor = 0xffffff;
-    const handleBorderColor = 0x2563eb;
-    const handlePositions = [
-      { x: minX, y: minY },
-      { x: (minX + maxX) / 2, y: minY },
-      { x: maxX, y: minY },
-      { x: maxX, y: (minY + maxY) / 2 },
-      { x: maxX, y: maxY },
-      { x: (minX + maxX) / 2, y: maxY },
-      { x: minX, y: maxY },
-      { x: minX, y: (minY + maxY) / 2 },
-    ];
-    const handleTypes = [
-      'top-left',
-      'top',
-      'top-right',
-      'right',
-      'bottom-right',
-      'bottom',
-      'bottom-left',
-      'left',
-    ];
-    handlePositions.forEach((pos, index) => {
-      const handle = new PIXI.Graphics();
-      handle.beginFill(handleColor);
-      handle.lineStyle(1, handleBorderColor, 1);
-      handle.circle(0, 0, handleSize / 2);
-      handle.endFill();
-      handle.position.set(pos.x, pos.y);
-      handle.interactive = true;
-      (
-        handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
-      ).__graphiteHandleType = handleTypes[index];
-      (
-        handle as unknown as { __graphiteHandleType?: string; __graphiteGroupHandle?: boolean }
-      ).__graphiteGroupHandle = true;
-      handle.scale.set(1 / zoom);
-      handle.hitArea = new PIXI.Circle(0, 0, handleSize / 2 + 2);
-      selectionLayer.addChild(handle);
-    });
-
-    const rotationHandle = new PIXI.Graphics();
-    rotationHandle.beginFill(handleColor);
-    rotationHandle.lineStyle(1, handleBorderColor, 1);
-    rotationHandle.circle(0, 0, 6);
-    rotationHandle.endFill();
-    rotationHandle.position.set((minX + maxX) / 2, maxY + 20 / zoom);
-    rotationHandle.interactive = true;
-    rotationHandle.scale.set(1 / zoom);
-    rotationHandle.hitArea = new PIXI.Circle(0, 0, 8);
-    rotationHandle.cursor = 'pointer';
-    (
-      rotationHandle as unknown as {
-        __graphiteHandleType?: string;
-        __graphiteGroupHandle?: boolean;
-      }
-    ).__graphiteHandleType = 'rotation';
-    (
-      rotationHandle as unknown as {
-        __graphiteHandleType?: string;
-        __graphiteGroupHandle?: boolean;
-      }
-    ).__graphiteGroupHandle = true;
-
-    selectionLayer.addChild(rotationHandle);
   }
 
   /**
