@@ -379,6 +379,8 @@ export class CreateInteraction {
    * 创建文本元素（特殊处理）
    */
   private createTextElement(point: Point): void {
+    const color = this.getDefaultTextColor();
+
     const textElement = ElementFactory.createElement(
       'text',
       point.x,
@@ -395,7 +397,7 @@ export class CreateInteraction {
           textDecoration: 'none',
           textAlign: 'left',
           lineHeight: 1.2,
-          color: '#000000',
+          color,
         },
         baseStyle: {
           fill: 'transparent',
@@ -432,6 +434,28 @@ export class CreateInteraction {
     });
 
     this.resetState();
+  }
+
+  /**
+   * 根据当前主题返回默认文本颜色
+   * 优先使用 document 的 data-theme，其次检查 localStorage（与 `useTheme` 保持一致）
+   */
+  private getDefaultTextColor(): string {
+    try {
+      if (typeof document !== 'undefined') {
+        const dt = document.documentElement.getAttribute('data-theme');
+        if (dt === 'dark') return '#ffffff';
+      }
+
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = localStorage.getItem('graphite-theme');
+        if (saved === 'dark') return '#ffffff';
+      }
+    } catch {
+      // ignore and fallback
+    }
+
+    return '#000000';
   }
 
   /**
