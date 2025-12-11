@@ -216,6 +216,11 @@
   background: var(--bg-secondary);
 }
 
+:global(.inline-text-colorpicker-panel) {
+  z-index: 11000 !important;
+  // position: relative; /* keep default panel behavior */
+}
+
 /* ColorPicker 下拉面板主题化 */
 :global(.ant-popover) {
   [data-theme='dark'] & {

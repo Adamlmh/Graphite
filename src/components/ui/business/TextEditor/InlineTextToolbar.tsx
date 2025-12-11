@@ -308,7 +308,9 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           className={styles.fontSelect}
           popupMatchSelectWidth={false}
           placement="bottomLeft"
-          getPopupContainer={() => document.body}
+          getPopupContainer={() =>
+            document.querySelector('[data-toolbar="inline-text"]') || document.body
+          }
           onMouseDown={preventFocusLoss}
           dropdownRender={(menu) => <div onMouseDown={(e) => e.preventDefault()}>{menu}</div>}
           dropdownStyle={{ zIndex: 10001 }}
@@ -339,7 +341,9 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
           placement="bottom"
           mouseEnterDelay={0.1}
           mouseLeaveDelay={0.2}
-          getPopupContainer={() => document.body}
+          getPopupContainer={() =>
+            document.querySelector('[data-toolbar="inline-text"]') || document.body
+          }
           overlayStyle={{ zIndex: 10001 }}
         >
           <Tooltip title="字号" placement="bottom" mouseEnterDelay={0.3}>
@@ -361,11 +365,18 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
               console.log('[InlineTextToolbar] Text color changed:', { color, hex });
               handleTextColorChange(hex);
             }}
+            // 将 ColorPicker popup 渲染到工具栏容器，避免被 editor DOM 的 z-index/transform 覆盖
+            getPopupContainer={() =>
+              document.querySelector('[data-toolbar="inline-text"]') || document.body
+            }
             onOpenChange={handleTextColorPickerOpenChange}
             className={styles.colorPicker}
-            getPopupContainer={() => document.body}
             panelRender={(panel) => (
-              <div style={{ zIndex: 10003 }} onMouseDown={(e) => e.preventDefault()}>
+              <div
+                className="inline-text-colorpicker-panel"
+                style={{ zIndex: 10050 }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
                 {panel}
               </div>
             )}
@@ -404,11 +415,17 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
               console.log('[InlineTextToolbar] Background color changed:', { color, hex });
               handleBackgroundColorChange(hex);
             }}
+            getPopupContainer={() =>
+              document.querySelector('[data-toolbar="inline-text"]') || document.body
+            }
             onOpenChange={handleBackgroundColorPickerOpenChange}
             className={styles.colorPicker}
-            getPopupContainer={() => document.body}
             panelRender={(panel) => (
-              <div style={{ zIndex: 10001 }} onMouseDown={(e) => e.preventDefault()}>
+              <div
+                className="inline-text-colorpicker-panel"
+                style={{ zIndex: 10050 }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
                 {panel}
               </div>
             )}

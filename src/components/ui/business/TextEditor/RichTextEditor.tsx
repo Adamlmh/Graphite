@@ -65,6 +65,20 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     null,
   );
 
+  // 当工具栏（如 ColorPicker、Select）在交互时，避免频繁重新计算工具栏位置从而导致抖动
+  const [isToolbarInteracting, setIsToolbarInteracting] = useState(false);
+
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const payload = args && args[0] ? (args[0] as { interacting?: boolean }) : undefined;
+      setIsToolbarInteracting(!!payload?.interacting);
+    };
+    eventBus.on('text-editor:toolbar-interaction', handler);
+    return () => {
+      eventBus.off('text-editor:toolbar-interaction', handler);
+    };
+  }, []);
+
   // 更新触发器，用于强制刷新 InlineTextToolbar
   const [updateTrigger, setUpdateTrigger] = useState(0);
 
@@ -251,6 +265,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           relatedTarget.closest('.ant-popover') ||
           // 检查是否点击了 Popover 内容
           relatedTarget.closest('.ant-popover-inner'));
+
+      // 如果工具栏正在交互（例如ColorPicker滑动），直接保持选区
+      if (isToolbarInteracting) {
+        console.log('[RichTextEditor] Toolbar interaction in progress, ignoring blur');
+        return; // 不关闭工具栏
+      }
 
       if (isClickingToolbar) {
         console.log('[RichTextEditor] Clicking toolbar, maintaining selection');
