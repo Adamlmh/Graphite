@@ -1879,8 +1879,10 @@ export class SelectInteraction {
 
   private log(tag: string, payload: unknown): void {
     const ts = new Date().toISOString();
-    console.debug(`[SelectInteraction][${ts}][${tag}]`, payload);
-    eventBus.emit('debug:select', { tag, ts, payload });
+    // 调试输出已禁用：原用于在控制台打印选择交互调试信息
+    // console.debug(`[SelectInteraction][${ts}][${tag}]`, payload);
+    // 调试事件已禁用：原用于发送选择交互调试事件到事件总线
+    // eventBus.emit('debug:select', { tag, ts, payload });
   }
 }
 

@@ -25,18 +25,19 @@ const CanvasRenderer: React.FC = () => {
   // const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
   const imageInteractionRef = useRef<ImageInteraction | null>(null);
   const textEditorInteractionRef = useRef<TextEditorInteraction | null>(null);
-  type SelectDebugState = {
-    state: string;
-    hitId: string | null;
-    screen: { x: number; y: number };
-    world: { x: number; y: number };
-  };
-  const [selectDebug, setSelectDebug] = useState<SelectDebugState>({
-    state: 'Idle',
-    hitId: null,
-    screen: { x: 0, y: 0 },
-    world: { x: 0, y: 0 },
-  });
+  // SelectDebugState 调试面板类型与状态（已禁用）
+  // type SelectDebugState = {
+  //   state: string;
+  //   hitId: string | null;
+  //   screen: { x: number; y: number };
+  //   world: { x: number; y: number };
+  // };
+  // const [selectDebug, setSelectDebug] = useState<SelectDebugState>({
+  //   state: 'Idle',
+  //   hitId: null,
+  //   screen: { x: 0, y: 0 },
+  //   world: { x: 0, y: 0 },
+  // });
 
   // 根据当前工具自动切换光标
   useCursor(containerRef);
@@ -168,52 +169,53 @@ const CanvasRenderer: React.FC = () => {
   }, []); // 空依赖数组，只在组件挂载时执行一次
 
   useEffect(() => {
-    const handler = (...args: unknown[]) => {
-      const data = (args[0] ?? {}) as { tag?: string; ts?: string; payload?: unknown };
-      const tag = data?.tag;
-      const p = (data?.payload ?? {}) as Record<string, unknown>;
-      if (tag === 'state-change') {
-        const nextState = typeof p.to === 'string' ? p.to : undefined;
-        const hoverId = typeof p.hoverElementId === 'string' ? p.hoverElementId : undefined;
-        setSelectDebug((prev: SelectDebugState) => ({
-          ...prev,
-          state: nextState ?? prev.state,
-          hitId: hoverId ?? prev.hitId,
-        }));
-        return;
-      }
-      if (tag === 'element-hit' || tag === 'top-hit') {
-        const eid = typeof p.elementId === 'string' ? p.elementId : undefined;
-        if (eid) {
-          setSelectDebug((prev: SelectDebugState) => ({ ...prev, hitId: eid }));
-        }
-      }
-      if (tag === 'pointermove' || tag === 'pointerdown' || tag === 'pointerup') {
-        const screen = (p.screen ?? {}) as Record<string, unknown>;
-        const world = (p.world ?? {}) as Record<string, unknown>;
-        const sx =
-          typeof screen.x === 'number' || typeof screen.x === 'string'
-            ? Number(screen.x)
-            : undefined;
-        const sy =
-          typeof screen.y === 'number' || typeof screen.y === 'string'
-            ? Number(screen.y)
-            : undefined;
-        const wx =
-          typeof world.x === 'number' || typeof world.x === 'string' ? Number(world.x) : undefined;
-        const wy =
-          typeof world.y === 'number' || typeof world.y === 'string' ? Number(world.y) : undefined;
-        setSelectDebug((prev: SelectDebugState) => ({
-          ...prev,
-          screen: { x: sx ?? prev.screen.x, y: sy ?? prev.screen.y },
-          world: { x: wx ?? prev.world.x, y: wy ?? prev.world.y },
-        }));
-      }
-    };
-    eventBus.on('debug:select', handler);
-    return () => {
-      eventBus.off('debug:select', handler);
-    };
+    // SelectDebugState 调试事件订阅（已禁用）：用于显示 Hover/命中调试信息
+    // const handler = (...args: unknown[]) => {
+    //   const data = (args[0] ?? {}) as { tag?: string; ts?: string; payload?: unknown };
+    //   const tag = data?.tag;
+    //   const p = (data?.payload ?? {}) as Record<string, unknown>;
+    //   if (tag === 'state-change') {
+    //     const nextState = typeof p.to === 'string' ? p.to : undefined;
+    //     const hoverId = typeof p.hoverElementId === 'string' ? p.hoverElementId : undefined;
+    //     setSelectDebug((prev: SelectDebugState) => ({
+    //       ...prev,
+    //       state: nextState ?? prev.state,
+    //       hitId: hoverId ?? prev.hitId,
+    //     }));
+    //     return;
+    //   }
+    //   if (tag === 'element-hit' || tag === 'top-hit') {
+    //     const eid = typeof p.elementId === 'string' ? p.elementId : undefined;
+    //     if (eid) {
+    //       setSelectDebug((prev: SelectDebugState) => ({ ...prev, hitId: eid }));
+    //     }
+    //   }
+    //   if (tag === 'pointermove' || tag === 'pointerdown' || tag === 'pointerup') {
+    //     const screen = (p.screen ?? {}) as Record<string, unknown>;
+    //     const world = (p.world ?? {}) as Record<string, unknown>;
+    //     const sx =
+    //       typeof screen.x === 'number' || typeof screen.x === 'string'
+    //         ? Number(screen.x)
+    //         : undefined;
+    //     const sy =
+    //       typeof screen.y === 'number' || typeof screen.y === 'string'
+    //         ? Number(screen.y)
+    //         : undefined;
+    //     const wx =
+    //       typeof world.x === 'number' || typeof world.x === 'string' ? Number(world.x) : undefined;
+    //     const wy =
+    //       typeof world.y === 'number' || typeof world.y === 'string' ? Number(world.y) : undefined;
+    //     setSelectDebug((prev: SelectDebugState) => ({
+    //       ...prev,
+    //       screen: { x: sx ?? prev.screen.x, y: sy ?? prev.screen.y },
+    //       world: { x: wx ?? prev.world.x, y: wy ?? prev.world.y },
+    //     }));
+    //   }
+    // };
+    // eventBus.on('debug:select', handler);
+    // return () => {
+    //   eventBus.off('debug:select', handler);
+    // };
   }, []);
 
   return (
@@ -226,7 +228,8 @@ const CanvasRenderer: React.FC = () => {
         position: 'relative',
       }}
     >
-      <div
+      {/* SelectDebugState 可视化面板（已禁用）：显示当前状态与命中信息 */}
+      {/* <div
         style={{
           position: 'absolute',
           top: 8,
@@ -249,7 +252,7 @@ const CanvasRenderer: React.FC = () => {
         <div>
           World: {selectDebug.world.x.toFixed(1)}, {selectDebug.world.y.toFixed(1)}
         </div>
-      </div>
+      </div> */}
       <Minimap containerRef={containerRef} />
       <TextEditorManager /> {/* 文本编辑器管理器组件 */}
     </div>
