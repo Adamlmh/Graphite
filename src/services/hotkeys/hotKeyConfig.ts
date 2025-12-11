@@ -61,20 +61,21 @@ export const DEFAULT_HOTKEYS: Omit<HotKeyDescriptor, 'handler'>[] = [
     userAssignable: true,
   },
 
-  {
-    id: 'zoomIn',
-    key: ['Ctrl+=', 'Meta+='],
-    context: 'canvas',
-    description: '放大',
-    userAssignable: true,
-  },
-  {
-    id: 'zoomOut',
-    key: ['Ctrl+-', 'Meta+-'],
-    context: 'canvas',
-    description: '缩小',
-    userAssignable: true,
-  },
+  // === 视图操作（暂未实现） ===
+  // {
+  //   id: 'zoomIn',
+  //   key: ['Ctrl+=', 'Meta+='],
+  //   context: 'canvas',
+  //   description: '放大',
+  //   userAssignable: true,
+  // },
+  // {
+  //   id: 'zoomOut',
+  //   key: ['Ctrl+-', 'Meta+-'],
+  //   context: 'canvas',
+  //   description: '缩小',
+  //   userAssignable: true,
+  // },
 
   // ctrl + wheel（不能用户覆盖）
   {
@@ -159,28 +160,30 @@ export const DEFAULT_HOTKEYS: Omit<HotKeyDescriptor, 'handler'>[] = [
     userAssignable: true,
   },
 
-  {
-    id: 'duplicate',
-    key: ['Ctrl+D', 'Meta+D'],
-    context: 'canvas',
-    description: '复制元素',
-    userAssignable: true,
-  },
-  {
-    id: 'clone',
-    key: ['Ctrl+Shift+D', 'Meta+Shift+D'],
-    context: 'canvas',
-    description: '克隆元素',
-    userAssignable: true,
-  },
+  // === 元素操作（暂未实现） ===
+  // {
+  //   id: 'duplicate',
+  //   key: ['Ctrl+D', 'Meta+D'],
+  //   context: 'canvas',
+  //   description: '复制元素',
+  //   userAssignable: true,
+  // },
+  // {
+  //   id: 'clone',
+  //   key: ['Ctrl+Shift+D', 'Meta+Shift+D'],
+  //   context: 'canvas',
+  //   description: '克隆元素',
+  //   userAssignable: true,
+  // },
 
-  {
-    id: 'boxSelectTool',
-    key: 'M',
-    context: 'global',
-    description: '框选工具',
-    userAssignable: true,
-  },
+  // === 工具切换（暂未实现） ===
+  // {
+  //   id: 'boxSelectTool',
+  //   key: 'M',
+  //   context: 'global',
+  //   description: '框选工具',
+  //   userAssignable: true,
+  // },
   {
     id: 'group',
     key: ['Ctrl+G', 'Meta+G'],
