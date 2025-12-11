@@ -341,7 +341,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             >
               <Slider
                 min={10}
-                max={72}
+                max={500}
                 value={textStyles.fontSize}
                 onChange={(val) => {
                   if (!isCoalescingRef.current) {
