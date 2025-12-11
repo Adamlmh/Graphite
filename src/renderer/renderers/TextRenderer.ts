@@ -47,6 +47,8 @@ const buildDecorationFromFlags = (
  */
 export class TextRenderer implements IElementRenderer {
   private resourceManager: ResourceManager;
+  private readonly MIN_HIT_WIDTH = 10;
+  private readonly MIN_HIT_HEIGHT = 8;
 
   constructor(resourceManager: ResourceManager) {
     this.resourceManager = resourceManager;
@@ -94,18 +96,23 @@ export class TextRenderer implements IElementRenderer {
       try {
         const segments = this.parseRichText(content, richText || [], textStyle);
         const lines = this.layoutRichText(segments, width, textStyle);
-        const measuredWidth = Math.max(...lines.map((l) => l.width), 0);
-        const measuredHeight = lines.reduce((sum, l) => sum + (l.height || 0), 0);
-        container.hitArea = new PIXI.Rectangle(
+        const measuredWidth = Math.max(
+          ...lines.map((l) => (typeof l.width === 'number' ? l.width : 0)),
           0,
-          0,
-          Math.max(width, Math.ceil(measuredWidth)),
-          Math.max(height, Math.ceil(measuredHeight)),
         );
+        const measuredHeight = lines.reduce(
+          (sum, l) => sum + (typeof l.height === 'number' ? l.height : 0),
+          0,
+        );
+        const measuredWnum = Number.isFinite(measuredWidth) ? Math.ceil(measuredWidth) : width;
+        const measuredHnum = Number.isFinite(measuredHeight) ? Math.ceil(measuredHeight) : height;
+        const finalW = Math.max(width, measuredWnum, this.MIN_HIT_WIDTH);
+        const finalH = Math.max(height, measuredHnum, this.MIN_HIT_HEIGHT);
+        container.hitArea = new PIXI.Rectangle(0, 0, finalW, finalH);
         eventBus.emit('renderer:request-resize', {
           elementId: (container as any).elementId,
-          width: Math.ceil(measuredWidth),
-          height: Math.ceil(measuredHeight),
+          width: finalW,
+          height: finalH,
         });
       } catch (err) {
         console.warn('TextRenderer: failed to measure/emit renderer resize (richText)', err);
@@ -254,8 +261,8 @@ export class TextRenderer implements IElementRenderer {
       // 销毁旧节点
       const textNode = (container as any).textNode;
       const decorationNode = (container as any).decorationNode;
-      if (textNode) textNode.destroy();
-      if (decorationNode) decorationNode.destroy();
+      if (textNode && typeof textNode.destroy === 'function') textNode.destroy();
+      if (decorationNode && typeof decorationNode.destroy === 'function') decorationNode.destroy();
 
       // 重建文本
       const syntheticElement = {
@@ -272,18 +279,23 @@ export class TextRenderer implements IElementRenderer {
         try {
           const segments = this.parseRichText(content, richText || [], textStyle);
           const lines = this.layoutRichText(segments, width, textStyle);
-          const measuredWidth = Math.max(...lines.map((l) => l.width), 0);
-          const measuredHeight = lines.reduce((sum, l) => sum + (l.height || 0), 0);
-          container.hitArea = new PIXI.Rectangle(
+          const measuredWidth = Math.max(
+            ...lines.map((l) => (typeof l.width === 'number' ? l.width : 0)),
             0,
-            0,
-            Math.max(width, Math.ceil(measuredWidth)),
-            Math.max(height, Math.ceil(measuredHeight)),
           );
+          const measuredHeight = lines.reduce(
+            (sum, l) => sum + (typeof l.height === 'number' ? l.height : 0),
+            0,
+          );
+          const measuredWnum = Number.isFinite(measuredWidth) ? Math.ceil(measuredWidth) : width;
+          const measuredHnum = Number.isFinite(measuredHeight) ? Math.ceil(measuredHeight) : height;
+          const finalW = Math.max(width, measuredWnum, this.MIN_HIT_WIDTH);
+          const finalH = Math.max(height, measuredHnum, this.MIN_HIT_HEIGHT);
+          container.hitArea = new PIXI.Rectangle(0, 0, finalW, finalH);
           eventBus.emit('renderer:request-resize', {
             elementId: (container as any).elementId,
-            width: Math.ceil(measuredWidth),
-            height: Math.ceil(measuredHeight),
+            width: finalW,
+            height: finalH,
           });
         } catch (err) {
           console.warn(
@@ -317,16 +329,21 @@ export class TextRenderer implements IElementRenderer {
           const measuredH = Math.ceil(
             metrics.height ?? metrics.lineHeight * (metrics.lines?.length || 1),
           );
-          container.hitArea = new PIXI.Rectangle(
-            0,
-            0,
-            Math.max(width, measuredW),
-            Math.max(height, measuredH),
+          const finalW = Math.max(
+            width,
+            Number.isFinite(measuredW) ? measuredW : width,
+            this.MIN_HIT_WIDTH,
           );
+          const finalH = Math.max(
+            height,
+            Number.isFinite(measuredH) ? measuredH : height,
+            this.MIN_HIT_HEIGHT,
+          );
+          container.hitArea = new PIXI.Rectangle(0, 0, finalW, finalH);
           eventBus.emit('renderer:request-resize', {
             elementId: (container as any).elementId,
-            width: measuredW,
-            height: measuredH,
+            width: finalW,
+            height: finalH,
           });
         } catch (err) {
           console.warn('TextRenderer: failed to measure/emit renderer resize (rebuild plain)', err);
@@ -612,7 +629,17 @@ export class TextRenderer implements IElementRenderer {
       currentY += line.height;
     });
 
-    return finalLines;
+    // 返回包含宽高的行集合，方便上层测量
+    return finalLines.map((f, idx) => ({
+      ...f,
+      // 如果 line 数组里命名为 lines，则使用原始 lines 的宽高（索引对应），否则退回到推导值
+      width:
+        (lines[idx] && lines[idx].width) ||
+        f.items.reduce((s: number, it: any) => s + (it.width || 0), 0),
+      height:
+        (lines[idx] && lines[idx].height) ||
+        f.items.reduce((s: number, it: any) => Math.max(s, it.height || 0), 0),
+    }));
   }
 
   /**
