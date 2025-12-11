@@ -436,6 +436,8 @@ export const parseTiptapContent = (
 export const cleanupRichTextSpans = (
   richTextSpans: RichTextSpan[] | undefined,
   globalTextStyle: Partial<TextStyleType>,
+  // options can include whether to override local span colors with global values
+  options?: { overrideLocalStyleWithGlobal?: boolean },
 ): RichTextSpan[] => {
   if (!richTextSpans || richTextSpans.length === 0) {
     return [];
@@ -448,23 +450,42 @@ export const cleanupRichTextSpans = (
     normalizeTextDecoration(globalTextStyle.textDecoration) ?? 'none';
 
   for (const span of richTextSpans) {
+    // 如果传入了 overrideLocalStyleWithGlobal 且全局有 color/backgroundColor，则把局部颜色覆盖为全局颜色
+    const spanCopy: RichTextSpan = {
+      start: span.start,
+      end: span.end,
+      style: { ...span.style },
+    };
+    // Apply overrides from global style if requested
+    if (options?.overrideLocalStyleWithGlobal) {
+      if (globalTextStyle.color !== undefined) {
+        spanCopy.style.color = globalTextStyle.color;
+      }
+      if (globalTextStyle.backgroundColor !== undefined) {
+        spanCopy.style.backgroundColor = globalTextStyle.backgroundColor;
+      }
+    }
+    const sourceSpan = options?.overrideLocalStyleWithGlobal ? spanCopy : span;
     const cleanedStyle: Partial<TextStyleType> = {};
     let hasUniqueStyle = false;
 
-    const normalizedLocalDecoration = span.style.textDecoration
-      ? normalizeTextDecoration(span.style.textDecoration)
+    const normalizedLocalDecoration = sourceSpan.style.textDecoration
+      ? normalizeTextDecoration(sourceSpan.style.textDecoration)
       : undefined;
 
     // 只保留与全局样式不同的局部样式
     if (
-      span.style.fontWeight !== undefined &&
-      span.style.fontWeight !== globalTextStyle.fontWeight
+      sourceSpan.style.fontWeight !== undefined &&
+      sourceSpan.style.fontWeight !== globalTextStyle.fontWeight
     ) {
-      cleanedStyle.fontWeight = span.style.fontWeight;
+      cleanedStyle.fontWeight = sourceSpan.style.fontWeight;
       hasUniqueStyle = true;
     }
-    if (span.style.fontStyle !== undefined && span.style.fontStyle !== globalTextStyle.fontStyle) {
-      cleanedStyle.fontStyle = span.style.fontStyle;
+    if (
+      sourceSpan.style.fontStyle !== undefined &&
+      sourceSpan.style.fontStyle !== globalTextStyle.fontStyle
+    ) {
+      cleanedStyle.fontStyle = sourceSpan.style.fontStyle;
       hasUniqueStyle = true;
     }
     if (
@@ -474,26 +495,29 @@ export const cleanupRichTextSpans = (
       cleanedStyle.textDecoration = normalizedLocalDecoration;
       hasUniqueStyle = true;
     }
-    if (span.style.color !== undefined && span.style.color !== globalTextStyle.color) {
-      cleanedStyle.color = span.style.color;
+    if (sourceSpan.style.color !== undefined && sourceSpan.style.color !== globalTextStyle.color) {
+      cleanedStyle.color = sourceSpan.style.color;
       hasUniqueStyle = true;
     }
     if (
-      span.style.backgroundColor !== undefined &&
-      span.style.backgroundColor !== globalTextStyle.backgroundColor
+      sourceSpan.style.backgroundColor !== undefined &&
+      sourceSpan.style.backgroundColor !== globalTextStyle.backgroundColor
     ) {
-      cleanedStyle.backgroundColor = span.style.backgroundColor;
-      hasUniqueStyle = true;
-    }
-    if (span.style.fontSize !== undefined && span.style.fontSize !== globalTextStyle.fontSize) {
-      cleanedStyle.fontSize = span.style.fontSize;
+      cleanedStyle.backgroundColor = sourceSpan.style.backgroundColor;
       hasUniqueStyle = true;
     }
     if (
-      span.style.fontFamily !== undefined &&
-      span.style.fontFamily !== globalTextStyle.fontFamily
+      sourceSpan.style.fontSize !== undefined &&
+      sourceSpan.style.fontSize !== globalTextStyle.fontSize
     ) {
-      cleanedStyle.fontFamily = span.style.fontFamily;
+      cleanedStyle.fontSize = sourceSpan.style.fontSize;
+      hasUniqueStyle = true;
+    }
+    if (
+      sourceSpan.style.fontFamily !== undefined &&
+      sourceSpan.style.fontFamily !== globalTextStyle.fontFamily
+    ) {
+      cleanedStyle.fontFamily = sourceSpan.style.fontFamily;
       hasUniqueStyle = true;
     }
 

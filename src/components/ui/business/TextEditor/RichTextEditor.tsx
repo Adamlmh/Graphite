@@ -65,6 +65,20 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     null,
   );
 
+  // 当工具栏（如 ColorPicker、Select）在交互时，避免频繁重新计算工具栏位置从而导致抖动
+  const [isToolbarInteracting, setIsToolbarInteracting] = useState(false);
+
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const payload = args && args[0] ? (args[0] as { interacting?: boolean }) : undefined;
+      setIsToolbarInteracting(!!payload?.interacting);
+    };
+    eventBus.on('text-editor:toolbar-interaction', handler);
+    return () => {
+      eventBus.off('text-editor:toolbar-interaction', handler);
+    };
+  }, []);
+
   // 更新触发器，用于强制刷新 InlineTextToolbar
   const [updateTrigger, setUpdateTrigger] = useState(0);
 
@@ -252,6 +266,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           // 检查是否点击了 Popover 内容
           relatedTarget.closest('.ant-popover-inner'));
 
+      // 如果工具栏正在交互（例如ColorPicker滑动），直接保持选区
+      if (isToolbarInteracting) {
+        console.log('[RichTextEditor] Toolbar interaction in progress, ignoring blur');
+        return; // 不关闭工具栏
+      }
+
       if (isClickingToolbar) {
         console.log('[RichTextEditor] Clicking toolbar, maintaining selection');
         return; // 不关闭工具栏
@@ -358,6 +378,47 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
       return () => clearTimeout(timer);
     }
   }, [editor]);
+
+  // 全局点击检测：当用户在编辑器外（画布空白处）点击时，强制 flush 并触发 onBlur
+  useEffect(() => {
+    if (!editor) return;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // 点击在编辑器内部或工具栏、Ant 弹出层、属性面板时不关闭
+      if (
+        (editorRef.current && editorRef.current.contains(target)) ||
+        target.closest('[data-toolbar="inline-text"]') ||
+        target.closest('.ant-select-dropdown') ||
+        target.closest('.ant-popover') ||
+        target.closest('#properties-panel-container')
+      ) {
+        return;
+      }
+
+      // 在外部点击时，先 flush 一次最新内容，再通知上层失焦
+      try {
+        isLocalUpdate.current = true;
+        const json = editor.getJSON();
+        const { content: latestContent, richText: latestRichText } = parseTiptapContent(
+          json,
+          textStyleRef.current,
+        );
+        onUpdateRef.current(latestContent, latestRichText);
+      } catch (err) {
+        console.warn('[RichTextEditor] Failed to flush update on outside click', err);
+      }
+
+      // 构造一个类似 FocusEvent 的对象供外层的 onBlur 使用
+      const fakeEvent = { relatedTarget: target } as unknown as React.FocusEvent;
+      onBlur(fakeEvent);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [editor, onBlur]);
 
   // 清理
   useEffect(() => {
