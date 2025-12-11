@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import type { Editor } from '@tiptap/react';
 import { debounce } from '../../../../utils';
+import { eventBus } from '../../../../lib/eventBus';
 import styles from '../Propertities/TextProperties/TextProperties.module.less';
 
 export interface InlineTextToolbarProps {
@@ -167,51 +168,66 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   const handleTextColorChangeInternal = useCallback(
     (color: string) => {
       if (!editor) return;
-      // 不 focus，不 restore（避免频繁改动导致闪烁）。
-      editor.chain().setColor(color).run();
+      // 使用 runWithRestore 保持选区恢复策略可控（不 focus / 不 restore）
+      runWithRestore((chain) => chain.setColor(color), { focus: false, restore: false });
     },
-    [editor],
+    [runWithRestore, editor],
   );
 
   const handleBackgroundColorChangeInternal = useCallback(
     (backgroundColor: string) => {
       if (!editor) return;
-      editor.chain().setBackgroundColor(backgroundColor).run();
+      runWithRestore((chain) => chain.setBackgroundColor(backgroundColor), {
+        focus: false,
+        restore: false,
+      });
     },
-    [editor],
+    [runWithRestore, editor],
   );
 
   // 局部调节滑块需要对 UI 响应快速，所以将防抖调小并通过本地 state 提升流畅度
+  // 使用更稳健的防抖 (60ms) 来减少频繁的 editor.update 导致的工具栏抖动
   const debouncedTextColorChangeRef = useRef(
-    debounce((color: string, handler: (color: string) => void) => handler(color), 30),
+    debounce((color: string, handler: (color: string) => void) => handler(color), 60),
   );
 
   const debouncedBackgroundColorChangeRef = useRef(
-    debounce((color: string, handler: (color: string) => void) => handler(color), 30),
+    debounce((color: string, handler: (color: string) => void) => handler(color), 60),
   );
 
   // 局部 state，避免 ColorPicker 在滑动时被父组件属性回写导致回弹
   const [textColorLocal, setTextColorLocal] = useState<string>('#000000');
   const [backgroundColorLocal, setBackgroundColorLocal] = useState<string>('#ffffff');
+  // 颜色面板是否打开
+  const [isTextColorPickerOpen, setIsTextColorPickerOpen] = useState(false);
+  const [isBackgroundColorPickerOpen, setIsBackgroundColorPickerOpen] = useState(false);
 
   // 同步本地状态，当外部属性刷新（updateTrigger）时更新本地显示颜色
+  // 仅在颜色面板未打开的情况下同步本地颜色 (避免滑动时被外部 updateTrigger 覆盖导致回弹)
   useEffect(() => {
+    if (isTextColorPickerOpen) return undefined;
     const src = textStyles.textColor || '#000000';
     if (textColorLocal !== src) {
       const timer = setTimeout(() => setTextColorLocal(src), 0);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [updateTrigger, textStyles.textColor, textColorLocal]);
+  }, [updateTrigger, textStyles.textColor, textColorLocal, isTextColorPickerOpen]);
 
   useEffect(() => {
+    if (isBackgroundColorPickerOpen) return undefined;
     const src = textStyles.backgroundColor || '#ffffff';
     if (backgroundColorLocal !== src) {
       const timer = setTimeout(() => setBackgroundColorLocal(src), 0);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [updateTrigger, textStyles.backgroundColor, backgroundColorLocal]);
+  }, [
+    updateTrigger,
+    textStyles.backgroundColor,
+    backgroundColorLocal,
+    isBackgroundColorPickerOpen,
+  ]);
 
   const handleTextColorChange = (color: string) => {
     setTextColorLocal(color);
@@ -221,6 +237,25 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   const handleBackgroundColorChange = (backgroundColor: string) => {
     setBackgroundColorLocal(backgroundColor);
     debouncedBackgroundColorChangeRef.current(backgroundColor, handleBackgroundColorChangeInternal);
+  };
+
+  // 在 ColorPicker 打开/关闭时记录状态，避免滑动过程中被 props 覆盖
+  const handleTextColorPickerOpenChange = (open: boolean) => {
+    setIsTextColorPickerOpen(open);
+    if (!open) {
+      // 关闭时恢复选区并保证 focus
+      runWithRestore((chain) => chain, { focus: true, restore: true });
+    }
+    // 通知编辑器我们正在与工具栏交互，避免工具栏在交互过程中抖动/闪退
+    eventBus.emit('text-editor:toolbar-interaction', { interacting: open });
+  };
+
+  const handleBackgroundColorPickerOpenChange = (open: boolean) => {
+    setIsBackgroundColorPickerOpen(open);
+    if (!open) {
+      runWithRestore((chain) => chain, { focus: true, restore: true });
+    }
+    eventBus.emit('text-editor:toolbar-interaction', { interacting: open });
   };
 
   // 字号由于是 Slider，我们在 onMouseDown 做了特殊处理，这里直接 run 即可
@@ -326,21 +361,17 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
               console.log('[InlineTextToolbar] Text color changed:', { color, hex });
               handleTextColorChange(hex);
             }}
-            onOpenChange={(open) => {
-              if (!open) {
-                // panel 关闭时确保选区恢复并获取焦点
-                runWithRestore((chain) => chain, { focus: true, restore: true });
-              }
-            }}
+            onOpenChange={handleTextColorPickerOpenChange}
             className={styles.colorPicker}
             getPopupContainer={() => document.body}
             panelRender={(panel) => (
-              <div style={{ zIndex: 10001 }} onMouseDown={(e) => e.preventDefault()}>
+              <div style={{ zIndex: 10003 }} onMouseDown={(e) => e.preventDefault()}>
                 {panel}
               </div>
             )}
             showText
             format="hex"
+            /* 提升 ColorPicker 层级，避免被编辑器 DOM 覆盖 */
           >
             <Button
               className={styles.colorButton}
@@ -373,11 +404,7 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
               console.log('[InlineTextToolbar] Background color changed:', { color, hex });
               handleBackgroundColorChange(hex);
             }}
-            onOpenChange={(open) => {
-              if (!open) {
-                runWithRestore((chain) => chain, { focus: true, restore: true });
-              }
-            }}
+            onOpenChange={handleBackgroundColorPickerOpenChange}
             className={styles.colorPicker}
             getPopupContainer={() => document.body}
             panelRender={(panel) => (
