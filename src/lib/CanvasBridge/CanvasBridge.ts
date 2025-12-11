@@ -1,4 +1,5 @@
 import type { StoreApi } from 'zustand';
+import { eventBus } from '../eventBus';
 import type { RenderEngine } from '../../renderer/RenderEngine';
 import type { Element, ViewportState } from '../../types';
 import {
@@ -28,6 +29,7 @@ type StoreWithSelector = Pick<StoreApi<BridgeStoreState>, 'getState' | 'subscrib
  * @param renderEngine - 渲染引擎
  */
 export class CanvasBridge {
+  private rendererResizeHandler?: (...args: unknown[]) => void;
   private unsubscribes: Array<() => void> = [];
   private isRunning = false;
   private readonly store: StoreWithSelector;
@@ -96,6 +98,46 @@ export class CanvasBridge {
       // 使用空对象作为 prev，触发 CREATE_ELEMENT 命令
       this.handleElementsChange(currentElements, {});
     }
+
+    // 监听渲染层的尺寸建议事件（Renderer 通过测量内容后发出），并把建议同步回 store
+    // 由 CanvasBridge 负责做长宽极限约束与最终模型更新
+    try {
+      this.rendererResizeHandler = (...args: unknown[]) => {
+        const payload =
+          args && args[0]
+            ? (args[0] as { elementId: string; width: number; height: number })
+            : undefined;
+        if (!payload) return;
+        const { elementId, width: suggestedW, height: suggestedH } = payload;
+        const state = this.store.getState();
+        const element = state.elements[elementId] as Element | undefined;
+        if (!element) return;
+        // 限制：设置最小/最大尺寸（可按需扩展为基于视口的限制）
+        const minW = 10;
+        const minH = 8;
+        const maxW = 20000;
+        const maxH = 20000;
+        const newW = Math.min(Math.max(suggestedW, minW), maxW);
+        const newH = Math.min(Math.max(suggestedH, minH), maxH);
+        // 仅在变化明显时才同步
+        if (
+          Math.abs((element.width ?? 0) - newW) >= 1 ||
+          Math.abs((element.height ?? 0) - newH) >= 1
+        ) {
+          // BridgeStoreState 未声明 updateElement，因此使用 any 形式安全调用运行时函数
+          const maybeUpdate = (
+            state as unknown as { updateElement?: (id: string, props: Partial<Element>) => void }
+          ).updateElement;
+          if (typeof maybeUpdate === 'function') {
+            maybeUpdate(elementId, { width: newW, height: newH });
+          }
+        }
+      };
+      eventBus.on('renderer:request-resize', this.rendererResizeHandler);
+    } catch (e) {
+      // 不要阻塞桥接启动
+      console.warn('CanvasBridge: failed to register renderer resize handler', e);
+    }
   }
 
   /**
@@ -108,6 +150,10 @@ export class CanvasBridge {
     // 清空命令队列
     this.pendingCommands.clear();
     this.scheduled = false;
+    if (this.rendererResizeHandler) {
+      eventBus.off('renderer:request-resize', this.rendererResizeHandler);
+      delete this.rendererResizeHandler;
+    }
   }
 
   /**
