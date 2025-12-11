@@ -1,0 +1,223 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+[data-theme='dark'] .toolbar {
+  background: rgba(30, 30, 30, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.toolButton {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: transparent;
+  color: rgba(0, 0, 0, 0.65);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: rgba(0, 0, 0, 0.3);
+    transform: scale(1.05);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+[data-theme='dark'] .toolButton {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.65);
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+.colorButton {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  position: relative;
+
+  &:hover {
+    border-color: rgba(0, 0, 0, 0.3);
+    transform: scale(1.05);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+[data-theme='dark'] .colorButton {
+  border-color: rgba(255, 255, 255, 0.3);
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+}
+
+.colorButtonIcon {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.3));
+}
+
+[data-theme='dark'] .colorButtonIcon {
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.5));
+}
+
+.strokeColorButton {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: solid;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  position: relative;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.colorPicker {
+  :global(.ant-color-picker-trigger) {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 4px;
+  }
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 0 4px;
+}
+
+[data-theme='dark'] .divider {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sliderPopover {
+  width: 200px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.popoverSlider {
+  flex: 1;
+  margin: 0;
+}
+
+.sliderValue {
+  min-width: 40px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* 使用主题变量控制颜色，无需单独覆盖暗色 */
+
+.colorPickerPopover {
+  padding: 8px;
+}
+
+.borderRadiusControl {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 8px;
+  min-width: 160px;
+}
+
+.controlIcon {
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.65);
+  flex-shrink: 0;
+}
+
+[data-theme='dark'] .controlIcon {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.inlineSlider {
+  flex: 1;
+  margin: 0;
+  min-width: 80px;
+
+  :global {
+    .ant-slider-rail {
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .ant-slider-track {
+      background-color: #1890ff;
+    }
+
+    .ant-slider-handle {
+      border-color: #1890ff;
+
+      &:hover,
+      &:focus {
+        border-color: #40a9ff;
+        box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.12);
+      }
+    }
+  }
+}
+
+[data-theme='dark'] .inlineSlider {
+  :global {
+    .ant-slider-rail {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .ant-slider-track {
+      background-color: #177ddc;
+    }
+
+    .ant-slider-handle {
+      border-color: #177ddc;
+
+      &:hover,
+      &:focus {
+        border-color: #3c9ae8;
+        box-shadow: 0 0 0 4px rgba(23, 125, 220, 0.12);
+      }
+    }
+  }
+}
