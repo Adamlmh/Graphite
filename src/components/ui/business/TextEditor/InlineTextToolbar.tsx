@@ -338,6 +338,9 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             </div>
           }
           trigger="hover"
+          onOpenChange={(open) =>
+            eventBus.emit('text-editor:toolbar-interaction', { interacting: open })
+          }
           placement="bottom"
           mouseEnterDelay={0.1}
           mouseLeaveDelay={0.2}
