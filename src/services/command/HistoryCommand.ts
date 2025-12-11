@@ -1,7 +1,7 @@
 // commands/HistoryCommand.ts
 import { v4 as uuidv4 } from 'uuid';
 import type { Command } from '../HistoryService';
-import type { Element, Point } from '../../types/index';
+import type { Element, Point, RichTextSpan } from '../../types/index';
 // import { useCanvasStore } from '../../stores/canvas-store';
 
 /**
@@ -997,5 +997,89 @@ export class AttributeChangeCommand implements Command {
 
   setNewValue(value: unknown): void {
     this.newValue = JSON.parse(JSON.stringify(value));
+  }
+}
+
+export class RichTextUpdateCommand implements Command {
+  id: string;
+  type: string = 'richtext-update';
+  timestamp: number;
+
+  private targetId: string;
+  private oldContent: string;
+  private newContent: string;
+  private oldRichText: RichTextSpan[];
+  private newRichText: RichTextSpan[];
+  private oldWidth: number;
+  private newWidth: number;
+  private oldHeight: number;
+  private newHeight: number;
+
+  private canvasStore: {
+    updateElement: (id: string, updates: Partial<Element>) => void;
+  };
+
+  constructor(
+    targetId: string,
+    payload: {
+      oldContent: string;
+      newContent: string;
+      oldRichText: RichTextSpan[];
+      newRichText: RichTextSpan[];
+      oldWidth: number;
+      newWidth: number;
+      oldHeight: number;
+      newHeight: number;
+    },
+    canvasStore: { updateElement: (id: string, updates: Partial<Element>) => void },
+  ) {
+    this.id = uuidv4();
+    this.timestamp = Date.now();
+    this.targetId = targetId;
+    this.oldContent = payload.oldContent ?? '';
+    this.newContent = payload.newContent ?? '';
+    this.oldRichText = JSON.parse(JSON.stringify(payload.oldRichText ?? [])) as RichTextSpan[];
+    this.newRichText = JSON.parse(JSON.stringify(payload.newRichText ?? [])) as RichTextSpan[];
+    this.oldWidth = payload.oldWidth ?? 0;
+    this.newWidth = payload.newWidth ?? 0;
+    this.oldHeight = payload.oldHeight ?? 0;
+    this.newHeight = payload.newHeight ?? 0;
+    this.canvasStore = canvasStore;
+  }
+
+  async execute(): Promise<void> {
+    this.canvasStore.updateElement(this.targetId, {
+      content: this.newContent,
+      richText: this.newRichText,
+      width: this.newWidth,
+      height: this.newHeight,
+      updatedAt: Date.now(),
+    });
+    return Promise.resolve();
+  }
+
+  async undo(): Promise<void> {
+    this.canvasStore.updateElement(this.targetId, {
+      content: this.oldContent,
+      richText: this.oldRichText,
+      width: this.oldWidth,
+      height: this.oldHeight,
+      updatedAt: Date.now(),
+    });
+    return Promise.resolve();
+  }
+
+  async redo(): Promise<void> {
+    await this.execute();
+    return Promise.resolve();
+  }
+
+  serialize(): string {
+    return JSON.stringify({
+      id: this.id,
+      type: this.type,
+      timestamp: this.timestamp,
+      targetId: this.targetId,
+    });
   }
 }
