@@ -391,7 +391,7 @@ export class CreateInteraction {
         content: '请双击输入文本',
         textStyle: {
           fontFamily: 'Arial, sans-serif',
-          fontSize: 16,
+          fontSize: 64,
           fontWeight: 'normal',
           fontStyle: 'normal',
           textDecoration: 'none',

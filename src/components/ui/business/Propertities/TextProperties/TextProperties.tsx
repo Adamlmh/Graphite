@@ -282,7 +282,7 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
     <div className={styles.sliderPopover}>
       <Slider
         min={10}
-        max={72}
+        max={500}
         value={fontSize}
         onChange={(size) => {
           if (!isCoalescingRef.current) {
