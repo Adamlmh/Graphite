@@ -182,10 +182,21 @@ const TextPropertiesInner: React.FC<TextPropertiesProps> = ({
           updates.textStyle.fontFamily = patch.fontFamily;
         }
 
-        // 🎯 关键修复: 清理与新全局样式冲突的局部样式片段
+        // 🎯 关键修复: 在全局样式改变时，可选地将局部颜色覆盖为全局颜色，并清理冗余的局部样式
         if (el.richText && el.richText.length > 0) {
-          console.log('[TextProperties] Cleaning up richText before:', el.richText);
-          updates.richText = cleanupRichTextSpans(el.richText, updates.textStyle);
+          const shouldOverrideLocal =
+            patch.color !== undefined ||
+            patch.backgroundColor !== undefined ||
+            (patch.textStyle &&
+              (patch.textStyle.color !== undefined ||
+                patch.textStyle.backgroundColor !== undefined));
+          console.log('[TextProperties] Cleaning up richText before:', el.richText, {
+            shouldOverrideLocal,
+            newGlobal: updates.textStyle,
+          });
+          updates.richText = cleanupRichTextSpans(el.richText, updates.textStyle, {
+            overrideLocalStyleWithGlobal: shouldOverrideLocal,
+          });
           console.log('[TextProperties] Cleaned up richText after:', updates.richText);
         }
       }
