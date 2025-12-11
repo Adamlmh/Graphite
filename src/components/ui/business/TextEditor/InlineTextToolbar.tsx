@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Tooltip, ColorPicker, Slider, Popover, Select } from 'antd';
+import { historyService } from '../../../../services/instances';
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -164,9 +165,15 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   // 颜色选择器必然会导致物理失焦，所以使用 runWithRestore 尝试拉回焦点
   // 对于 ColorPicker 的连续滑动，我们不希望每次都 focus/restore（会导致闪动/回弹），
   // 所以调整为默认不做 focus/restore，只有必要时在外部手动调用恢复。
+  const isCoalescingRef = useRef(false);
+
   const handleTextColorChangeInternal = useCallback(
     (color: string) => {
       if (!editor) return;
+      if (!isCoalescingRef.current) {
+        historyService.beginAttributeCoalescing();
+        isCoalescingRef.current = true;
+      }
       // 不 focus，不 restore（避免频繁改动导致闪烁）。
       editor.chain().setColor(color).run();
     },
@@ -176,6 +183,10 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
   const handleBackgroundColorChangeInternal = useCallback(
     (backgroundColor: string) => {
       if (!editor) return;
+      if (!isCoalescingRef.current) {
+        historyService.beginAttributeCoalescing();
+        isCoalescingRef.current = true;
+      }
       editor.chain().setBackgroundColor(backgroundColor).run();
     },
     [editor],
@@ -293,7 +304,17 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
                 min={10}
                 max={72}
                 value={textStyles.fontSize}
-                onChange={handleFontSizeChange}
+                onChange={(val) => {
+                  if (!isCoalescingRef.current) {
+                    historyService.beginAttributeCoalescing();
+                    isCoalescingRef.current = true;
+                  }
+                  handleFontSizeChange(val);
+                }}
+                onAfterChange={() => {
+                  historyService.endAttributeCoalescing();
+                  isCoalescingRef.current = false;
+                }}
                 className={styles.popoverSlider}
                 tooltip={{ open: false }}
               />
@@ -325,6 +346,10 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             onChange={(color, hex) => {
               console.log('[InlineTextToolbar] Text color changed:', { color, hex });
               handleTextColorChange(hex);
+            }}
+            onChangeComplete={() => {
+              historyService.endAttributeCoalescing();
+              isCoalescingRef.current = false;
             }}
             onOpenChange={(open) => {
               if (!open) {
@@ -372,6 +397,10 @@ const InlineTextToolbar: React.FC<InlineTextToolbarProps> = ({
             onChange={(color, hex) => {
               console.log('[InlineTextToolbar] Background color changed:', { color, hex });
               handleBackgroundColorChange(hex);
+            }}
+            onChangeComplete={() => {
+              historyService.endAttributeCoalescing();
+              isCoalescingRef.current = false;
             }}
             onOpenChange={(open) => {
               if (!open) {

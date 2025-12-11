@@ -86,6 +86,12 @@ export class CanvasBridge {
       this.handleSelectionChange(initialState.selectedElementIds, []);
     }
 
+    // 初始化时主动触发一次视口状态更新，确保刷新后视口位置正确
+    if (initialState.viewport) {
+      console.log('[CanvasBridge.start] 初始化时触发视口状态更新', initialState.viewport);
+      this.handleViewportChange(initialState.viewport);
+    }
+
     this.isRunning = true;
 
     // 启动时，如果 store 中已经有元素，需要主动触发一次渲染
