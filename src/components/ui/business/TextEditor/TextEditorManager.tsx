@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { CanvasTextMetrics, TextStyle } from 'pixi.js';
 import { eventBus } from '../../../../lib/eventBus';
+import { historyService } from '../../../../services/instances';
+import { RichTextUpdateCommand } from '../../../../services/command/HistoryCommand';
 import { useCanvasStore } from '../../../../stores/canvas-store';
 import type { TextElement, RichTextSpan } from '../../../../types';
 import { getRenderEngine } from '../../../../lib/renderEngineManager';
@@ -77,7 +79,7 @@ const TextEditorManager: React.FC = () => {
     }
     // 使用 CoordinateTransformer 将世界坐标转换为屏幕坐标
     return coordinateTransformer.worldToScreen(currentElement.x, currentElement.y);
-  }, [currentElement, coordinateTransformer, viewport]); // 添加 viewport 依赖，确保视口变化时重新计算
+  }, [currentElement, coordinateTransformer]);
 
   // 计算编辑器的缩放比例，跟随视口缩放
   const editorScale = useMemo(() => {
@@ -114,14 +116,36 @@ const TextEditorManager: React.FC = () => {
     });
     const metrics = CanvasTextMetrics.measureText(content, naturalStyle);
 
-    // 更新元素，同时更新宽高
-    updateElement(editorState.element.id, {
-      content,
-      width: metrics.width + 20, // 增加一点 padding 防止边缘裁剪
-      height: metrics.height,
-      richText,
-      updatedAt: Date.now(),
-    });
+    const prevContent = element.content || '';
+    const prevRichText = element.richText || [];
+    const contentChanged = prevContent !== (content || '');
+    const richTextChanged = JSON.stringify(prevRichText) !== JSON.stringify(richText || []);
+
+    if (richTextChanged && !contentChanged) {
+      const cmd = new RichTextUpdateCommand(
+        element.id,
+        {
+          oldContent: prevContent,
+          newContent: content || prevContent,
+          oldRichText: prevRichText,
+          newRichText: richText || prevRichText,
+          oldWidth: element.width,
+          newWidth: metrics.width + 20,
+          oldHeight: element.height,
+          newHeight: metrics.height,
+        },
+        { updateElement },
+      );
+      historyService.executeCommand(cmd);
+    } else {
+      updateElement(editorState.element.id, {
+        content,
+        width: metrics.width + 20,
+        height: metrics.height,
+        richText,
+        updatedAt: Date.now(),
+      });
+    }
   };
 
   // 处理失焦，退出编辑态
