@@ -195,6 +195,7 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
             isCoalescingRef.current = false;
           }}
           className={styles.colorPicker}
+          placement="top"
         >
           <Button
             className={styles.colorButton}
@@ -230,6 +231,7 @@ const ShapePropertiesInner: React.FC<ShapePropertiesProps> = ({ element, element
             isCoalescingRef.current = false;
           }}
           className={styles.colorPicker}
+          placement="top"
         >
           <Button
             className={styles.strokeColorButton}
