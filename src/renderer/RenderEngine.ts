@@ -767,6 +767,7 @@ export class RenderEngine {
       next.snapping.guidelines.length > 0
     ) {
       const wb = this.viewportController.getWorkingBounds(next);
+      const zoom = next.zoom || 1;
       const colorBySource = (src: string, strength: string): number => {
         if (src === 'canvas-center') return 0x7c3aed;
         if (src === 'element-center') return strength === 'strong' ? 0x1d4ed8 : 0x60a5fa;
@@ -783,7 +784,8 @@ export class RenderEngine {
         const style = dashByStrength(line.strength || 'weak');
         const color = line.color ?? colorBySource(line.source, line.strength || 'weak');
         const g = new PIXI.Graphics();
-        g.lineStyle(style.width, color, 1);
+        const dynamicWidth = style.width / zoom;
+        g.lineStyle(dynamicWidth, color, 1);
         const drawDashed = (x1: number, y1: number, x2: number, y2: number) => {
           const dx = x2 - x1;
           const dy = y2 - y1;
